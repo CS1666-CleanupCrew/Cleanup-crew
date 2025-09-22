@@ -1,3 +1,6 @@
+mod endcredits;
+
+
 fn main() {
-    println!("Hello, world!");
+    endcredits::run_slideshow();
 }
