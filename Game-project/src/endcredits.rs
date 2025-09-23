@@ -41,6 +41,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         asset_server.load("assets/sam.png"),
         asset_server.load("assets/will.png"),
         asset_server.load("assets/lucasloepke.png"),
+        asset_server.load("assets/aidan.png"),
+        asset_server.load("assets/Ansel.png"),
     ];
 
     commands.spawn((
