@@ -30,18 +30,24 @@ All the concept art will be hand drawn by team members.
 
 ### Procedural Generation
 
-Levels are built as a sequence of procedurally generated rooms. Each room has a fixed size but changes in layout, enemy placement, and obstacles. Rewards differ from room to room. Boss rooms are also procedurally generated but designed with unique mechanics (cover, different physics,  adaptive AI, which hunts the player). Environmental specifications such as broken panels, zero gravity are going to be added into the generation system so hazards feel dynamic and tied to the theme of the space station.
-    
+Levels are built as a sequence of procedurally generated rooms. Each room has a fixed size but changes in layout, enemy placement, and obstacles. Rewards differ from room to room. Boss's locations in rooms are also procedurally generated but designed. All of the Bosses are of the same level. Environmental specifications such as broken panels, zero gravity are going to be added into the generation system so hazards feel dynamic and tied to the theme of the space station.
+We are going to have total 6 rooms.
+
+Algorithms:
+Simple Room Placement 
+Binary Space Partition (BSP) Rooms
+https://christianjmills.com/posts/procedural-map-generation-techniques-notes/#binary-space-partition
 ### Physics: 
 
 
-Players can swing on ropes, dash, and use explosives. Bullets will have potential ricochets. Environmental destruction impacts gameplay (mob breaking panels can disable gravity) puncturing walls can vent air, and gases will spread through the station using fluid dynamics.
+ Environmental Physics will include fluid dynamics. This mechanic will be implemented by Particle-Based Methods algorithms
 
 
 ## Midterm Goals
-
-* Procedural generation done far enough to be able to create a whole level. Rooms should have a general outline. Basic weapons should be decided on for both mobs and players. Weapons should have progression. The next room should have different rewards. 
-* Basic enemy movement, regular mobs should have basic ideas of combat and be able to fight back and interact with the player. Stick figures for mobs should be completed. Basic prototypes for mobs’ sprites should be completed.
+* Player can move around the room and the camera setup works
+* A layout of one room should be created and a player should be able to navigate around it
+*  Procedural Generation API should be agreed upon
+* Basic enemy movement with 1 attack animation
 
 ...
 
@@ -55,7 +61,5 @@ Players can swing on ropes, dash, and use explosives. Bullets will have potentia
 
 ## Stretch Goals
 
-* Add a unique Reaper mob that will chase the player with unique AI if they spend too long 
-  clearing the level
-* More unique weapons (physics elements on a weapon, weapons that have unique 
-  interactions with the enemies / environment)
+* Add a unique weapon
+* Add a new interactive object
