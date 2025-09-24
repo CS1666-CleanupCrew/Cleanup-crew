@@ -1,0 +1,9 @@
+/Users/vladimirdeyanov/Documents/Pitt/1666/Space-Janitor/target/debug/deps/libbevy_derive-420e9cd9b9ee2a5e.dylib: /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/lib.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/app_plugin.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/bevy_main.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/derefs.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/enum_variant_meta.rs
+
+/Users/vladimirdeyanov/Documents/Pitt/1666/Space-Janitor/target/debug/deps/bevy_derive-420e9cd9b9ee2a5e.d: /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/lib.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/app_plugin.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/bevy_main.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/derefs.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/enum_variant_meta.rs
+
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/lib.rs:
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/app_plugin.rs:
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/bevy_main.rs:
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/derefs.rs:
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_derive-0.13.2/src/enum_variant_meta.rs:

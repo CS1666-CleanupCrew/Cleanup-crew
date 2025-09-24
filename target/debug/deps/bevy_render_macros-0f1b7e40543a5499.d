@@ -1,0 +1,8 @@
+/Users/vladimirdeyanov/Documents/Pitt/1666/Space-Janitor/target/debug/deps/libbevy_render_macros-0f1b7e40543a5499.dylib: /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/lib.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/as_bind_group.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/extract_component.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/extract_resource.rs
+
+/Users/vladimirdeyanov/Documents/Pitt/1666/Space-Janitor/target/debug/deps/bevy_render_macros-0f1b7e40543a5499.d: /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/lib.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/as_bind_group.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/extract_component.rs /Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/extract_resource.rs
+
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/lib.rs:
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/as_bind_group.rs:
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/extract_component.rs:
+/Users/vladimirdeyanov/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bevy_render_macros-0.13.2/src/extract_resource.rs:
