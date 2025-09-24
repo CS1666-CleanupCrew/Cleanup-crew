@@ -1,0 +1,14 @@
+# Cargo build output
+/target
+
+# Profiling data
+*.profraw
+*.profdata
+
+# Byproducts of cargo test/bench
+**/*.rs.bk
+
+# IDE/editor junk
+.DS_Store
+.idea/
+.vscode/
