@@ -49,8 +49,9 @@ https://medium.com/@ethan_38158/how-to-write-a-fluid-simulation-in-rust-lbm-1aaa
 * A layout of one room should be created and a player should be able to navigate around it
 * Procedural Generation API should be agreed upon
 * Basic enemy movement with 1 attack animation
-* Player Sprite and breif animation should be created
-* Enemy Hp and Player Hp should be agreed upon
+* Player Sprite and brief animation should be created
+* Enemy HP and Player HP should be agreed upon
+* Player can shoot bullets
 
 ...
 
@@ -59,9 +60,9 @@ https://medium.com/@ethan_38158/how-to-write-a-fluid-simulation-in-rust-lbm-1aaa
 * 10%: Rooms should be structured and put in order. Levels should have a logical continuation. 
 * 35%: All rooms should be finished and put in order. The game should be gracefully concluded.
 * 10%: Sound effects should be made. Potentially background music might be added
-* 10Fluid dynamics of all gases should be finished
-* 10% Level layout and room layout is different everytime
-* 10% Rewards for completing a room drop
+* 10%: Fluid dynamics of all gases should be finished
+* 10%: Level layout and room layout is different everytime
+* 10%: Rewards for completing a room drop
 
 ...
 
