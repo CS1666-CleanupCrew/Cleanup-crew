@@ -63,12 +63,12 @@ https://medium.com/@ethan_38158/how-to-write-a-fluid-simulation-in-rust-lbm-1aaa
 
 ## Final Goals
 
-*16.7%: Rooms should be structured and put in order. Levels should have a logical continuation.
-*16.7%: All rooms should be finished and put in order. The game should be gracefully concluded.
-*16.7%: Sound effects should be made. Potentially background music might be added.
-*16.7%: Fluid dynamics of all gases should be finished.
-*16.5%: Level layout and room layout is different every time.
-*16.7%: Rewards for completing a room drop.
+* 16.7%: Rooms should be structured and put in order. Levels should have a logical continuation.
+* 16.7%: All rooms should be finished and put in order. The game should be gracefully concluded.
+* 16.7%: Sound effects should be made. Potentially background music might be added.
+* 16.7%: Fluid dynamics of all gases should be finished.
+* 16.5%: Level layout and room layout is different every time.
+* 16.7%: Rewards for completing a room drop.
 
 ...
 
