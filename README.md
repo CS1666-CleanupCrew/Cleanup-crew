@@ -19,9 +19,9 @@ by Team3
 
 ## Game Description
 
-In the future, a massive space station suffers a disaster. You play as a scientist whose ship crashes into the station. Once, you were studying alien life, but now those creatures have escaped and turned hostile. The station is crawling with enemies, and your job is to clear it room by room until you reach the final boss in the most important chamber.Each room is a new level, with layouts, enemies, and obstacles that change every time you play. Some enemies rush you, others hide and hunt, and bosses use smart tactics like cover and movement to make battles more intense. This makes combat is fast and dynamic. Bullets can bounce, weapons feel powerful, and the environment panels can break and turn off gravity, air can leak into space, and gas can spread through the station. You can swing on ropes, dash to dodge attacks, or even use explosions to launch yourself across the arena.The story is told through items you find, letting you uncover what really happened on the station as you fight to survive.
+In the future, a massive space station suffers a disaster. You play as a scientist whose ship crashes into the station. Once, you were studying alien life, but now those creatures have escaped and turned hostile. The station is crawling with enemies, and your job is to clear it room by room until all the enemies are gone. Each room is a new level, with layouts, enemies, and obstacles that change every time you play. Some enemies rush you, others hide and hunt. This makes combat fast and dynamic. The environment panels can break and turn off gravity, air can leak into space forcing you into crisis. You can dash to dodge attacks (maybe), or even use explosions to launch yourself across the arena. The story is told through items you find, letting you uncover what really happened on the station as you fight to survive.
 
-The game is going to represent a 2d Bird's eye dungeon crawler. Game is going to have Melee and  medium range enemy attack types. There will be special mob units. Player will have one weapon upgrade per room cleared. Game difficulty will be increasing  as you get deeper.
+The game is going to represent a 2d Bird's eye dungeon crawler. Game is going to have melee and medium ranged enemy attack types. There will be special mob unit. Player will have one stat upgrade per room cleared. Game difficulty will be scale as you get deeper.
 
 All the concept art will be hand drawn by team members. 
 
@@ -30,32 +30,59 @@ All the concept art will be hand drawn by team members.
 
 ### Procedural Generation
 
-Levels are built as a sequence of procedurally generated rooms. Each room has a fixed size but changes in layout, enemy placement, and obstacles. Rewards differ from room to room. Boss rooms are also procedurally generated but designed with unique mechanics (cover, different physics,  adaptive AI, which hunts the player). Environmental specifications such as broken panels, zero gravity are going to be added into the generation system so hazards feel dynamic and tied to the theme of the space station.
-    
+Levels are built as a sequence of procedurally generated rooms. Each room has a fixed size but changes in layout, enemy placement, and obstacles. Rewards differ from room to room. Environmental specifications such as broken panels, zero gravity are going to be added into the generation system so hazards feel dynamic and tied to the theme of the space station.
+We are going to have total 6 differently sized rooms.
+
+Algorithms:
+Simple Room Placement 
+Binary Space Partition (BSP) Rooms
+https://christianjmills.com/posts/procedural-map-generation-techniques-notes/#binary-space-partition
 ### Physics: 
 
 
-Players can swing on ropes, dash, and use explosives. Bullets will have potential ricochets. Environmental destruction impacts gameplay (mob breaking panels can disable gravity) puncturing walls can vent air, and gases will spread through the station using fluid dynamics.
-
+ Environmental Physics will include fluid dynamics. This mechanic will be implemented by Particle-Based Methods algorithms and
+The Lattice Boltzmann Method
+https://medium.com/@ethan_38158/how-to-write-a-fluid-simulation-in-rust-lbm-1aaaee9c2a5a
 
 ## Midterm Goals
+* A basic testing room is created for the player to move around in and test functions (procedural generation) (15%) 
+* Basic Map / object Sprites created (5%)
+* Procedural Generation API should be agreed upon (10%) 
+* Basic liquid dinamics algorithm is researched/decided apon for gas simulation (10%) 
+* Player Movement works (5%) 
+* Player Sprites created (5%) 
+* Gun can shoot bullets/projectiles (15%) 
+* Enemy sprites // 1 attack animation (5%) 
+* Player HP working (5%) 
+* Enemy HP working (5%) 
+* Basic Enemy movement works (5%) 
+* Objects have collision (ex. tables) (5%) 
+* Enemy collision working // collision with player and with the environment (10%) 
 
-* Procedural generation done far enough to be able to create a whole level. Rooms should have a general outline. Basic weapons should be decided on for both mobs and players. Weapons should have progression. The next room should have different rewards. 
-* Basic enemy movement, regular mobs should have basic ideas of combat and be able to fight back and interact with the player. Stick figures for mobs should be completed. Basic prototypes for mobs’ sprites should be completed.
 
 ...
 
 ## Final Goals
 
-* 35%: Rooms should be structured and put in order. Levels should have a logical continuation. 
-* 35%: All rooms should be finished and put in order. The game should be gracefully concluded.
-* 10%: Sound effects should be made. Potentially background music might be added
+* Simulation of fluid dynamics of gases runs (10%)
+* Simulation of fluid dynamics of gases are accurate and finished (5%)
+* Simulation of fluid dynamics of gases interacts correctly with objects and are finished (2.5%)
+* Simulation of fluid dynamics of gases interacts correctly with player and are finished (2.5%)
+* Simulation of fluid dynamics of gases interacts correctly with enemies and are finished (5%)
+* Calculation on the rate at which the gasses leave the room are accurate (die after a certain amount of time) (5%)
+* Player/enemies can damage space station and cause the physics simulation to begin (10%)
+* Rooms are structured and put in order with a logical continuation (10%)
+* All rooms are completed (5%)
+* Graceful ending to the levels, not an abrupt ending (5%)
+* Level layout and room layout are different everytime (20%)
+* Rewards drop for completing a room (10%)
+* Players and enemies take damage from objects hitting them due to fluid dynamics (5%)
+* Sound effects should be made. Potentially background music might be added. (5%)
+
 
 ...
 
 ## Stretch Goals
 
-* Add a unique Reaper mob that will chase the player with unique AI if they spend too long 
-  clearing the level
-* More unique weapons (physics elements on a weapon, weapons that have unique 
-  interactions with the enemies / environment)
+* Add a unique weapon
+* Add a Reaper mob that will chase the player if they spend too long clearing the level
