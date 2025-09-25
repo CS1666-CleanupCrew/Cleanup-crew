@@ -45,30 +45,40 @@ The Lattice Boltzmann Method
 https://medium.com/@ethan_38158/how-to-write-a-fluid-simulation-in-rust-lbm-1aaaee9c2a5a
 
 ## Midterm Goals
-* A basic testing room is created for the player to move around in and test functions  (procedural generation)
-* Basic Map / object Sprites created
-* Procedural Generation API should be agreed upon
-* Player Movement works
-* Player Sprites created
-* Gun can shoot bullets/projectiles
-* Enemy sprites // 1 attack animation
-* Player HP working
-* Enemy HP working
-* Basic Enemy movement works
-* Objects have collision (ex. tables)
-* Enemy collision working // collision with player and with the environment
+(15%) * A basic testing room is created for the player to move around in and test functions  (procedural generation)
+(5%) * Basic Map / object Sprites created
+(10%) * Procedural Generation API should be agreed upon
+(10%) * Basic liquid dinamics algorithm is researched/decided apon for gas simulation
+(5%) * Player Movement works
+(5%) * Player Sprites created
+(15%) * Gun can shoot bullets/projectiles
+(5%) * Enemy sprites // 1 attack animation
+(5%) * Player HP working
+(5%) * Enemy HP working
+(5%) * Basic Enemy movement works
+(5%) * Objects have collision (ex. tables)
+(10%) * Enemy collision working // collision with player and with the environment
 
 
 ...
 
 ## Final Goals
 
-* 16.7%: Rooms should be structured and put in order. Levels should have a logical continuation.
-* 16.7%: All rooms should be finished and put in order. The game should be gracefully concluded.
-* 16.7%: Sound effects should be made. Potentially background music might be added.
-* 16.7%: Fluid dynamics of all gases should be finished.
-* 16.5%: Level layout and room layout is different every time.
-* 16.7%: Rewards for completing a room drop.
+(10%) * Simulation of fluid dynamics of gases runs
+(5%) * Simulation of fluid dynamics of gases are accurate and finished 
+(2.5%) * Simulation of fluid dynamics of gases interacts correctly with objects and are finished
+(2.5%) * Simulation of fluid dynamics of gases interacts correctly with player and are finished
+(5%) * Simulation of fluid dynamics of gases interacts correctly with enemies and are finished
+(5%) * Calculation on the rate at which the gasses leave the room are accurate (die after a certain amount of time)
+(10%) * Player/enemies can damage space station and cause the physics simulation to begin
+(10%) * Rooms are structured and put in order with a logical continuation
+(5%) * All rooms are completed
+(5%) * Graceful ending to the levels, not an abrupt ending
+(20%) * Level layout and room layout are different everytime
+(10%) * Rewards drop for completing a room
+(5%) * Players and enemies take damage from objects hitting them due to fluid dynamics
+(5%) * Sound effects should be made. Potentially background music might be added.
+
 
 ...
 
