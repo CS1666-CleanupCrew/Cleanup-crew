@@ -45,12 +45,19 @@ The Lattice Boltzmann Method
 https://medium.com/@ethan_38158/how-to-write-a-fluid-simulation-in-rust-lbm-1aaaee9c2a5a
 
 ## Midterm Goals
-* Player can move around the room and the camera setup works
-* A layout of one room should be created and a player should be able to navigate around it
+* A basic testing room is created for the player to move around in and test functions  (procedural generation)
+* Basic Map / object Sprites created
 * Procedural Generation API should be agreed upon
-* Basic enemy movement with 1 attack animation
-* Player Sprite and breif animation should be created
-* Enemy Hp and Player Hp should be agreed upon
+* Player Movement works
+* Player Sprites created
+* Gun can shoot bullets/projectiles
+* Enemy sprites // 1 attack animation
+* Player HP working
+* Enemy HP working
+* Basic Enemy movement works
+* Objects have collision (ex. tables)
+* Enemy collision working // collision with player and with the environment
+
 
 ...
 
