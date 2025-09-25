@@ -48,7 +48,7 @@ https://medium.com/@ethan_38158/how-to-write-a-fluid-simulation-in-rust-lbm-1aaa
 * A basic testing room is created for the player to move around in and test functions (procedural generation) (15%) 
 * Basic Map / object Sprites created (5%)
 * Procedural Generation API should be agreed upon (10%) 
-* Basic liquid dinamics algorithm is researched/decided apon for gas simulation (10%) 
+* Basic liquid dynamics algorithm is researched/decided apon for gas simulation (10%) 
 * Player Movement works (5%) 
 * Player Sprites created (5%) 
 * Gun can shoot bullets/projectiles (15%) 
