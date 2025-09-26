@@ -1,4 +1,8 @@
-use bevy::{prelude::*, window::PresentMode, asset::LoadState};
+use bevy::{prelude::*, asset::LoadState};
+
+use crate::{
+    GameState
+}
 
 #[derive(Component)]
 struct SlideTimer(Timer);
@@ -13,21 +17,16 @@ struct SlideshowState {
     started: bool,
 }
 
-pub fn run_slideshow() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Team Slideshow".into(),
-                resolution: (1280., 720.).into(),
-                present_mode: PresentMode::AutoVsync,
-                ..default()
-            }),
-            ..default()
-        }))
-        .add_systems(Startup, setup)
-        .add_systems(Update, (check_assets_loaded, update_slideshow))
-        .run();
+//Plugin so that it can be added in main
+pub struct EndCreditPlugin;
+impl Plugin for EndCreditPlugin{
+    fn build(&self, app: &mut App){
+        app
+            .add_systems(Startup, setup)
+            .add_systems(OnEnter(GameState::EndCredits))
+    }
 }
+
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     
