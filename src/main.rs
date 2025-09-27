@@ -2,6 +2,7 @@ use bevy::{prelude::*, window::PresentMode};
 
 mod endcredits;
 mod player;
+mod enemy;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -48,6 +49,7 @@ fn main() {
         .add_plugins((
             player::PlayerPlugin,
             endcredits::EndCreditPlugin,
+            enemy::EnemyPlugin,
         ))
 
         .add_systems(Startup, setup_camera)
