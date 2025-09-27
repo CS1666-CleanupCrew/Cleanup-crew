@@ -1,10 +1,18 @@
 use bevy::{prelude::*, window::PresentMode};
 
 mod endcredits;
+mod player;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
 const WIN_H: f32 = 720.;
+
+const PLAYER_SPEED: f32 = 500.;
+const ACCEL_RATE: f32 = 5000.;
+
+const TILE_SIZE: f32 = 100.;
+
+const LEVEL_LEN: f32 = 1280.;
 
 /**
  * States is for the different game states
@@ -16,6 +24,7 @@ const WIN_H: f32 = 720.;
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum GameState{
     #[default]
+    Playing,
     EndCredits,
 }
 
@@ -32,20 +41,23 @@ fn main() {
             ..default()
         }))
 
-                
+        //Initial GameState
         .init_state::<GameState>()
 
+        //Calls the plugin 
         .add_plugins((
+            player::PlayerPlugin,
             endcredits::EndCreditPlugin,
         ))
-        
+
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
+        .add_systems(OnEnter(GameState::Playing), log_state_change)
 
         .run();
 }
 
-//Sets the 
+
 fn setup_camera(mut commands: Commands){
     commands.spawn(Camera2d);
 }

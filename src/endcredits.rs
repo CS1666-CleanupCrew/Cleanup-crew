@@ -25,9 +25,9 @@ pub struct EndCreditPlugin;
 impl Plugin for EndCreditPlugin{
     fn build(&self, app: &mut App){
         app
-            .add_systems(OnEnter(GameState::EndCredits), setup)
-            .add_systems(OnEnter(GameState::EndCredits), check_assets_loaded.after(setup))
-            .add_systems(OnEnter(GameState::EndCredits), start_slide.after(setup))
+            .add_systems(Startup, load_credits)
+            .add_systems(OnEnter(GameState::EndCredits), check_assets_loaded)
+            .add_systems(OnEnter(GameState::EndCredits), start_slide)
             .add_systems(Update, update_slideshow);
     }
 }
@@ -36,7 +36,7 @@ impl Plugin for EndCreditPlugin{
  * Loads in all the images when the app runs
  * Inserts them into a struct called SlideshowState
  */
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn load_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
     
     let handles = vec![
         asset_server.load("vlad.png"),
