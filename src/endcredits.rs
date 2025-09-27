@@ -18,13 +18,16 @@ struct SlideshowState {
 }
 
 //Plugin so that it can be added in main
+/**
+ * Ok so currently since endcredit runs immediately, it doesnt have enough time to load the assets
+ */
 pub struct EndCreditPlugin;
 impl Plugin for EndCreditPlugin{
     fn build(&self, app: &mut App){
         app
-            .add_systems(Startup, setup)
-            .add_systems(OnEnter(GameState::EndCredits), check_assets_loaded)
-            .add_systems(OnEnter(GameState::EndCredits), start_slide)
+            .add_systems(OnEnter(GameState::EndCredits), setup)
+            .add_systems(OnEnter(GameState::EndCredits), check_assets_loaded.after(setup))
+            .add_systems(OnEnter(GameState::EndCredits), start_slide.after(setup))
             .add_systems(Update, update_slideshow);
     }
 }
@@ -44,7 +47,8 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         asset_server.load("lucasloepke.png"),
         asset_server.load("aidan.png"),
         asset_server.load("ansel.png"),
-    ];
+
+        ];
 
     println!("Loading images from assets folder...");
     println!("Loaded {} image handles", handles.len());
@@ -78,7 +82,7 @@ fn check_assets_loaded(
 
         for handle in &slideshow_state.image_handles {
             match asset_server.load_state(handle.id()) {
-                LoadState::Failed => {
+                LoadState::NotLoaded => {
                     println!("Failed to load asset: {:?}", handle);
                 }
                 LoadState::Loading => {
@@ -101,11 +105,8 @@ fn start_slide(
 ){
 
     commands.spawn((
-        SpriteBundle {
-            texture: slideshow_state.image_handles[0].clone(),
-            transform: Transform::default(),
-            ..default()
-        },
+        Sprite::from_image(slideshow_state.image_handles[0].clone()),
+        Transform::from_xyz(0., 0., 0.),
         CurrentSlide,
         SlideTimer(Timer::from_seconds(2.0, TimerMode::Repeating)),
     ));
@@ -118,7 +119,7 @@ fn start_slide(
 fn update_slideshow(
     time: Res<Time>,
     mut slideshow_state: ResMut<SlideshowState>,
-    mut slide_query: Query<(&mut SlideTimer, &mut Handle<Image>), With<CurrentSlide>>,
+    mut slide_query: Query<(&mut SlideTimer, &mut Sprite), With<CurrentSlide>>,
 ) {
     // slideshow_state.started = true;
 
@@ -126,7 +127,7 @@ fn update_slideshow(
     //     return;
     // }
 
-    for (mut timer, mut texture_handle) in slide_query.iter_mut() {
+    for (mut timer, mut texture_to_change) in slide_query.iter_mut() {
         timer.0.tick(time.delta());
 
         if timer.0.just_finished() {
@@ -135,7 +136,7 @@ fn update_slideshow(
                 (slideshow_state.current_index + 1) % slideshow_state.image_handles.len();
 
           
-            *texture_handle = slideshow_state.image_handles[slideshow_state.current_index].clone();
+            texture_to_change.image = slideshow_state.image_handles[slideshow_state.current_index].clone();
 
             println!(
                 "Showing slide {}/{}",

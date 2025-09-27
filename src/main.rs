@@ -10,6 +10,8 @@ const WIN_H: f32 = 720.;
  * States is for the different game states
  * PartialEq and Eq are for comparisons: Allows for == and !=
  * Default allows for faster initializing ..default instead of Default::default()
+ * 
+ * #\[default] sets the GameState below it as the default state
 */
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum GameState{
@@ -29,20 +31,23 @@ fn main() {
             }),
             ..default()
         }))
-        
-        .add_systems(Startup, setup_camera)
-        .add_systems(OnEnter(GameState::EndCredits), log_state_change)
 
+                
+        .init_state::<GameState>()
 
         .add_plugins((
             endcredits::EndCreditPlugin,
         ))
-        .init_state::<GameState>()
+        
+        .add_systems(Startup, setup_camera)
+        .add_systems(OnEnter(GameState::EndCredits), log_state_change)
+
         .run();
 }
 
+//Sets the 
 fn setup_camera(mut commands: Commands){
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d);
 }
 
 fn log_state_change(state: Res<State<GameState>>) {
