@@ -78,11 +78,15 @@ fn move_player(
     time: Res<Time>,
     input: Res<ButtonInput<KeyCode>>,
     player: Single<(&mut Transform, &mut Velocity), With<Player>>,
+    mut next_state: ResMut<NextState<GameState>>,
 ){
     let (mut transform, mut velocity) = player.into_inner();
 
     let mut dir = Vec2::ZERO;
 
+    if input.just_pressed(KeyCode::KeyT){
+        next_state.set(GameState::EndCredits);
+    }
     if input.pressed(KeyCode::KeyA){
         dir.x -= 1.;
     }
