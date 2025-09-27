@@ -1,25 +1,12 @@
-mod endcredits;
-mod motion;
-use motion::motionStruct;
+use bevy::{prelude::*, window::PresentMode};
 
-const TITLE: &str = "bv05 Better Motion";
-const WIN_W: f32 = 1280.;
-const WIN_H: f32 = 720.;
-const PLAYER_SIZE: f32 = 32.;
-const PLAYER_SPEED: f32 = 300.;
-const ACCEL_RATE: f32 = 3600.;
+mod endcredits;
+
 
 fn main() {
-    App::new()
-        .insert_resource(ClearColor(Color::Srgba(Srgba::gray(0.25))))
-        .add_plugins(DefaultPlugins)
-        .add_plugins(BetterMotionPlugin::new(
-            WIN_W,
-            WIN_H,
-            PLAYER_SIZE,
-            PLAYER_SPEED,
-            ACCEL_RATE,
-            "player sprite.png", // <-- path to your sprite file in assets/
-        ))
-        .run();
+    endcredits::run_slideshow();
+}
+
+fn log_state_change(state: Res<State<GameState>>) {
+    info!("Just moved to {:?}!", state.get());
 }
