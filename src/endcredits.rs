@@ -39,14 +39,14 @@ impl Plugin for EndCreditPlugin{
 fn load_credits(mut commands: Commands, asset_server: Res<AssetServer>) {
     
     let handles = vec![
-        asset_server.load("vlad.png"),
-        asset_server.load("ryan.png"),
-        asset_server.load("daniel.png"),
-        asset_server.load("sam.png"),
-        asset_server.load("will.png"),
-        asset_server.load("lucasloepke.png"),
-        asset_server.load("aidan.png"),
-        asset_server.load("ansel.png"),
+        asset_server.load("credits/vlad.png"),
+        asset_server.load("credits/ryan.png"),
+        asset_server.load("credits/daniel.png"),
+        asset_server.load("credits/sam.png"),
+        asset_server.load("credits/will.png"),
+        asset_server.load("credits/lucas.png"),
+        asset_server.load("credits/aidan.png"),
+        asset_server.load("credits/ansel.png"),
 
         ];
 

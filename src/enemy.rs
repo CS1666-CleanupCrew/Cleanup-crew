@@ -6,7 +6,8 @@ pub const ENEMY_ACCEL: f32 = 1800.;
 static mut ENEMY_START_POS: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
 
 use crate::{
-    GameState
+    GameState,
+    Z_ENTITIES
 };
 
 #[derive(Component)]
@@ -78,8 +79,9 @@ pub fn spawn_enemy(
             enemy_sheet.0.clone()
         ),
         Transform {
-            translation: unsafe{ENEMY_START_POS},
-            scale: Vec3::splat(1.0),
+            translation: Vec3::new(unsafe { ENEMY_START_POS.x },
+                                 unsafe { ENEMY_START_POS.y },
+                                  Z_ENTITIES),
             ..default()
         },
         Enemy,
