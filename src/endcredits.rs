@@ -1,8 +1,8 @@
-use bevy::{prelude::*, asset::LoadState};
+use bevy::{asset::LoadState, prelude::*};
 
 use crate::{
-    GameState
-}
+    GameState,
+};
 
 #[derive(Component)]
 struct SlideTimer(Timer);
@@ -23,15 +23,17 @@ impl Plugin for EndCreditPlugin{
     fn build(&self, app: &mut App){
         app
             .add_systems(Startup, setup)
-            .add_systems(OnEnter(GameState::EndCredits))
+            .add_systems(OnEnter(GameState::EndCredits), check_assets_loaded)
+            .add_systems(OnEnter(GameState::EndCredits), start_slide)
+            .add_systems(Update, update_slideshow);
     }
 }
 
-
+/**
+ * Loads in all the images when the app runs
+ * Inserts them into a struct called SlideshowState
+ */
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    
-    commands.spawn(Camera2dBundle::default());
-
     
     let handles = vec![
         asset_server.load("vlad.png"),
@@ -47,46 +49,33 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     println!("Loading images from assets folder...");
     println!("Loaded {} image handles", handles.len());
 
-    
     commands.insert_resource(SlideshowState {
         current_index: 0,
         image_handles: handles,
         started: false,
     });
+
 }
 
+/**
+ * Before starting the slideshow, check to ensure all assets were loaded
+ * Loads them if not
+ * Not sure how important this is but Vlad had it so imma trust
+ */
 fn check_assets_loaded(
-    mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut slideshow_state: ResMut<SlideshowState>,
+    slideshow_state: ResMut<SlideshowState>,
 ) {
     if slideshow_state.started {
         return;
     }
 
-    
     let all_loaded = slideshow_state.image_handles.iter().all(|handle| {
         matches!(asset_server.load_state(handle.id()), LoadState::Loaded)
     });
 
-    if all_loaded && !slideshow_state.image_handles.is_empty() {
-        println!("All assets loaded, starting slideshow");
-        slideshow_state.started = true;
+    if !all_loaded && slideshow_state.image_handles.is_empty() {
 
-        
-        commands.spawn((
-            SpriteBundle {
-                texture: slideshow_state.image_handles[0].clone(),
-                transform: Transform::default(),
-                ..default()
-            },
-            CurrentSlide,
-            SlideTimer(Timer::from_seconds(2.0, TimerMode::Repeating)),
-        ));
-
-        println!("Spawning first image");
-    } else {
-    
         for handle in &slideshow_state.image_handles {
             match asset_server.load_state(handle.id()) {
                 LoadState::Failed => {
@@ -101,14 +90,41 @@ fn check_assets_loaded(
     }
 }
 
+/**
+ * Once GameState enters EndCredits, start_slide is called
+ * This spawns in the first image
+ * This creates a repeating timer
+ */
+fn start_slide(
+    mut commands: Commands,
+    slideshow_state: ResMut<SlideshowState>,
+){
+
+    commands.spawn((
+        SpriteBundle {
+            texture: slideshow_state.image_handles[0].clone(),
+            transform: Transform::default(),
+            ..default()
+        },
+        CurrentSlide,
+        SlideTimer(Timer::from_seconds(2.0, TimerMode::Repeating)),
+    ));
+}
+
+/**
+ * Loops through each of the 8 credit images every 2 seconds
+ * Not too sure how useful the slideshow_state boolean so I commented it out
+ */
 fn update_slideshow(
     time: Res<Time>,
     mut slideshow_state: ResMut<SlideshowState>,
     mut slide_query: Query<(&mut SlideTimer, &mut Handle<Image>), With<CurrentSlide>>,
 ) {
-    if !slideshow_state.started {
-        return;
-    }
+    // slideshow_state.started = true;
+
+    // if !slideshow_state.started {
+    //     return;
+    // }
 
     for (mut timer, mut texture_handle) in slide_query.iter_mut() {
         timer.0.tick(time.delta());

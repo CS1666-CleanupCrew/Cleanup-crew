@@ -14,16 +14,16 @@ const WIN_H: f32 = 720.;
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum GameState{
     #[default]
-    Playing,
     EndCredits,
 }
+
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: TITLE.into(),
-                resolution: (1280., 720.).into(),
+                resolution: (WIN_W, WIN_H).into(),
                 present_mode: PresentMode::AutoVsync,
                 ..default()
             }),
@@ -31,12 +31,20 @@ fn main() {
         }))
         
         .add_systems(Startup, setup_camera)
+        .add_systems(OnEnter(GameState::EndCredits), log_state_change)
 
+
+        .add_plugins((
+            endcredits::EndCreditPlugin,
+        ))
         .init_state::<GameState>()
         .run();
 }
 
 fn setup_camera(mut commands: Commands){
-    commands.spawn(Camera2d);
+    commands.spawn(Camera2dBundle::default());
 }
 
+fn log_state_change(state: Res<State<GameState>>) {
+    info!("Just moved to {:?}!", state.get());
+}
