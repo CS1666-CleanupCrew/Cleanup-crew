@@ -1,6 +1,9 @@
+use crate::collidable::{Collidable, Collider};
 use bevy::{prelude::*, window::PresentMode};
 
+mod collidable;
 mod endcredits;
+mod enemy;
 mod player;
 
 const TITLE: &str = "Cleanup Crew";
@@ -9,25 +12,31 @@ const WIN_H: f32 = 720.;
 
 const PLAYER_SPEED: f32 = 500.;
 const ACCEL_RATE: f32 = 5000.;
-
-const TILE_SIZE: f32 = 100.;
-
+const TILE_SIZE: f32 = 32.;
 const LEVEL_LEN: f32 = 1280.;
+
+pub const Z_FLOOR: f32 = -100.0;
+pub const Z_ENTITIES: f32 = 0.0;
+pub const Z_UI: f32 = 100.0;
+
+#[derive(Component)]
+struct FloorTile;
+#[derive(Component)]
+struct Wall;
 
 /**
  * States is for the different game states
  * PartialEq and Eq are for comparisons: Allows for == and !=
  * Default allows for faster initializing ..default instead of Default::default()
- * 
+ *
  * #\[default] sets the GameState below it as the default state
 */
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum GameState{
+enum GameState {
     #[default]
     Playing,
     EndCredits,
 }
-
 
 fn main() {
     App::new()
@@ -40,25 +49,24 @@ fn main() {
             }),
             ..default()
         }))
-
         //Initial GameState
         .init_state::<GameState>()
-
-        //Calls the plugin 
+        //Calls the plugin
         .add_plugins((
             player::PlayerPlugin,
             endcredits::EndCreditPlugin,
+            enemy::EnemyPlugin,
         ))
-
         .add_systems(Startup, setup_camera)
+        .add_systems(Startup, setup_floor)
+        .add_systems(Startup, setup_walls)
+        .add_systems(Startup, setup_table)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
-
         .run();
 }
 
-
-fn setup_camera(mut commands: Commands){
+fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2d);
 }
 
@@ -116,6 +124,66 @@ fn setup_floor(mut commands: Commands, asset_server: Res<AssetServer>) {
             }
         }
     }
+}
+
+fn setup_walls(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let tile: Handle<Image> = asset_server.load("window.png");
+
+    let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as i32;
+    let map_rows = MAP.len() as i32;
+
+    let map_px_w = map_cols as f32 * TILE_SIZE;
+    let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
+    let y0 = -WIN_H * 0.5 + TILE_SIZE * 0.5;
+    let z_wall = Z_FLOOR + 1.0;
+
+    for row_i in 0..map_rows {
+        for col_i in 0..map_cols {
+            let is_edge_row = row_i == 0 || row_i == map_rows - 1;
+            let is_edge_col = col_i == 0 || col_i == map_cols - 1;
+            if !(is_edge_row || is_edge_col) {
+                continue;
+            }
+
+            let x = x0 + col_i as f32 * TILE_SIZE;
+            let mut y = y0 + row_i as f32 * TILE_SIZE;
+
+            if row_i == map_rows - 1 {
+                y -= TILE_SIZE;
+            }
+
+            commands.spawn((
+                Sprite::from_image(tile.clone()),
+                Transform::from_translation(Vec3::new(x, y, z_wall)),
+                Visibility::default(),
+                Wall,
+                Collidable,
+                Collider {
+                    half_extents: Vec2::splat(TILE_SIZE * 0.5),
+                },
+            ));
+        }
+    }
+}
+
+
+fn setup_table(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let table_tex: Handle<Image> = asset_server.load("table.png");
+
+    let pos = Vec3::new(150.0, 100.0, Z_FLOOR + 1.0);
+
+
+    let mut sprite = Sprite::from_image(table_tex.clone());
+    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+
+    commands.spawn((
+        sprite,
+        Transform::from_translation(pos),
+        Visibility::default(),
+        Collidable,
+        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+        Name::new("Table"),
+    ));
 }
 
 fn log_state_change(state: Res<State<GameState>>) {

@@ -1,9 +1,7 @@
-use bevy::{prelude::*};
+use bevy::prelude::*;
 
-
-use crate::{
-    GameState, ACCEL_RATE, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W
-};
+use crate::collidable::{Collidable, Collider};
+use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 
 #[derive(Component)]
 pub struct Player;
@@ -15,50 +13,38 @@ pub struct Velocity(Vec2);
 pub struct PlayerRes(Handle<Image>);
 
 //Creates an instance of a Velocity
-impl Velocity{
-    fn new() -> Self{
+impl Velocity {
+    fn new() -> Self {
         Self(Vec2::ZERO)
     }
 }
 
 //Allows for vec2.into() instead of Velocity::from(vec2)
-impl From<Vec2> for Velocity{
-    fn from(velocity: Vec2) -> Self{
+impl From<Vec2> for Velocity {
+    fn from(velocity: Vec2) -> Self {
         Self(velocity)
     }
 }
 
 pub struct PlayerPlugin;
-impl Plugin for PlayerPlugin{
-    fn build(&self, app: &mut App){
-        app
-            .add_systems(OnEnter(GameState::Playing), load_player)
+impl Plugin for PlayerPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(OnEnter(GameState::Playing), load_player)
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
-            .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
-            ;
+            .add_systems(Update, move_player.run_if(in_state(GameState::Playing)));
     }
 }
 
-fn load_player(
-    mut commands: Commands, 
-    asset_server: Res<AssetServer>
-){
-    let player: Handle<Image>= asset_server.load("Player_Sprite.png");
+fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let player: Handle<Image> = asset_server.load("Player_Sprite.png");
 
-    commands.insert_resource(PlayerRes(
-        player.clone(),
-    ));
+    commands.insert_resource(PlayerRes(player.clone()));
 }
 
-fn spawn_player(
-    mut commands: Commands,
-    player_sheet: Res<PlayerRes>,
-){
+fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
     commands.spawn((
-        Sprite::from_image(
-            player_sheet.0.clone()
-        ),
-        Transform{
+        Sprite::from_image(player_sheet.0.clone()),
+        Transform {
             translation: Vec3::new(0., 0., 0.),
             scale: Vec3::new(0.1875, 0.1875, 0.1875),
             ..Default::default()
@@ -67,7 +53,6 @@ fn spawn_player(
         Velocity::new(),
     ));
 }
-
 
 /**
  * Single is a query for exactly one entity
@@ -79,24 +64,25 @@ fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     player: Single<(&mut Transform, &mut Velocity), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
-){
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>)>,
+) {
     let (mut transform, mut velocity) = player.into_inner();
 
     let mut dir = Vec2::ZERO;
 
-    if input.just_pressed(KeyCode::KeyT){
+    if input.just_pressed(KeyCode::KeyT) {
         next_state.set(GameState::EndCredits);
     }
-    if input.pressed(KeyCode::KeyA){
+    if input.pressed(KeyCode::KeyA) {
         dir.x -= 1.;
     }
-    if input.pressed(KeyCode::KeyD){
+    if input.pressed(KeyCode::KeyD) {
         dir.x += 1.;
-    }    
-    if input.pressed(KeyCode::KeyW){
+    }
+    if input.pressed(KeyCode::KeyW) {
         dir.y += 1.;
-    }    
-    if input.pressed(KeyCode::KeyS){
+    }
+    if input.pressed(KeyCode::KeyS) {
         dir.y -= 1.;
     }
 
@@ -104,11 +90,11 @@ fn move_player(
     let deltat = time.delta_secs();
     let accel = ACCEL_RATE * deltat;
 
-    ** velocity = if dir.length() > 0.{
+    **velocity = if dir.length() > 0. {
         (**velocity + (dir.normalize_or_zero() * accel)).clamp_length_max(PLAYER_SPEED)
-    } else if velocity.length() > accel{
+    } else if velocity.length() > accel {
         **velocity + (velocity.normalize_or_zero() * -accel)
-    } else{
+    } else {
         Vec2::ZERO
     };
     let change = **velocity * deltat;
@@ -125,5 +111,61 @@ fn move_player(
         900.,
     );
 
-    transform.translation = (transform.translation + change.extend(0.)).clamp(min, max);
+let mut pos = transform.translation;
+let delta = change; // Vec2
+let player_half = Vec2::splat(TILE_SIZE * 0.5);
+
+// ---- X axis ----
+if delta.x != 0.0 {
+    let mut nx = pos.x + delta.x;
+    let px = nx;
+    let py = pos.y;
+
+    for (ct, c) in &colliders {
+        let (cx, cy) = (ct.translation.x, ct.translation.y);
+        if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
+            if delta.x > 0.0 {
+                nx = cx - (player_half.x + c.half_extents.x);
+            } else {
+                nx = cx + (player_half.x + c.half_extents.x);
+            }
+            **velocity = Vec2::new(0.0, velocity.y);
+        }
+    }
+    pos.x = nx;
+}
+
+// ---- Y axis ----
+if delta.y != 0.0 {
+    let mut ny = pos.y + delta.y;
+    let px = pos.x;
+    let py = ny;
+
+    for (ct, c) in &colliders {
+        let (cx, cy) = (ct.translation.x, ct.translation.y);
+        if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
+            if delta.y > 0.0 {
+                ny = cy - (player_half.y + c.half_extents.y);
+            } else {
+                ny = cy + (player_half.y + c.half_extents.y);
+            }
+            **velocity = Vec2::new(velocity.x, 0.0);
+        }
+    }
+    pos.y = ny;
+}
+
+// Apply the resolved position
+transform.translation = pos;
+}
+
+
+//what a lot of games use for collision detection I found
+#[inline]
+fn aabb_overlap(
+    ax: f32, ay: f32, a_half: Vec2,
+    bx: f32, by: f32, b_half: Vec2
+) -> bool {
+    (ax - bx).abs() < (a_half.x + b_half.x) &&
+    (ay - by).abs() < (a_half.y + b_half.y)
 }
