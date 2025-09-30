@@ -46,7 +46,7 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
         Sprite::from_image(player_sheet.0.clone()),
         Transform {
             translation: Vec3::new(0., 0., 0.),
-            scale: Vec3::new(0.1875, 0.1875, 0.1875),
+            scale: Vec3::new(1.2, 1.2, 1.2),
             ..Default::default()
         },
         Player,
