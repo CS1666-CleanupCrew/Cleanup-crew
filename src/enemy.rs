@@ -5,10 +5,9 @@ pub const ENEMY_SPEED: f32 = 200.;
 pub const ENEMY_ACCEL: f32 = 1800.;
 static mut ENEMY_START_POS: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
 
-use crate::{
-    GameState,
-    Z_ENTITIES
-};
+use crate::{GameState, Z_ENTITIES};
+
+const ANIM_TIME: f32 = 0.2;
 
 #[derive(Component)]
 pub struct Enemy;
@@ -18,8 +17,26 @@ pub struct Velocity {
     pub velocity: Vec2,
 }
 
+
+#[derive(Component)]
+pub struct Health(pub f32);
+impl Health {
+    pub fn new(amount: f32) -> Self {
+        Self(amount)
+    }
+}
+
+#[derive(Component, Deref, DerefMut)]
+pub struct AnimationTimer(Timer);
+
+#[derive(Component)]
+pub struct EnemyFrames {
+    handles: Vec<Handle<Image>>,
+    index: usize,
+}
+
 #[derive(Resource)]
-pub struct EnemyRes(Handle<Image>);
+pub struct EnemyRes(Vec<Handle<Image>>);
 
 impl Velocity {
     pub fn new() -> Self {
@@ -30,27 +47,27 @@ impl Velocity {
 }
 
 pub struct EnemyPlugin;
-impl Plugin for EnemyPlugin{
-    fn build(&self, app: &mut App){
+impl Plugin for EnemyPlugin {
+    fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(GameState::Playing), load_enemy)
             .add_systems(OnEnter(GameState::Playing), spawn_enemy.after(load_enemy))
-            // .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
-            ;
+            .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)));
     }
 }
 
-fn load_enemy(
-    mut commands: Commands, 
-    asset_server: Res<AssetServer>
-){
-    let enemy: Handle<Image>= asset_server.load("enemy.png");
+fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Load 3 separate frames
+    let frames: Vec<Handle<Image>> = vec![
+        asset_server.load("chaser_mob_animation1.png"),
+        asset_server.load("chaser_mob_animation2.png"),
+        asset_server.load("chaser_mob_animation3.png"),
+        asset_server.load("chaser_mob_animation2.png"),
+    ];
 
-    commands.insert_resource(EnemyRes(
-        enemy.clone(),
-    ));
+    commands.insert_resource(EnemyRes(frames));
 }
-
 
 // Getter
 pub fn enemy_start_pos() -> Vec3 {
@@ -64,27 +81,51 @@ pub fn set_enemy_start_pos(new_pos: Vec3) {
     }
 }
 
-    
 
-pub fn spawn_enemy(
+//if enemy's hp = 0, then despawn
+fn check_enemy_health(
     mut commands: Commands,
-    enemy_sheet: Res<EnemyRes>,
+    enemy_query: Query<(Entity, &Health), With<Enemy>>,
 ) {
+    for (entity, health) in enemy_query.iter() {
+        if health.0 <= 0.0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
 
-    unsafe {let spawn_pos = ENEMY_START_POS;}
-    
-
+pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
     commands.spawn((
-        Sprite::from_image(
-            enemy_sheet.0.clone()
-        ),
+        Sprite::from_image(enemy_res.0[0].clone()), // start on first frame
         Transform {
-            translation: Vec3::new(unsafe { ENEMY_START_POS.x },
-                                 unsafe { ENEMY_START_POS.y },
-                                  Z_ENTITIES),
+            translation: Vec3::new(
+                unsafe { ENEMY_START_POS.x },
+                unsafe { ENEMY_START_POS.y },
+                Z_ENTITIES,
+            ),
             ..default()
         },
         Enemy,
         Velocity::new(),
+        Health::new(50.0),
+        AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
+        EnemyFrames {
+            handles: enemy_res.0.clone(),
+            index: 0,
+        },
     ));
+}
+
+fn animate_enemy(
+    time: Res<Time>,
+    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames), With<Enemy>>,
+) {
+    for (mut sprite, mut timer, mut frames) in &mut query {
+        timer.tick(time.delta());
+
+        if timer.just_finished() {
+            frames.index = (frames.index + 1) % frames.handles.len();
+            sprite.image = frames.handles[frames.index].clone();
+        }
+    }
 }
