@@ -21,11 +21,21 @@ pub struct Velocity {
 #[derive(Resource)]
 pub struct EnemyRes(Handle<Image>);
 
+#[derive(Component)]
+pub struct Health(pub f32);
+
 impl Velocity {
     pub fn new() -> Self {
         Self {
             velocity: Vec2::ZERO,
         }
+    }
+}
+
+//health variable for the enemy
+impl Health {
+    pub fn new(amount: f32) -> Self {
+        Self(amount)
     }
 }
 
@@ -86,5 +96,7 @@ pub fn spawn_enemy(
         },
         Enemy,
         Velocity::new(),
+        //health is for now also set to 50, we can play with this
+        Health::new(50.0),
     ));
 }

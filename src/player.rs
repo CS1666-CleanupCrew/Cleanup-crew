@@ -14,12 +14,26 @@ pub struct Velocity(Vec2);
 #[derive(Resource)]
 pub struct PlayerRes(Handle<Image>);
 
+
+
+#[derive(Component)]
+pub struct Health(pub f32);
+
+
 //Creates an instance of a Velocity
 impl Velocity{
     fn new() -> Self{
         Self(Vec2::ZERO)
     }
 }
+
+//assigning the health variable to the player
+impl Health {
+    pub fn new(amount: f32) -> Self {
+        Self(amount)
+    }
+}
+
 
 //Allows for vec2.into() instead of Velocity::from(vec2)
 impl From<Vec2> for Velocity{
@@ -65,6 +79,8 @@ fn spawn_player(
         },
         Player,
         Velocity::new(),
+        // by default the health is set to 100.
+        Health::new(100.0),
     ));
 }
 
