@@ -12,10 +12,21 @@ pub struct Velocity(Vec2);
 #[derive(Resource)]
 pub struct PlayerRes(Handle<Image>);
 
+#[derive(Component)]
+pub struct Health(pub f32);
+
 //Creates an instance of a Velocity
 impl Velocity {
     fn new() -> Self {
         Self(Vec2::ZERO)
+    }
+}
+
+
+//creates a variable of health
+impl Health {
+    pub fn new(amount: f32) -> Self {
+        Self(amount)
     }
 }
 
@@ -51,6 +62,7 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
         },
         Player,
         Velocity::new(),
+        Health::new(100.0),
     ));
 }
 
