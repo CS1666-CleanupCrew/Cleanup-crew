@@ -102,7 +102,7 @@ fn move_player(
     let deltat = time.delta_secs();
     let accel = ACCEL_RATE * deltat;
 
-    ** velocity = if dir.length() > 0. {
+    **velocity = if dir.length() > 0. {
         (**velocity + (dir.normalize_or_zero() * accel)).clamp_length_max(PLAYER_SPEED)
     } else if velocity.length() > accel {
         **velocity + (velocity.normalize_or_zero() * -accel)
