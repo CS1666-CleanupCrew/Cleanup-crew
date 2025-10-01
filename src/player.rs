@@ -80,10 +80,6 @@ fn move_player(
 ) {
     let (mut transform, mut velocity) = player.into_inner();
 
-    let mut dash = 1.;
-
-    let mut inc_spd = 1.;
-
     let mut dir = Vec2::ZERO;
 
     if input.just_pressed(KeyCode::KeyT) {
@@ -101,17 +97,13 @@ fn move_player(
     if input.pressed(KeyCode::KeyS) {
         dir.y -= 1.;
     }
-    if input.just_pressed(KeyCode::Space){
-        dash = 100.;
-        inc_spd = 5.;
-    }
 
     //Time based on frame to ensure that movement is the same no matter the fps
     let deltat = time.delta_secs();
-    let accel = ACCEL_RATE * deltat * dash;
+    let accel = ACCEL_RATE * deltat;
 
     ** velocity = if dir.length() > 0.{
-        (**velocity + (dir.normalize_or_zero() * accel)).clamp_length_max(PLAYER_SPEED * inc_spd)
+        (**velocity + (dir.normalize_or_zero() * accel)).clamp_length_max(PLAYER_SPEED)
     } else if velocity.length() > accel{
         **velocity + (velocity.normalize_or_zero() * -accel)
     } else {
