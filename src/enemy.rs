@@ -17,6 +17,15 @@ pub struct Velocity {
     pub velocity: Vec2,
 }
 
+
+#[derive(Component)]
+pub struct Health(pub f32);
+impl Health {
+    pub fn new(amount: f32) -> Self {
+        Self(amount)
+    }
+}
+
 #[derive(Component, Deref, DerefMut)]
 pub struct AnimationTimer(Timer);
 
@@ -43,7 +52,8 @@ impl Plugin for EnemyPlugin {
         app
             .add_systems(OnEnter(GameState::Playing), load_enemy)
             .add_systems(OnEnter(GameState::Playing), spawn_enemy.after(load_enemy))
-            .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)));
+            .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -71,6 +81,19 @@ pub fn set_enemy_start_pos(new_pos: Vec3) {
     }
 }
 
+
+//if enemy's hp = 0, then despawn
+fn check_enemy_health(
+    mut commands: Commands,
+    enemy_query: Query<(Entity, &Health), With<Enemy>>,
+) {
+    for (entity, health) in enemy_query.iter() {
+        if health.0 <= 0.0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
     commands.spawn((
         Sprite::from_image(enemy_res.0[0].clone()), // start on first frame
@@ -84,6 +107,7 @@ pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
         },
         Enemy,
         Velocity::new(),
+        Health::new(50.0),
         AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         EnemyFrames {
             handles: enemy_res.0.clone(),
