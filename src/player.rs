@@ -10,7 +10,12 @@ pub struct Player;
 pub struct Velocity(Vec2);
 
 #[derive(Resource)]
-pub struct PlayerRes(Handle<Image>);
+pub struct PlayerRes{
+    up: Handle<Image>,
+    right: Handle<Image>,
+    down: Handle<Image>,
+    left: Handle<Image>,
+}
 
 #[derive(Component)]
 pub struct Health(pub f32);
@@ -42,22 +47,28 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Playing), load_player)
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
-            .add_systems(Update, move_player.run_if(in_state(GameState::Playing)));
+            .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)));
+
     }
 }
 
 fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let player: Handle<Image> = asset_server.load("Player_Sprite.png");
-
-    commands.insert_resource(PlayerRes(player.clone()));
+    let player = PlayerRes {
+        up: asset_server.load("Player_Sprite_Up.png"),
+        right: asset_server.load("Player_Sprite_Right.png"),
+        down: asset_server.load("Player_Sprite_Down.png"),
+        left: asset_server.load("Player_Sprite_Left.png"),
+    };
+    commands.insert_resource(player);
 }
 
 fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
     commands.spawn((
-        Sprite::from_image(player_sheet.0.clone()),
+        Sprite::from_image(player_sheet.down.clone()),
         Transform {
             translation: Vec3::new(0., 0., 0.),
-            scale: Vec3::new(1.2, 1.2, 1.2),
+            scale: Vec3::new(1.0, 1.0, 1.0),
             ..Default::default()
         },
         Player,
@@ -180,4 +191,32 @@ fn aabb_overlap(
 ) -> bool {
     (ax - bx).abs() < (a_half.x + b_half.x) &&
     (ay - by).abs() < (a_half.y + b_half.y)
+}
+
+
+/**
+ * Updates player sprite while changing directions
+ * Eventually use a sprite sheet for all of the animation and direction changes
+ */
+fn update_player_sprite(
+    mut query: Query<&mut Sprite, With<Player>>,
+    player_res: Res<PlayerRes>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
+    for mut sprite in &mut query {
+        let new_handle = if input.pressed(KeyCode::KeyW) {
+            &player_res.up
+        } else if input.pressed(KeyCode::KeyS) {
+            &player_res.down
+        } else if input.pressed(KeyCode::KeyA) {
+            &player_res.left
+        } else if input.pressed(KeyCode::KeyD) {
+            &player_res.right
+        } else {
+            continue;
+        };
+
+        sprite.custom_size = None;
+        sprite.image = new_handle.clone(); // now works
+    }
 }
