@@ -61,9 +61,7 @@ fn main() {
             enemy::EnemyPlugin,
         ))
         .add_systems(Startup, setup_camera)
-        .add_systems(Startup, setup_floor)
-        .add_systems(Startup, setup_walls)
-        .add_systems(Startup, setup_table)
+        .add_systems(Startup, setup_tilemap)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
         .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
@@ -79,120 +77,119 @@ fn setup_camera(mut commands: Commands){
     ));
 }
 
-// One char = one 32×32 tile. '#' = draw tile, '.' = empty.
+// One char = one 32×32 tile.
+// Legend:
+//  '#' = floor tile
+//  '.' = empty
+//  'T' = table (floor renders underneath)
+//  'W' = wall (floor renders underneath + collidable wall sprite)
 // 40 cols (1280/32), 23 rows (720/32 = 22.5))
-const MAP: &[&str] = &[
-    "########################################", // bottom of screen
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "########################################",
-    "################################.#.#.###",
-    "########################################",
-    "########################################",
-    "########################################", // top of screen
+const MAP: &[&str] = &[ // top of screen
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "WWWWWWWWWWWWWWWWWWW###WWWWWWWWWWWWWWWWWW",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "W#####T########################.#.#.###W",
+    "W######################################W",
+    "W######################################W",
+    "W##############################T#######W",
+    "W######################################W",
+    "W######T###############################W",
+    "WWWWWWWWWWWWWWWWWWW###WWWWWWWWWWWWWWWWWW",
+    "W######################################W",
+    "W######################################W",
+    "W######################################W",
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
 ];
 
-fn setup_floor(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let tile: Handle<Image> = asset_server.load("floortile.png");
+/// Unified loader: draws floor and spawns items/walls from MAP symbols.
+///   '#' => floor
+///   'T' => table (spawns a floor tile under it + a collidable table sprite)
+///   'W' => wall  (spawns a floor tile under it + a collidable wall sprite)
+fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let floor_tex: Handle<Image> = asset_server.load("floortile.png");
+    let table_tex: Handle<Image> = asset_server.load("table.png");
+    let wall_tex: Handle<Image>  = asset_server.load("window.png");
 
     let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = MAP.len() as f32;
 
-    // Anchor the map at the bottom-center of the window
+    // Center the map in world space (origin = middle of map)
     let map_px_w = map_cols * TILE_SIZE;
     let map_px_h = map_rows * TILE_SIZE;
-    let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5; // center horizontally
-    let y0 = -WIN_H * 0.5 + TILE_SIZE * 0.5; // sit on bottom
+    let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
+    let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
 
     for (row_i, row) in MAP.iter().enumerate() {
-        for (col_i, ch) in row.chars().enumerate() {
-            if ch == '#' {
-                let x = x0 + col_i as f32 * TILE_SIZE;
-                let y = y0 + row_i as f32 * TILE_SIZE;
+    for (col_i, ch) in row.chars().enumerate() {
+        let x = x0 + col_i as f32 * TILE_SIZE;
+        let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE; // invert the vertical draw order
+
+            // Floor under '#', 'T', and 'W' so the world stays visually continuous
+            if ch == '#' || ch == 'T' || ch == 'W' {
                 commands.spawn((
-                    Sprite::from_image(tile.clone()),
+                    Sprite::from_image(floor_tex.clone()),
                     Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
                     FloorTile,
                 ));
             }
+
+            // Items and walls
+            match ch {
+                'T' => {
+                    // place a 32x32 table with a collider
+                    let mut sprite = Sprite::from_image(table_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Visibility::default(),
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Table"),
+                    ));
+                }
+                'W' => {
+                    // place a 32x32 wall tile with a collider
+                    let mut sprite = Sprite::from_image(wall_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Visibility::default(),
+                        Wall,
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Wall"),
+                    ));
+                }
+                _ => {}
+            }
         }
     }
-}
-
-fn setup_walls(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let tile: Handle<Image> = asset_server.load("window.png");
-
-    let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as i32;
-    let map_rows = MAP.len() as i32;
-
-    let map_px_w = map_cols as f32 * TILE_SIZE;
-    let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
-    let y0 = -WIN_H * 0.5 + TILE_SIZE * 0.5;
-    let z_wall = Z_FLOOR + 1.0;
-
-    for row_i in 0..map_rows {
-        for col_i in 0..map_cols {
-            let is_edge_row = row_i == 0 || row_i == map_rows - 1;
-            let is_edge_col = col_i == 0 || col_i == map_cols - 1;
-            if !(is_edge_row || is_edge_col) {
-                continue;
-            }
-
-            let x = x0 + col_i as f32 * TILE_SIZE;
-            let mut y = y0 + row_i as f32 * TILE_SIZE;
-
-            if row_i == map_rows - 1 {
-                y -= TILE_SIZE;
-            }
-
-            commands.spawn((
-                Sprite::from_image(tile.clone()),
-                Transform::from_translation(Vec3::new(x, y, z_wall)),
-                Visibility::default(),
-                Wall,
-                Collidable,
-                Collider {
-                    half_extents: Vec2::splat(TILE_SIZE * 0.5),
-                },
-            ));
-        }
-    }
-}
-
-
-fn setup_table(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let table_tex: Handle<Image> = asset_server.load("table.png");
-
-    let pos = Vec3::new(150.0, 100.0, Z_FLOOR + 1.0);
-
-
-    let mut sprite = Sprite::from_image(table_tex.clone());
-    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
-
-    commands.spawn((
-        sprite,
-        Transform::from_translation(pos),
-        Visibility::default(),
-        Collidable,
-        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-        Name::new("Table"),
-    ));
 }
 
 fn log_state_change(state: Res<State<GameState>>) {
