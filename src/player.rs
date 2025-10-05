@@ -70,6 +70,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_bullet.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
             ;
     }
@@ -100,6 +101,10 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
         Player,
         Velocity::new(),
         Health::new(100.0),
+        Collidable,
+        Collider {
+            half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0),
+        },
     ));
 }
 
@@ -120,7 +125,7 @@ fn move_player(
 ) {
     let (mut transform, mut velocity) = player.into_inner();
 
-    let mut dir = Vec2::ZERO;
+    let mut dir: Vec2 = Vec2::ZERO;
 
     if input.just_pressed(KeyCode::KeyT) {
         next_state.set(GameState::EndCredits);
@@ -237,6 +242,7 @@ fn aabb_overlap(
  * Updates player sprite while changing directions
  * Eventually use a sprite sheet for all of the animation and direction changes
  */
+
 fn update_player_sprite(
     mut query: Query<&mut Sprite, With<Player>>,
     player_res: Res<PlayerRes>,
@@ -302,7 +308,11 @@ fn spawn_bullet(
         AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
         AnimationFrameCount(3),
         Velocity::new_vec(dir.x, dir.y),
-        Bullet, 
+        Bullet,
+        Collidable,
+        Collider {
+            half_extents: Vec2::splat(5.0), // adjust to bullet size
+        },
     ));
 }
 
@@ -314,6 +324,30 @@ fn move_bullet(
     for (mut transform, b) in &mut bullet {
         transform.translation.x += b.x * BULLET_SPD * time.delta_secs();
         transform.translation.y += b.y * BULLET_SPD * time.delta_secs();
+    }
+}
+
+fn bullet_collision(
+    mut commands: Commands,
+    bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>)>,
+) {
+    for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
+        let bx = bullet_transform.translation.x;
+        let by = bullet_transform.translation.y;
+        let b_half = bullet_collider.half_extents;
+
+        // Check collision with all collidable entities
+        for (collider_transform, collider) in &colliders {
+            let cx = collider_transform.translation.x;
+            let cy = collider_transform.translation.y;
+            let c_half = collider.half_extents;
+
+            if aabb_overlap(bx, by, b_half, cx, cy, c_half) {
+                commands.entity(bullet_entity).despawn();
+                break;
+            }
+        }
     }
 }
 
