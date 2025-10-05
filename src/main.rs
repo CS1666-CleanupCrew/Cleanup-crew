@@ -5,7 +5,6 @@ mod collidable;
 mod endcredits;
 mod enemy;
 mod player;
-mod gun;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
