@@ -1,4 +1,5 @@
 use crate::collidable::{Collidable, Collider};
+use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
 
 mod collidable;
@@ -26,6 +27,17 @@ struct MainCamera;
 struct FloorTile;
 #[derive(Component)]
 struct Wall;
+
+#[derive(Component)]
+struct HealthDisplay;
+
+#[derive(Component)]
+struct Damage {
+    amount: f32,
+}
+
+#[derive(Resource)]
+struct DamageCooldown(Timer);
 
 /**
  * States is for the different game states
@@ -64,15 +76,22 @@ fn main() {
         .add_systems(Startup, setup_tilemap)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
-        .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
+        .add_systems(Startup, setup_ui_health)
+        .add_systems(
+            Update,
+            update_ui_health_text.run_if(in_state(GameState::Playing)),
+        )
+        .add_systems(
+            Update,
+            damage_on_collision.run_if(in_state(GameState::Playing)),
+        )
+        // .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
+        .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
         .run();
 }
 
-fn setup_camera(mut commands: Commands){
-    commands.spawn((
-        Camera2d,
-        MainCamera,
-    ));
+fn setup_camera(mut commands: Commands) {
+    commands.spawn((Camera2d, MainCamera));
 }
 
 // One char = one 32×32 tile.
@@ -82,7 +101,8 @@ fn setup_camera(mut commands: Commands){
 //  'T' = table (floor renders underneath)
 //  'W' = wall (floor renders underneath + collidable wall sprite)
 // 40 cols (1280/32), 23 rows (720/32 = 22.5))
-const MAP: &[&str] = &[ // top of screen
+const MAP: &[&str] = &[
+    // top of screen
     "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
     "W######################################W",
     "W######################################W",
@@ -130,7 +150,7 @@ const MAP: &[&str] = &[ // top of screen
 fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
     let floor_tex: Handle<Image> = asset_server.load("floortile.png");
     let table_tex: Handle<Image> = asset_server.load("table.png");
-    let wall_tex: Handle<Image>  = asset_server.load("window.png");
+    let wall_tex: Handle<Image> = asset_server.load("window.png");
 
     let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = MAP.len() as f32;
@@ -142,9 +162,9 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
 
     for (row_i, row) in MAP.iter().enumerate() {
-    for (col_i, ch) in row.chars().enumerate() {
-        let x = x0 + col_i as f32 * TILE_SIZE;
-        let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE; // invert the vertical draw order
+        for (col_i, ch) in row.chars().enumerate() {
+            let x = x0 + col_i as f32 * TILE_SIZE;
+            let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE; // invert the vertical draw order
 
             // Floor under '#', 'T', and 'W' so the world stays visually continuous
             if ch == '#' || ch == 'T' || ch == 'W' {
@@ -158,7 +178,6 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
             // Items and walls
             match ch {
                 'T' => {
-                    // place a 32x32 table with a collider
                     let mut sprite = Sprite::from_image(table_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
@@ -166,7 +185,10 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
                         Visibility::default(),
                         Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Collider {
+                            half_extents: Vec2::splat(TILE_SIZE * 0.5),
+                        },
+                        Damage { amount: 10.0 },
                         Name::new("Table"),
                     ));
                 }
@@ -180,11 +202,73 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Visibility::default(),
                         Wall,
                         Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Collider {
+                            half_extents: Vec2::splat(TILE_SIZE * 0.5),
+                        },
                         Name::new("Wall"),
                     ));
                 }
                 _ => {}
+            }
+        }
+    }
+}
+
+fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font: Handle<Font> = asset_server.load("fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf");
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(12.0),
+            top: Val::Px(12.0),
+            ..default()
+        },
+        Text::new("HP: 100"),
+        TextFont {
+            font,
+            font_size: 24.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 0.0, 0.0)),
+        ZIndex(10),
+        HealthDisplay,
+    ));
+}
+
+fn update_ui_health_text(
+    player_q: Query<&Health, With<Player>>,
+    mut text_q: Query<&mut Text, With<HealthDisplay>>,
+) {
+    if let (Ok(health), Ok(mut text)) = (player_q.single(), text_q.single_mut()) {
+        *text = Text::new(format!("HP: {}", health.0.round() as i32));
+    }
+}
+
+fn damage_on_collision(
+    time: Res<Time>,
+    mut cooldown: ResMut<DamageCooldown>,
+    mut player_q: Query<(&mut Health, &Transform), With<Player>>,
+    damaging_q: Query<(&Transform, &Collider, &Damage), With<Collidable>>,
+) {
+    cooldown.0.tick(time.delta());
+
+    if let Ok((mut health, p_tf)) = player_q.get_single_mut() {
+        if !cooldown.0.finished() { return; }
+
+        let player_half = Vec2::splat(TILE_SIZE * 0.5);
+        let px = p_tf.translation.x;
+        let py = p_tf.translation.y;
+
+        for (tf, col, dmg) in &damaging_q {
+            let (cx, cy) = (tf.translation.x, tf.translation.y);
+            let overlap_x = (px - cx).abs() <= (player_half.x + col.half_extents.x);
+            let overlap_y = (py - cy).abs() <= (player_half.y + col.half_extents.y);
+
+            if overlap_x && overlap_y {
+                health.0 -= dmg.amount;
+                info!(" Player took {} damage! HP now = {}", dmg.amount, health.0);
+                cooldown.0.reset();
+                break;
             }
         }
     }
