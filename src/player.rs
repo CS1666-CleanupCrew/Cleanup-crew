@@ -94,7 +94,7 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
         Sprite::from_image(player_sheet.down.clone()),
         Transform {
             translation: Vec3::new(0., 0., 0.),
-            scale: Vec3::new(0.05, 0.05, 0.05),
+            scale: Vec3::new(0.04, 0.04, 0.04),
             ..Default::default()
         },
         Player,
@@ -175,7 +175,7 @@ fn move_player(
 
     let mut pos = transform.translation;
     let delta = change; // Vec2
-    let player_half = Vec2::splat(TILE_SIZE * 0.5);
+    let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
 
     // ---- X axis ----
     if delta.x != 0.0 {
