@@ -20,9 +20,6 @@ pub const Z_ENTITIES: f32 = 0.0;
 pub const Z_UI: f32 = 100.0;
 
 #[derive(Component)]
-struct MainCamera;
-
-#[derive(Component)]
 struct FloorTile;
 #[derive(Component)]
 struct Wall;
@@ -64,17 +61,11 @@ fn main() {
         .add_systems(Startup, setup_tilemap)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
-        .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
-
         .run();
 }
 
-
-fn setup_camera(mut commands: Commands){
-    commands.spawn((
-        Camera2d,
-        MainCamera,
-    ));
+fn setup_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
 }
 
 // One char = one 32×32 tile.
@@ -194,39 +185,4 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn log_state_change(state: Res<State<GameState>>) {
     info!("Just moved to {:?}!", state.get());
-}
-
-// If you have a problem or a question about this code, talk to vlad. 
-fn follow_player(
-    //these functions are provided directly from bevy
-    //finds all entities that are able to transform and are made of the player component
-    player_query: Query<&Transform, (With<player::Player>, Without<MainCamera>)>,
-    mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<player::Player>)>,
-) {
-    //players current position. 
-    if let Ok(player_transform) = player_query.get_single() {
-
-        
-        //This will error out if we would like to have several cameras, this makes the camera mutable
-        if let Ok(mut camera_transform) = camera_query.get_single_mut() {
-
-
-
-            //level bounds  calculation given 40x23
-            let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as f32;
-            let map_rows = MAP.len() as f32;
-            let level_width = map_cols * TILE_SIZE;
-            let level_height = map_rows * TILE_SIZE;
-            //these are the bounds for the camera, but it will not move horizontally because we have an exact match between the window and tile width
-            let max_x = (level_width - WIN_W) * 0.5;
-            let min_x = -(level_width - WIN_W) * 0.5;
-            let max_y = (level_height - WIN_H) * 0.5;
-            let min_y = -(level_height - WIN_H) * 0.5;
-            //camera following the player given the bounds
-            let target_x = player_transform.translation.x.clamp(min_x, max_x);
-            let target_y = player_transform.translation.y.clamp(min_y, max_y);
-            camera_transform.translation.x = target_x;
-            camera_transform.translation.y = target_y;
-        }
-    }
 }
