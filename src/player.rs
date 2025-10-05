@@ -37,6 +37,17 @@ pub struct AnimationTimer(Timer);
 #[derive(Component, Deref, DerefMut)]
 pub struct AnimationFrameCount(usize);
 
+#[derive(Component)]
+pub struct Facing(pub FacingDirection);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FacingDirection {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
 //Creates an instance of a Velocity
 impl Velocity {
     fn new() -> Self {
@@ -71,7 +82,35 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_bullet.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
+            .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
             ;
+    }
+}
+
+/**
+ * This handles bullet enemy collision
+ * 
+ * Right now the enemy will typically die despite having a health
+ * of 50 and the bullet dealing 25 damage. This probably is happening
+ * because this detection is happening every frame. 
+*/
+fn bullet_hits_enemy(
+    mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
+    bullet_query: Query<&Transform, With<Bullet>>,
+) {
+    let bullet_half = Vec2::splat(8.0);
+    let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+    for bullet_tf in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        for (enemy_tf, mut health) in &mut enemy_query {
+            let enemy_pos = enemy_tf.translation;
+            if aabb_overlap(
+                bullet_pos.x, bullet_pos.y, bullet_half,
+                enemy_pos.x, enemy_pos.y, enemy_half,
+            ) {
+                health.0 -= 25.0;
+            }
+        }
     }
 }
 
@@ -100,6 +139,7 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
         Player,
         Velocity::new(),
         Health::new(100.0),
+        Facing(FacingDirection::Down),
     ));
 }
 
@@ -111,14 +151,14 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
 fn move_player(
     time: Res<Time>,
     input: Res<ButtonInput<KeyCode>>,
-    player: Single<(&mut Transform, &mut Velocity), With<Player>>,
+    player: Single<(&mut Transform, &mut Velocity, &mut Facing), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
     colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>)>,
     commands: Commands,
     bullet_animate: Res<BulletRes>,
     mut shoot_timer: ResMut<ShootTimer>,
 ) {
-    let (mut transform, mut velocity) = player.into_inner();
+    let (mut transform, mut velocity, mut facing) = player.into_inner();
 
     let mut dir = Vec2::ZERO;
 
@@ -127,23 +167,33 @@ fn move_player(
     }
     if input.pressed(KeyCode::KeyA) {
         dir.x -= 1.;
+        facing.0 = FacingDirection::Left;
     }
     if input.pressed(KeyCode::KeyD) {
         dir.x += 1.;
+        facing.0 = FacingDirection::Right;
     }
     if input.pressed(KeyCode::KeyW) {
         dir.y += 1.;
+        facing.0 = FacingDirection::Up;
     }
     if input.pressed(KeyCode::KeyS) {
         dir.y -= 1.;
+        facing.0 = FacingDirection::Down;
     }
 
-    if input.pressed(KeyCode::Space) && shoot_timer.0.tick(time.delta()).finished(){
+    if input.pressed(KeyCode::Space) && shoot_timer.0.tick(time.delta()).finished() {
+        let bullet_dir = match facing.0 {
+            FacingDirection::Up => Vec2::new(0.0, 1.0),
+            FacingDirection::Down => Vec2::new(0.0, -1.0),
+            FacingDirection::Left => Vec2::new(-1.0, 0.0),
+            FacingDirection::Right => Vec2::new(1.0, 0.0),
+        };
         spawn_bullet(
             commands,
             bullet_animate,
             Vec2 { x: transform.translation.x, y: transform.translation.y },
-            Vec2 { x: dir.x, y: dir.y },
+            bullet_dir,
         );
         shoot_timer.0.reset();
     }
