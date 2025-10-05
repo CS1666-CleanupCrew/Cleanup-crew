@@ -118,7 +118,7 @@ fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     player: Single<(&mut Transform, &mut Velocity), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>)>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>)>,
     commands: Commands,
     bullet_animate: Res<BulletRes>,
     mut shoot_timer: ResMut<ShootTimer>,
