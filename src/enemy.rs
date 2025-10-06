@@ -87,7 +87,6 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
         hit_frames,
     });
 
-    commands.insert_resource(EnemyRes(frames));
 }
 
 // Getter
@@ -215,5 +214,6 @@ fn move_enemy(
         }
     }
 }
+
 
 
