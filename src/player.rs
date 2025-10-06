@@ -1,6 +1,7 @@
 use bevy::{prelude::*};
 
 use crate::collidable::{Collidable, Collider};
+use crate::table;
 use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 
 const BULLET_SPD: f32 = 500.;
@@ -84,6 +85,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
             .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
             ;
     }
 }
@@ -110,6 +112,34 @@ fn bullet_hits_enemy(
                 enemy_pos.x, enemy_pos.y, enemy_half,
             ) {
                 health.0 -= 25.0;
+            }
+        }
+    }
+}
+
+fn bullet_hits_table(
+    mut commands: Commands,
+    mut table_query: Query<(&Transform, &mut table::Health), With<table::Table>>,
+    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+) {
+    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
+    let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
+
+    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        for (table_tf, mut health) in &mut table_query {
+            let table_pos = table_tf.translation;
+            if aabb_overlap(
+                bullet_pos.x,
+                bullet_pos.y,
+                bullet_half,
+                table_pos.x,
+                table_pos.y,
+                table_half,
+            ) {
+                health.0 -= 25.0; // Deal 25 damage
+                commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                continue 'bullet_loop; // Move to the next bullet
             }
         }
     }
@@ -380,7 +410,7 @@ fn move_bullet(
 fn bullet_collision(
     mut commands: Commands,
     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>)>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<crate::enemy::Enemy>, Without<table::Table>,)>,
 ) {
     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
         let bx = bullet_transform.translation.x;
@@ -422,3 +452,4 @@ fn animate_bullet(
         }
     }
 }
+
