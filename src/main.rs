@@ -2,11 +2,11 @@ use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
 
-mod collidable;
-mod endcredits;
-mod enemy;
-mod player;
-mod table;
+pub mod collidable;
+pub mod endcredits;
+pub mod enemy;
+pub mod player;
+pub mod table;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
