@@ -6,6 +6,7 @@ mod collidable;
 mod endcredits;
 mod enemy;
 mod player;
+mod table;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -71,6 +72,7 @@ fn main() {
             player::PlayerPlugin,
             endcredits::EndCreditPlugin,
             enemy::EnemyPlugin,
+            table::TablePlugin,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(Startup, setup_tilemap)
@@ -85,7 +87,7 @@ fn main() {
             Update,
             damage_on_collision.run_if(in_state(GameState::Playing)),
         )
-        // .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
+         .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
         .run();
 }
@@ -179,17 +181,20 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
             match ch {
                 'T' => {
                     let mut sprite = Sprite::from_image(table_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE*2.0));
                     commands.spawn((
                         sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 2.0)),
                         Visibility::default(),
                         Collidable,
                         Collider {
-                            half_extents: Vec2::splat(TILE_SIZE * 0.5),
+                            half_extents: Vec2::splat(TILE_SIZE * 1.0),
                         },
                         Damage { amount: 10.0 },
                         Name::new("Table"),
+                        table::Table,
+                        table::Health(50.0),
+                        table::TableState::Intact,
                     ));
                 }
                 'W' => {
