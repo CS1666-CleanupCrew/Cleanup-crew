@@ -4,6 +4,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::table;
 use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 use crate::enemy::{Enemy, ENEMY_SIZE};
+use crate::enemy::HitAnimation;
 
 const BULLET_SPD: f32 = 500.;
 
@@ -334,7 +335,8 @@ impl DamageTimer {
 fn enemy_hits_player(
     time: Res<Time>,
     mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer), With<crate::player::Player>>,
-    enemy_query: Query<&Transform, With<Enemy>>,
+    mut enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+    mut commands: Commands,
 ) {
     let player_half = Vec2::splat(32.0);
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
@@ -344,7 +346,7 @@ fn enemy_hits_player(
 
         let player_pos = player_tf.translation.truncate();
 
-        for enemy_tf in &enemy_query {
+        for (enemy_entity, enemy_tf) in &mut enemy_query {
             let enemy_pos = enemy_tf.translation.truncate();
             if aabb_overlap(
                 player_pos.x, 
@@ -357,6 +359,9 @@ fn enemy_hits_player(
                 if damage_timer.0.finished() {
                     health.0 -= 15.0;
                     damage_timer.0.reset();
+                    commands.entity(enemy_entity).insert(HitAnimation {
+                        timer: Timer::from_seconds(0.3, TimerMode::Once),
+                    });
                 }
             }
         }
