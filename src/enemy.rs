@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use crate::player::Player;
 
 pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
@@ -53,6 +54,7 @@ impl Plugin for EnemyPlugin {
             .add_systems(OnEnter(GameState::Playing), load_enemy)
             .add_systems(OnEnter(GameState::Playing), spawn_enemy.after(load_enemy))
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, move_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)));
     }
 }
@@ -118,14 +120,56 @@ pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
 
 fn animate_enemy(
     time: Res<Time>,
-    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames), With<Enemy>>,
+    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames, &Velocity), With<Enemy>>,
 ) {
-    for (mut sprite, mut timer, mut frames) in &mut query {
+    for (mut sprite, mut timer, mut frames, velocity) in &mut query {
         timer.tick(time.delta());
 
         if timer.just_finished() {
             frames.index = (frames.index + 1) % frames.handles.len();
             sprite.image = frames.handles[frames.index].clone();
+        }
+
+        // Flip the sprite based on the x velocity
+        if velocity.x > 0. {
+            sprite.flip_x = true;
+        } else if velocity.x < 0. {
+            sprite.flip_x = false;
+        }
+    }
+}
+
+// moves the enemy towards the player
+fn move_enemy(
+    time: Res<Time>,
+    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut enemy_query: Query<(&mut Transform, &mut Velocity), With<Enemy>>,
+) {
+    if let Ok(player_transform) = player_query.get_single() {
+        let deltat = time.delta_secs();
+        let accel = ENEMY_ACCEL * deltat;
+
+        // Iterate over each enemy
+        for (mut enemy_transform, mut enemy_velocity) in &mut enemy_query {
+            // calculate the direction from the enemy to the player
+            let dir_to_player = (player_transform.translation - enemy_transform.translation)
+                                .truncate()
+                                .normalize_or_zero();
+
+            // using players acceleration to change enemy velocity
+            **enemy_velocity = if dir_to_player.length() > 0. {
+                (**enemy_velocity + (dir_to_player * accel)).clamp_length_max(ENEMY_SPEED)
+            } else if enemy_velocity.length() > accel {
+                **enemy_velocity + (enemy_velocity.normalize_or_zero() * -accel)
+            } else {
+                Vec2::ZERO
+            };
+
+            let change = **enemy_velocity * deltat;
+
+            // Update the enemy's position
+            enemy_transform.translation.x += change.x;
+            enemy_transform.translation.y += change.y;
         }
     }
 }
