@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use crate::player::Player;
+use crate::collidable::{Collidable, Collider};
 
 pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
@@ -35,8 +37,16 @@ pub struct EnemyFrames {
     index: usize,
 }
 
+#[derive(Component)]
+pub struct HitAnimation {
+    pub timer: Timer,
+}
+
 #[derive(Resource)]
-pub struct EnemyRes(Vec<Handle<Image>>);
+pub struct EnemyRes {
+    pub frames: Vec<Handle<Image>>,
+    pub hit_frames: Vec<Handle<Image>>,
+}
 
 impl Velocity {
     pub fn new() -> Self {
@@ -53,7 +63,9 @@ impl Plugin for EnemyPlugin {
             .add_systems(OnEnter(GameState::Playing), load_enemy)
             .add_systems(OnEnter(GameState::Playing), spawn_enemy.after(load_enemy))
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)));
+            .add_systems(Update, move_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, animate_enemy_hit);
     }
 }
 
@@ -65,8 +77,16 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
         asset_server.load("chaser_mob_animation3.png"),
         asset_server.load("chaser_mob_animation2.png"),
     ];
+    
+    let hit_frames: Vec<Handle<Image>> = vec![
+    asset_server.load("chaser_mob_bite1.png"),
+    asset_server.load("chaser_mob_bite2.png"),
+    ];
+    commands.insert_resource(EnemyRes{
+        frames,
+        hit_frames,
+    });
 
-    commands.insert_resource(EnemyRes(frames));
 }
 
 // Getter
@@ -96,7 +116,7 @@ fn check_enemy_health(
 
 pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
     commands.spawn((
-        Sprite::from_image(enemy_res.0[0].clone()), // start on first frame
+        Sprite::from_image(enemy_res.frames[0].clone()),
         Transform {
             translation: Vec3::new(
                 unsafe { ENEMY_START_POS.x },
@@ -110,7 +130,7 @@ pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
         Health::new(50.0),
         AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         EnemyFrames {
-            handles: enemy_res.0.clone(),
+            handles: enemy_res.frames.clone(),
             index: 0,
         },
     ));
@@ -118,14 +138,82 @@ pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
 
 fn animate_enemy(
     time: Res<Time>,
-    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames), With<Enemy>>,
+    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames, &Velocity), With<Enemy>>,
 ) {
-    for (mut sprite, mut timer, mut frames) in &mut query {
+    for (mut sprite, mut timer, mut frames, velocity) in &mut query {
         timer.tick(time.delta());
 
         if timer.just_finished() {
             frames.index = (frames.index + 1) % frames.handles.len();
             sprite.image = frames.handles[frames.index].clone();
         }
+
+        // Flip the sprite based on the x velocity
+        if velocity.x > 0. {
+            sprite.flip_x = true;
+        } else if velocity.x < 0. {
+            sprite.flip_x = false;
+        }
     }
 }
+
+pub fn animate_enemy_hit(
+    time: Res<Time>,
+    mut commands: Commands,
+    mut enemies: Query<(Entity, &mut Sprite, &mut HitAnimation)>,
+    enemy_res: Res<EnemyRes>,
+) {
+    for (entity, mut sprite, mut hit) in &mut enemies {
+        hit.timer.tick(time.delta());
+
+        
+        if hit.timer.elapsed_secs() < 1.0 {
+            sprite.image = enemy_res.hit_frames[0].clone();
+        } else {
+            sprite.image = enemy_res.hit_frames[1].clone();
+        }
+
+        if hit.timer.finished() {
+            commands.entity(entity).remove::<HitAnimation>();
+            sprite.image = enemy_res.frames[0].clone();
+        }
+    }    
+}
+
+// moves the enemy towards the player
+fn move_enemy(
+    time: Res<Time>,
+    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut enemy_query: Query<(&mut Transform, &mut Velocity), With<Enemy>>,
+) {
+    if let Ok(player_transform) = player_query.get_single() {
+        let deltat = time.delta_secs();
+        let accel = ENEMY_ACCEL * deltat;
+
+        // Iterate over each enemy
+        for (mut enemy_transform, mut enemy_velocity) in &mut enemy_query {
+            // calculate the direction from the enemy to the player
+            let dir_to_player = (player_transform.translation - enemy_transform.translation)
+                                .truncate()
+                                .normalize_or_zero();
+
+            // using players acceleration to change enemy velocity
+            **enemy_velocity = if dir_to_player.length() > 0. {
+                (**enemy_velocity + (dir_to_player * accel)).clamp_length_max(ENEMY_SPEED)
+            } else if enemy_velocity.length() > accel {
+                **enemy_velocity + (enemy_velocity.normalize_or_zero() * -accel)
+            } else {
+                Vec2::ZERO
+            };
+
+            let change = **enemy_velocity * deltat;
+
+            // Update the enemy's position
+            enemy_transform.translation.x += change.x;
+            enemy_transform.translation.y += change.y;
+        }
+    }
+}
+
+
+

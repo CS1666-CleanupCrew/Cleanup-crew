@@ -1,7 +1,10 @@
 use bevy::{prelude::*};
 
 use crate::collidable::{Collidable, Collider};
+use crate::table;
 use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
+use crate::enemy::{Enemy, ENEMY_SIZE};
+use crate::enemy::HitAnimation;
 
 const BULLET_SPD: f32 = 500.;
 
@@ -30,6 +33,9 @@ pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
 
 #[derive(Resource)]
 pub struct ShootTimer(pub Timer);
+
+#[derive(Component, Deref, DerefMut)]
+pub struct DamageTimer(pub Timer);
 
 #[derive(Component, Deref, DerefMut)]
 pub struct AnimationTimer(Timer);
@@ -84,6 +90,8 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
             .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
             ;
     }
 }
@@ -115,6 +123,34 @@ fn bullet_hits_enemy(
     }
 }
 
+fn bullet_hits_table(
+    mut commands: Commands,
+    mut table_query: Query<(&Transform, &mut table::Health), With<table::Table>>,
+    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+) {
+    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
+    let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
+
+    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        for (table_tf, mut health) in &mut table_query {
+            let table_pos = table_tf.translation;
+            if aabb_overlap(
+                bullet_pos.x,
+                bullet_pos.y,
+                bullet_half,
+                table_pos.x,
+                table_pos.y,
+                table_half,
+            ) {
+                health.0 -= 25.0; // Deal 25 damage
+                commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                continue 'bullet_loop; // Move to the next bullet
+            }
+        }
+    }
+}
+
 fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     let player = PlayerRes {
         up: asset_server.load("Player_Sprite_Up.png"),
@@ -140,6 +176,7 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
         Player,
         Velocity::new(),
         Health::new(100.0),
+        DamageTimer::new(1.0),
         Collidable,
         Collider {
             half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0),
@@ -279,7 +316,7 @@ fn move_player(
 
 //what a lot of games use for collision detection I found
 #[inline]
-fn aabb_overlap(
+pub fn aabb_overlap(
     ax: f32, ay: f32, a_half: Vec2,
     bx: f32, by: f32, b_half: Vec2
 ) -> bool {
@@ -287,6 +324,50 @@ fn aabb_overlap(
     (ay - by).abs() < (a_half.y + b_half.y)
 }
 
+//enemy collision with player
+//-------------------------------------------------------------------------------------------------------------
+impl DamageTimer {
+    pub fn new(seconds: f32) -> Self {
+        Self(Timer::from_seconds(seconds, TimerMode::Once))
+}
+}
+
+fn enemy_hits_player(
+    time: Res<Time>,
+    mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer), With<crate::player::Player>>,
+    mut enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+    mut commands: Commands,
+) {
+    let player_half = Vec2::splat(32.0);
+    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+    for (player_tf, mut health, mut damage_timer) in &mut player_query {
+        
+        damage_timer.0.tick(time.delta());
+
+        let player_pos = player_tf.translation.truncate();
+
+        for (enemy_entity, enemy_tf) in &mut enemy_query {
+            let enemy_pos = enemy_tf.translation.truncate();
+            if aabb_overlap(
+                player_pos.x, 
+                player_pos.y, 
+                player_half,
+                enemy_pos.x, 
+                enemy_pos.y, 
+                enemy_half,
+            ) {
+                if damage_timer.0.finished() {
+                    health.0 -= 15.0;
+                    damage_timer.0.reset();
+                    commands.entity(enemy_entity).insert(HitAnimation {
+                        timer: Timer::from_seconds(0.3, TimerMode::Once),
+                    });
+                }
+            }
+        }
+    }
+}
+//-------------------------------------------------------------------------------------------------------------
 
 /**
  * Updates player sprite while changing directions
@@ -380,7 +461,7 @@ fn move_bullet(
 fn bullet_collision(
     mut commands: Commands,
     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>)>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<crate::enemy::Enemy>, Without<table::Table>,)>,
 ) {
     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
         let bx = bullet_transform.translation.x;
@@ -422,3 +503,4 @@ fn animate_bullet(
         }
     }
 }
+
