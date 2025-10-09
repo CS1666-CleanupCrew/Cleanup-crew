@@ -15,6 +15,7 @@ const WIN_H: f32 = 720.;
 const PLAYER_SPEED: f32 = 500.;
 const ACCEL_RATE: f32 = 5000.;
 const TILE_SIZE: f32 = 32.;
+const BG_WORLD: f32 = 2048.0;
 const LEVEL_LEN: f32 = 1280.;
 
 pub const Z_FLOOR: f32 = -100.0;
@@ -33,8 +34,15 @@ struct Wall;
 struct HealthDisplay;
 
 #[derive(Component)]
-struct Damage {
-    amount: f32,
+struct Damage { amount: f32, }
+
+#[derive(Component)]
+struct ParallaxCell { ix: i32, iy: i32 }
+
+#[derive(Component)]
+struct ParallaxBg {
+    factor: f32,     // 0.0 = static, 1.0 = locks to camera
+    tile:   f32,     // world-units per background tile
 }
 
 #[derive(Resource)]
@@ -56,15 +64,19 @@ enum GameState {
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: TITLE.into(),
-                resolution: (WIN_W, WIN_H).into(),
-                present_mode: PresentMode::AutoVsync,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(ImagePlugin::default_nearest())
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: TITLE.into(),
+                        resolution: (WIN_W, WIN_H).into(),
+                        present_mode: PresentMode::AutoVsync,
+                        ..default()
+                    }),
+                    ..default()
+                }),
+        )
         //Initial GameState
         .init_state::<GameState>()
         //Calls the plugin
@@ -74,8 +86,8 @@ fn main() {
             enemy::EnemyPlugin,
             table::TablePlugin,
         ))
-        .add_systems(Startup, setup_camera)
         .add_systems(Startup, setup_tilemap)
+        .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
         .add_systems(Startup, setup_ui_health)
@@ -87,7 +99,8 @@ fn main() {
             Update,
             damage_on_collision.run_if(in_state(GameState::Playing)),
         )
-         .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
+        .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
+        .add_systems(Update, parallax_scroll)
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
         .run();
 }
@@ -146,14 +159,11 @@ const MAP: &[&str] = &[
     "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
 ];
 
-/// Unified loader: draws floor and spawns items/walls from MAP symbols.
-///   '#' => floor
-///   'T' => table (spawns a floor tile under it + a collidable table sprite)
-///   'W' => wall  (spawns a floor tile under it + a collidable wall sprite)
 fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
     let floor_tex: Handle<Image> = asset_server.load("floortile.png");
     let table_tex: Handle<Image> = asset_server.load("table.png");
     let wall_tex: Handle<Image> = asset_server.load("window.png");
+    let space_tex: Handle<Image> = asset_server.load("space.png");
 
     let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = MAP.len() as f32;
@@ -164,6 +174,32 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
 
+    // Parallax background
+    let cover_w = map_px_w.max(WIN_W) + BG_WORLD; // pad one tile
+    let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
+    let nx = (cover_w / BG_WORLD).ceil() as i32;
+    let ny = (cover_h / BG_WORLD).ceil() as i32;
+
+    // center grid around map center (0,0)
+    for iy in -1..(ny + 1) {
+        for ix in -1..(nx + 1) {
+            let cx = (ix as f32) * BG_WORLD;
+            let cy = (iy as f32) * BG_WORLD;
+
+            let mut bg = Sprite::from_image(space_tex.clone());
+            bg.custom_size = Some(Vec2::splat(BG_WORLD));
+
+            commands.spawn((
+                bg,
+                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
+                Name::new("SpaceBG"),
+                ParallaxBg { factor: 0.9, tile: BG_WORLD },
+                ParallaxCell { ix, iy }, // << keep grid offset
+            ));
+        }
+    }
+
+    // Foreground map
     for (row_i, row) in MAP.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
@@ -188,9 +224,7 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 2.0)),
                         Visibility::default(),
                         Collidable,
-                        Collider {
-                            half_extents: Vec2::splat(TILE_SIZE * 1.0),
-                        },
+                        Collider { half_extents: Vec2::splat(TILE_SIZE) },
                         Damage { amount: 10.0 },
                         Name::new("Table"),
                         table::Table,
@@ -199,7 +233,6 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
                     ));
                 }
                 'W' => {
-                    // place a 32x32 wall tile with a collider
                     let mut sprite = Sprite::from_image(wall_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
@@ -208,15 +241,39 @@ fn setup_tilemap(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Visibility::default(),
                         Wall,
                         Collidable,
-                        Collider {
-                            half_extents: Vec2::splat(TILE_SIZE * 0.5),
-                        },
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
                         Name::new("Wall"),
                     ));
                 }
                 _ => {}
             }
         }
+    }
+}
+
+fn parallax_scroll(
+    cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
+    mut bg_q: Query<(&ParallaxBg, &ParallaxCell, &mut Transform), With<ParallaxBg>>,
+) {
+    let Ok(cam_tf) = cam_q.get_single() else { return; };
+    let cam = cam_tf.translation;
+
+    for (bg, cell, mut tf) in &mut bg_q {
+        // continuous parallax offset
+        let off_x = -cam.x * (1.0 - bg.factor);
+        let off_y = -cam.y * (1.0 - bg.factor);
+
+        // wrap offset into [0, tile)
+        let wrap = |v: f32, t: f32| ((v % t) + t) % t;
+        let ox = wrap(off_x, bg.tile);
+        let oy = wrap(off_y, bg.tile);
+
+        // base so the grid stays centered around origin
+        let base_x = (cell.ix as f32) * bg.tile;
+        let base_y = (cell.iy as f32) * bg.tile;
+
+        tf.translation.x = base_x + ox;
+        tf.translation.y = base_y + oy;
     }
 }
 
