@@ -480,7 +480,7 @@ fn bullet_hits_enemy(
 
 fn bullet_hits_table(
     mut commands: Commands,
-    mut table_query: Query<(&Transform, &mut table::Health), With<table::Table>>,
+    mut table_query: Query<(&Transform, &mut table::Health, &table::TableState), With<table::Table>>,
     bullet_query: Query<(Entity, &Transform), With<Bullet>>,
 ) {
     let bullet_half = Vec2::splat(8.0); // Bullet's collider size
@@ -488,19 +488,21 @@ fn bullet_hits_table(
 
     'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
         let bullet_pos = bullet_tf.translation;
-        for (table_tf, mut health) in &mut table_query {
-            let table_pos = table_tf.translation;
-            if aabb_overlap(
-                bullet_pos.x,
-                bullet_pos.y,
-                bullet_half,
-                table_pos.x,
-                table_pos.y,
-                table_half,
-            ) {
-                health.0 -= 25.0; // Deal 25 damage
-                commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
-                continue 'bullet_loop; // Move to the next bullet
+        for (table_tf, mut health, state) in &mut table_query {
+            if *state == table::TableState::Intact{
+                let table_pos = table_tf.translation;
+                if aabb_overlap(
+                    bullet_pos.x,
+                    bullet_pos.y,
+                    bullet_half,
+                    table_pos.x,
+                    table_pos.y,
+                    table_half,
+                ) {
+                    health.0 -= 25.0; // Deal 25 damage
+                    commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                    continue 'bullet_loop; // Move to the next bullet
+                }
             }
         }
     }
