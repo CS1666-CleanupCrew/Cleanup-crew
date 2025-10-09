@@ -96,61 +96,6 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-/**
- * This handles bullet enemy collision
- * 
- * Right now the enemy will typically die despite having a health
- * of 50 and the bullet dealing 25 damage. This probably is happening
- * because this detection is happening every frame. 
-*/
-fn bullet_hits_enemy(
-    mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
-    bullet_query: Query<&Transform, With<Bullet>>,
-) {
-    let bullet_half = Vec2::splat(8.0);
-    let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
-    for bullet_tf in &bullet_query {
-        let bullet_pos = bullet_tf.translation;
-        for (enemy_tf, mut health) in &mut enemy_query {
-            let enemy_pos = enemy_tf.translation;
-            if aabb_overlap(
-                bullet_pos.x, bullet_pos.y, bullet_half,
-                enemy_pos.x, enemy_pos.y, enemy_half,
-            ) {
-                health.0 -= 25.0;
-            }
-        }
-    }
-}
-
-fn bullet_hits_table(
-    mut commands: Commands,
-    mut table_query: Query<(&Transform, &mut table::Health), With<table::Table>>,
-    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-) {
-    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
-    let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
-
-    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
-        let bullet_pos = bullet_tf.translation;
-        for (table_tf, mut health) in &mut table_query {
-            let table_pos = table_tf.translation;
-            if aabb_overlap(
-                bullet_pos.x,
-                bullet_pos.y,
-                bullet_half,
-                table_pos.x,
-                table_pos.y,
-                table_half,
-            ) {
-                health.0 -= 25.0; // Deal 25 damage
-                commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
-                continue 'bullet_loop; // Move to the next bullet
-            }
-        }
-    }
-}
-
 fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     let player = PlayerRes {
         up: asset_server.load("Player_Sprite_Up.png"),
@@ -504,3 +449,59 @@ fn animate_bullet(
     }
 }
 
+/**
+ * This handles bullet enemy collision
+ * 
+ * Right now the enemy will typically die despite having a health
+ * of 50 and the bullet dealing 25 damage. This probably is happening
+ * because this detection is happening every frame. 
+*/
+fn bullet_hits_enemy(
+    mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
+    bullet_query: Query<(&Transform, Entity), With<Bullet>>,
+    mut commands: Commands,
+) {
+    let bullet_half = Vec2::splat(8.0);
+    let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+    for (bullet_tf, bullet_entity) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        for (enemy_tf, mut health) in &mut enemy_query {
+            let enemy_pos = enemy_tf.translation;
+            if aabb_overlap(
+                bullet_pos.x, bullet_pos.y, bullet_half,
+                enemy_pos.x, enemy_pos.y, enemy_half,
+            ) {
+                health.0 -= 25.0;
+                commands.entity(bullet_entity).despawn();
+            }
+        }
+    }
+}
+
+fn bullet_hits_table(
+    mut commands: Commands,
+    mut table_query: Query<(&Transform, &mut table::Health), With<table::Table>>,
+    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+) {
+    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
+    let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
+
+    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        for (table_tf, mut health) in &mut table_query {
+            let table_pos = table_tf.translation;
+            if aabb_overlap(
+                bullet_pos.x,
+                bullet_pos.y,
+                bullet_half,
+                table_pos.x,
+                table_pos.y,
+                table_half,
+            ) {
+                health.0 -= 25.0; // Deal 25 damage
+                commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                continue 'bullet_loop; // Move to the next bullet
+            }
+        }
+    }
+}
