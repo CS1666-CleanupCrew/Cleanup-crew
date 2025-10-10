@@ -107,12 +107,12 @@ fn load_map(
     asset_server: Res<AssetServer>,
 ){
     let tiles = TileRes{
-        floor: asset_server.load("floortile.png"),
-        wall: asset_server.load("walls.png"),
-        glass: asset_server.load("window.png"),
-        table: asset_server.load("table.png"),
+        floor: asset_server.load("map/floortile.png"),
+        wall: asset_server.load("map/walls.png"),
+        glass: asset_server.load("map/window.png"),
+        table: asset_server.load("map/table.png"),
     };
-    let space_tex = BackgroundRes(asset_server.load("space.png"));
+    let space_tex = BackgroundRes(asset_server.load("map/space.png"));
 
     commands.insert_resource(tiles);
     commands.insert_resource(space_tex);

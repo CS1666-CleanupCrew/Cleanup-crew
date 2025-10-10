@@ -98,10 +98,10 @@ impl Plugin for PlayerPlugin {
 
 fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     let player = PlayerRes {
-        up: asset_server.load("Player_Sprite_Up.png"),
-        right: asset_server.load("Player_Sprite_Right.png"),
-        down: asset_server.load("Player_Sprite_Down.png"),
-        left: asset_server.load("Player_Sprite_Left.png"),
+        up: asset_server.load("player/Player_Sprite_Up.png"),
+        right: asset_server.load("player/Player_Sprite_Right.png"),
+        down: asset_server.load("player/Player_Sprite_Down.png"),
+        left: asset_server.load("player/Player_Sprite_Left.png"),
     };
     commands.insert_resource(player);
 
