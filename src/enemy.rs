@@ -166,7 +166,6 @@ pub fn animate_enemy_hit(
     for (entity, mut sprite, mut hit) in &mut enemies {
         hit.timer.tick(time.delta());
 
-        
         if hit.timer.elapsed_secs() < 1.0 {
             sprite.image = enemy_res.hit_frames[0].clone();
         } else {

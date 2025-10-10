@@ -1,10 +1,15 @@
 use rand::prelude::*;
 use bevy::prelude::*;
+use std::io::prelude::*;
+use std::io::BufReader;
+use std::fs::File;
 
 use crate::{GameState, MainCamera, Damage, TILE_SIZE, WIN_H, WIN_W, BG_WORLD, Z_FLOOR};
 use crate::table;
 use crate::collidable::{Collidable, Collider};
 use crate::player;
+
+
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -33,6 +38,8 @@ struct TileRes{
 }
 #[derive(Resource)]
 struct BackgroundRes(Handle<Image>);
+
+// struct
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
@@ -116,6 +123,8 @@ fn load_map(
 
     commands.insert_resource(tiles);
     commands.insert_resource(space_tex);
+
+
 }
 
 fn setup_tilemap(
@@ -179,7 +188,11 @@ fn setup_tilemap(
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE*2.0));
                     commands.spawn((
                         sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 2.0)),
+                        Transform{
+                            translation: Vec3::new(x, y, Z_FLOOR+2.0),
+                            scale: Vec3::new(0.6, 0.6, 1.0),
+                            ..Default::default()
+                        },
                         Visibility::default(),
                         Collidable,
                         Collider { half_extents: Vec2::splat(TILE_SIZE) },
