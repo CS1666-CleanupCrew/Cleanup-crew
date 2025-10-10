@@ -9,8 +9,6 @@ use crate::table;
 use crate::collidable::{Collidable, Collider};
 use crate::player;
 
-
-
 #[derive(Component)]
 struct ParallaxBg {
     factor: f32,     // 0.0 = static, 1.0 = locks to camera
@@ -27,9 +25,6 @@ struct FloorTile;
 struct Wall;
 
 #[derive(Resource)]
-struct WallRes(Handle<Image>);
-
-#[derive(Resource)]
 struct TileRes{
     floor: Handle<Image>,
     wall: Handle<Image>,
@@ -39,7 +34,11 @@ struct TileRes{
 #[derive(Resource)]
 struct BackgroundRes(Handle<Image>);
 
-// struct
+#[derive(Resource)]
+struct RoomRes{
+    room1: Vec<String>,
+    room2: Vec<String>,
+}
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
@@ -113,6 +112,10 @@ fn load_map(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
 ){
+    let mut rooms = RoomRes{
+        room1: Vec::new(),
+        room2: Vec::new(),
+    };
     let tiles = TileRes{
         floor: asset_server.load("map/floortile.png"),
         wall: asset_server.load("map/walls.png"),
@@ -124,6 +127,15 @@ fn load_map(
     commands.insert_resource(tiles);
     commands.insert_resource(space_tex);
 
+    //Change this path for a different map
+    let f = File::open("assets/rooms/level.txt").expect("file don't exist");
+    let reader = BufReader::new(f);
+
+    for line_result in reader.lines() {
+        let line = line_result.unwrap();
+        rooms.room1.push(line);
+    }
+    commands.insert_resource(rooms);
 
 }
 
@@ -131,9 +143,10 @@ fn setup_tilemap(
     mut commands: Commands, 
     tile_sheet: Res<TileRes>,
     bg_tex: Res<BackgroundRes>,
+    rooms: Res<RoomRes>,
 ) {
-    let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as f32;
-    let map_rows = MAP.len() as f32;
+    let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
+    let map_rows = rooms.room1.len() as f32;
 
     // Center the map in world space (origin = middle of map)
     let map_px_w = map_cols * TILE_SIZE;
@@ -167,7 +180,7 @@ fn setup_tilemap(
     }
 
     // Foreground map
-    for (row_i, row) in MAP.iter().enumerate() {
+    for (row_i, row) in rooms.room1.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
             let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE; // invert the vertical draw order
@@ -195,7 +208,7 @@ fn setup_tilemap(
                         },
                         Visibility::default(),
                         Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE) },
+                        Collider { half_extents: Vec2::splat(TILE_SIZE*0.5) },
                         Damage { amount: 10.0 },
                         Name::new("Table"),
                         table::Table,
@@ -254,6 +267,7 @@ fn follow_player(
     //finds all entities that are able to transform and are made of the player component
     player_query: Query<&Transform, (With<player::Player>, Without<MainCamera>)>,
     mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<player::Player>)>,
+    rooms: Res<RoomRes>,
 ) {
     //players current position. 
     if let Ok(player_transform) = player_query.get_single() {
@@ -262,8 +276,8 @@ fn follow_player(
         if let Ok(mut camera_transform) = camera_query.get_single_mut() {
 
             //level bounds  calculation given 40x23
-            let map_cols = MAP.first().map(|r| r.len()).unwrap_or(0) as f32;
-            let map_rows = MAP.len() as f32;
+            let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
+            let map_rows = rooms.room1.len() as f32;
             let level_width = map_cols * TILE_SIZE;
             let level_height = map_rows * TILE_SIZE;
 
