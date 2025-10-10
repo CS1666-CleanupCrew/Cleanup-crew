@@ -81,8 +81,8 @@ impl From<Vec2> for Velocity {
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Playing), load_player)
-            .add_systems(OnEnter(GameState::Playing), load_bullet)
+        app.add_systems(Startup, load_player)
+            .add_systems(Startup, load_bullet)
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
             .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
