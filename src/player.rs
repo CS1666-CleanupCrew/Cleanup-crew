@@ -6,10 +6,10 @@ use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WI
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
 
-const BULLET_SPD: f32 = 500.;
+const BULLET_SPD: f32 = 700.;
 
 #[derive(Component)]
-pub struct Player;
+pub struct Player;                          
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Velocity(Vec2);
@@ -49,7 +49,11 @@ pub struct Facing(pub FacingDirection);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FacingDirection {
     Up,
+    UpRight,
+    UpLeft,
     Down,
+    DownRight,
+    DownLeft,
     Left,
     Right,
 }
@@ -106,7 +110,7 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(player);
 
     //Change time for how fast the player can shoot
-    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Repeating)));
+    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Once)));
     
 }
 
@@ -169,10 +173,29 @@ fn move_player(
         facing.0 = FacingDirection::Down;
     }
 
-    if input.pressed(KeyCode::Space) && shoot_timer.0.tick(time.delta()).finished() {
+    // decide what direction the player is facing if is diagonal
+    if dir == vec2(1.0,1.0){
+        facing.0 = FacingDirection::UpRight;
+    }
+    if dir == vec2(-1.0,1.0){
+        facing.0 = FacingDirection::UpLeft;
+    }
+    if dir == vec2(1.0,-1.0){
+        facing.0 = FacingDirection::DownRight;
+    }
+    if dir == vec2(-1.0,-1.0){
+        facing.0 = FacingDirection::DownLeft;
+    }
+
+    shoot_timer.0.tick(time.delta());
+    if input.pressed(KeyCode::Space) && shoot_timer.0.finished() {
         let bullet_dir = match facing.0 {
             FacingDirection::Up => Vec2::new(0.0, 1.0),
+            FacingDirection::UpRight => Vec2::new(1.0, 1.0),
+            FacingDirection::UpLeft => Vec2::new(-1.0, 1.0),
             FacingDirection::Down => Vec2::new(0.0, -1.0),
+            FacingDirection::DownRight => Vec2::new(1.0, -1.0),
+            FacingDirection::DownLeft => Vec2::new(-1.0, -1.0),
             FacingDirection::Left => Vec2::new(-1.0, 0.0),
             FacingDirection::Right => Vec2::new(1.0, 0.0),
         };
@@ -398,8 +421,10 @@ fn move_bullet(
 ){
 
     for (mut transform, b) in &mut bullet {
-        transform.translation.x += b.x * BULLET_SPD * time.delta_secs();
-        transform.translation.y += b.y * BULLET_SPD * time.delta_secs();
+        let norm = b.normalize_or_zero();
+
+        transform.translation.x += norm.x * BULLET_SPD * time.delta_secs();
+        transform.translation.y += norm.y * BULLET_SPD * time.delta_secs();
     }
 }
 
@@ -461,7 +486,7 @@ fn bullet_hits_enemy(
     bullet_query: Query<(&Transform, Entity), With<Bullet>>,
     mut commands: Commands,
 ) {
-    let bullet_half = Vec2::splat(8.0);
+    let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
     let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
     for (bullet_tf, bullet_entity) in &bullet_query {
         let bullet_pos = bullet_tf.translation;
