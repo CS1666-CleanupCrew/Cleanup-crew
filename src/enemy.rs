@@ -72,15 +72,15 @@ impl Plugin for EnemyPlugin {
 fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Load 3 separate frames
     let frames: Vec<Handle<Image>> = vec![
-        asset_server.load("chaser_mob_animation1.png"),
-        asset_server.load("chaser_mob_animation2.png"),
-        asset_server.load("chaser_mob_animation3.png"),
-        asset_server.load("chaser_mob_animation2.png"),
+        asset_server.load("chaser/chaser_mob_animation1.png"),
+        asset_server.load("chaser/chaser_mob_animation2.png"),
+        asset_server.load("chaser/chaser_mob_animation3.png"),
+        asset_server.load("chaser/chaser_mob_animation2.png"),
     ];
     
     let hit_frames: Vec<Handle<Image>> = vec![
-    asset_server.load("chaser_mob_bite1.png"),
-    asset_server.load("chaser_mob_bite2.png"),
+    asset_server.load("chaser/chaser_mob_bite1.png"),
+    asset_server.load("chaser/chaser_mob_bite2.png"),
     ];
     commands.insert_resource(EnemyRes{
         frames,

@@ -34,7 +34,7 @@ impl Plugin for TablePlugin {
 }
 
 fn load_table_graphics(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let broken_handle = asset_server.load("table_broken.png");
+    let broken_handle = asset_server.load("map/table_broken.png");
     commands.insert_resource(TableGraphics {
         broken: broken_handle,
     });
