@@ -177,4 +177,74 @@ fn setup_fluid_grid(mut commands: Commands) {
     info!("Fluid simulation with breach aaaaaaaahhhhhh");
 }
 
+
+//step 1 of LBM: Particles are supposed to collide in each cell and then, using other methods they should come back to the optimal stage
+fn collision_step(mut query: Query<&mut FluidGrid>) 
+{
+    for mut grid in &mut query 
+    {
+        for y in 0..grid.height 
+        {
+            for x in 0..grid.width 
+            {
+                let idx = grid.get_index(x, y);
+                
+
+                //if there is no collission in the cell, then it is fine. nothing needs to be changed
+                if grid.obstacles[idx] 
+                {
+                    continue;
+                }
+                let (rho, ux, uy) = grid.compute_macroscopic(x, y); // get the classic density and velocity of particles in the given cell
+                
+                for i in 0..9 
+                {
+                    // current distribution of particles in the cell
+                    let f_old = grid.distribution[idx][i];
+                    //calculating the optimal one
+                    let f_eq = grid.compute_equilibrium(rho, ux, uy, i);
+                    //BGK formula, omega controls the speed(Remember not too fast, and not too slow for density) multiplied by the difference in states
+                    grid.distribution[idx][i] = f_old - OMEGA * (f_old - f_eq);
+                }
+            }
+        }
+    }
+}
+//moving particles into the neighboring cells based on the direction
+fn streaming_step(mut query: Query<&mut FluidGrid>) {
+    for mut grid in &mut query 
+    {
+        //copy of the entire grid
+        let mut new_dist = grid.distribution.clone();
+        //loop through all the cells
+        for y in 0..grid.height 
+        {
+            for x in 0..grid.width 
+            {
+                let idx = grid.get_index(x, y);
+                
+                if grid.obstacles[idx] 
+                {
+                    continue;
+                }
+                //this loop goes through all the directions aside from the rest state
+                for i in 1..9 
+                {
+                    // see where did the particles came from, not where they are going. this is backstreaming
+                    let src_x = x as isize - C_X[i] as isize;
+                    let src_y = y as isize - C_Y[i] as isize;
+                    //check for bounds
+                    if src_x >= 0 && src_x < grid.width as isize 
+                        && src_y >= 0 && src_y < grid.height as isize {
+                        let src_idx = grid.get_index(src_x as usize, src_y as usize);
+                         //particles that were moving in direction i at the source have now arrived at the current cell.
+                        new_dist[idx][i] = grid.distribution[src_idx][i];
+                    }
+                }
+            }
+        }
+        //just replace the old one with the newly calculated one 
+        grid.distribution = new_dist;
+    }
+}
 }
