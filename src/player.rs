@@ -7,6 +7,8 @@ use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
 
 const BULLET_SPD: f32 = 700.;
+const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
+
 
 #[derive(Component)]
 pub struct Player;                          
@@ -251,7 +253,11 @@ fn move_player(
                 } else {
                     nx = cx + (player_half.x + c.half_extents.x);
                 }
-                **velocity = Vec2::new(0.0, velocity.y);
+                // wall friction
+                if dir.y != 0.0 {
+                    velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
+                }
+                velocity.x = 0.0;
             }
         }
         pos.x = nx;
@@ -271,7 +277,11 @@ fn move_player(
                 } else {
                     ny = cy + (player_half.y + c.half_extents.y);
                 }
-                **velocity = Vec2::new(velocity.x, 0.0);
+                // wall friciton
+                if dir.x != 0.0 {
+                    velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
+                }
+                velocity.y = 0.0;
             }
         }
         pos.y = ny;
