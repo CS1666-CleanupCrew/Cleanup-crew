@@ -1,22 +1,26 @@
-use rand::prelude::*;
 use bevy::prelude::*;
-use std::io::prelude::*;
-use std::io::BufReader;
+use rand::prelude::*;
 use std::fs::File;
+use std::io::BufReader;
+use std::io::prelude::*;
+use crate::procgen::generate_tables_from_grid;
 
-use crate::{GameState, MainCamera, Damage, TILE_SIZE, WIN_H, WIN_W, BG_WORLD, Z_FLOOR};
-use crate::table;
 use crate::collidable::{Collidable, Collider};
 use crate::player;
+use crate::table;
+use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
 
 #[derive(Component)]
 struct ParallaxBg {
-    factor: f32,     // 0.0 = static, 1.0 = locks to camera
-    tile:   f32,     // world-units per background tile
+    factor: f32, // 0.0 = static, 1.0 = locks to camera
+    tile: f32,   // world-units per background tile
 }
 
 #[derive(Component)]
-struct ParallaxCell { ix: i32, iy: i32 }
+struct ParallaxCell {
+    ix: i32,
+    iy: i32,
+}
 
 #[derive(Component)]
 struct FloorTile;
@@ -25,30 +29,32 @@ struct FloorTile;
 struct Wall;
 
 #[derive(Resource)]
-struct TileRes{
+struct TileRes {
     floor: Handle<Image>,
     wall: Handle<Image>,
     glass: Handle<Image>,
     table: Handle<Image>,
 }
 #[derive(Resource)]
-struct BackgroundRes(Handle<Image>);
+pub struct BackgroundRes(pub Handle<Image>);
 
 #[derive(Resource)]
-struct RoomRes{
-    room1: Vec<String>,
-    room2: Vec<String>,
+pub struct RoomRes {
+    pub room1: Vec<String>,
+    pub room2: Vec<String>,
 }
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
-    fn build(&self, app: &mut App){
+    fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Loading), load_map)
             .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
-            .add_systems(OnEnter(GameState::Loading), playing_state.after(setup_tilemap))
+            .add_systems(
+                OnEnter(GameState::Loading),
+                playing_state.after(setup_tilemap),
+            )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, parallax_scroll)
-            ;
+            .add_systems(Update, parallax_scroll);
     }
 }
 
@@ -102,21 +108,16 @@ const MAP: &[&str] = &[
     "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
 ];
 
-fn playing_state(
-    mut next_state: ResMut<NextState<GameState>>,
-){
+fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
     next_state.set(GameState::Playing);
 }
 
-fn load_map(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-){
-    let mut rooms = RoomRes{
+fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let mut rooms = RoomRes {
         room1: Vec::new(),
         room2: Vec::new(),
     };
-    let tiles = TileRes{
+    let tiles = TileRes {
         floor: asset_server.load("map/floortile.png"),
         wall: asset_server.load("map/walls.png"),
         glass: asset_server.load("map/window.png"),
@@ -128,7 +129,7 @@ fn load_map(
     commands.insert_resource(space_tex);
 
     //Change this path for a different map
-    let f = File::open("assets/rooms/room3.txt").expect("file don't exist");
+    let f = File::open("assets/rooms/room1.txt").expect("file don't exist");
     let reader = BufReader::new(f);
 
     for line_result in reader.lines() {
@@ -136,79 +137,84 @@ fn load_map(
         rooms.room1.push(line);
     }
     commands.insert_resource(rooms);
-
 }
 
-fn setup_tilemap(
+pub fn setup_tilemap(
     mut commands: Commands, 
-    tile_sheet: Res<TileRes>,
-    bg_tex: Res<BackgroundRes>,
+    asset_server: Res<AssetServer>,
     rooms: Res<RoomRes>,
+    space_tex:Res<BackgroundRes>,
 ) {
+    let floor_tex: Handle<Image> = asset_server.load("map/floortile.png");
+    let wall_tex: Handle<Image>  = asset_server.load("map/walls.png");
+    let table_tex: Handle<Image> = asset_server.load("map/table.png");
+
     let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = rooms.room1.len() as f32;
 
-    // Center the map in world space (origin = middle of map)
     let map_px_w = map_cols * TILE_SIZE;
     let map_px_h = map_rows * TILE_SIZE;
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
 
-    // Parallax background
-    let cover_w = map_px_w.max(WIN_W) + BG_WORLD; // pad one tile
+        let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
     let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
 
-    // center grid around map center (0,0)
     for iy in -1..(ny + 1) {
         for ix in -1..(nx + 1) {
             let cx = (ix as f32) * BG_WORLD;
             let cy = (iy as f32) * BG_WORLD;
 
-            let mut bg = Sprite::from_image(bg_tex.0.clone());
+            let mut bg = Sprite::from_image(space_tex.0.clone());
             bg.custom_size = Some(Vec2::splat(BG_WORLD));
 
             commands.spawn((
                 bg,
-                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
-                Name::new("SpaceBG"),
+                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)), // behind floor
+                Visibility::default(),
                 ParallaxBg { factor: 0.9, tile: BG_WORLD },
-                ParallaxCell { ix, iy }, // << keep grid offset
+                ParallaxCell { ix, iy },
+                Name::new("SpaceBG"),
             ));
         }
     }
 
-    // Foreground map
+    // lets you pick the number of tables and an optional seed
+    let generated_tables = generate_tables_from_grid(&rooms.room1, 25, None);
+
+    // Loop through the room grid
     for (row_i, row) in rooms.room1.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
-            let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE; // invert the vertical draw order
+            let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE;
 
-            // Floor under '#', 'T', and 'W' so the world stays visually continuous
-            if ch == '#' || ch == 'T' || ch == 'W' {
+            let is_generated_table = generated_tables.contains(&(col_i, row_i));
+
+            // Always draw a floor tile under walls/tables
+            if ch == '#' || ch == 'T' || ch == 'W' || is_generated_table {
                 commands.spawn((
-                    Sprite::from_image(tile_sheet.floor.clone()),
+                    Sprite::from_image(floor_tex.clone()),
                     Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
-                    FloorTile,
+                    Name::new("Floor"),
                 ));
             }
 
-            // Items and walls
-            match ch {
-                'T' => {
-                    let mut sprite = Sprite::from_image(tile_sheet.table.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE*2.0));
+            match (ch, is_generated_table) {
+                // Spawn either authored ('T') or generated tables
+                ('T', _) | ('#', true) => {
+                    let mut sprite = Sprite::from_image(table_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
                     commands.spawn((
                         sprite,
-                        Transform{
-                            translation: Vec3::new(x, y, Z_FLOOR+2.0),
+                        Transform {
+                            translation: Vec3::new(x, y, Z_FLOOR + 2.0),
                             scale: Vec3::new(0.6, 0.6, 1.0),
                             ..Default::default()
                         },
-                        Visibility::default(),
                         Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE*0.5) },
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
                         Damage { amount: 10.0 },
                         Name::new("Table"),
                         table::Table,
@@ -216,14 +222,14 @@ fn setup_tilemap(
                         table::TableState::Intact,
                     ));
                 }
-                'W' => {
-                    let mut sprite = Sprite::from_image(tile_sheet.wall.clone());
+
+                // Spawn walls
+                ('W', _) => {
+                    let mut sprite = Sprite::from_image(wall_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
                         sprite,
                         Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
-                        Visibility::default(),
-                        Wall,
                         Collidable,
                         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
                         Name::new("Wall"),
@@ -239,7 +245,9 @@ fn parallax_scroll(
     cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
     mut bg_q: Query<(&ParallaxBg, &ParallaxCell, &mut Transform), With<ParallaxBg>>,
 ) {
-    let Ok(cam_tf) = cam_q.get_single() else { return; };
+    let Ok(cam_tf) = cam_q.get_single() else {
+        return;
+    };
     let cam = cam_tf.translation;
 
     for (bg, cell, mut tf) in &mut bg_q {
@@ -261,7 +269,7 @@ fn parallax_scroll(
     }
 }
 
-// If you have a problem or a question about this code, talk to vlad. 
+// If you have a problem or a question about this code, talk to vlad.
 fn follow_player(
     //these functions are provided directly from bevy
     //finds all entities that are able to transform and are made of the player component
@@ -269,12 +277,10 @@ fn follow_player(
     mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<player::Player>)>,
     rooms: Res<RoomRes>,
 ) {
-    //players current position. 
+    //players current position.
     if let Ok(player_transform) = player_query.get_single() {
-
         //This will error out if we would like to have several cameras, this makes the camera mutable
         if let Ok(mut camera_transform) = camera_query.get_single_mut() {
-
             //level bounds  calculation given 40x23
             let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
             let map_rows = rooms.room1.len() as f32;
