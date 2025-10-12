@@ -128,7 +128,7 @@ fn load_map(
     commands.insert_resource(space_tex);
 
     //Change this path for a different map
-    let f = File::open("assets/rooms/room3.txt").expect("file don't exist");
+    let f = File::open("assets/rooms/room2.txt").expect("file don't exist");
     let reader = BufReader::new(f);
 
     for line_result in reader.lines() {
