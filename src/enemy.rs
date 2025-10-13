@@ -60,7 +60,7 @@ pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(OnEnter(GameState::Playing), load_enemy)
+            .add_systems(Startup, load_enemy)
             .add_systems(OnEnter(GameState::Playing), spawn_enemy.after(load_enemy))
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_enemy.run_if(in_state(GameState::Playing)))
@@ -72,15 +72,15 @@ impl Plugin for EnemyPlugin {
 fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Load 3 separate frames
     let frames: Vec<Handle<Image>> = vec![
-        asset_server.load("chaser_mob_animation1.png"),
-        asset_server.load("chaser_mob_animation2.png"),
-        asset_server.load("chaser_mob_animation3.png"),
-        asset_server.load("chaser_mob_animation2.png"),
+        asset_server.load("chaser/chaser_mob_animation1.png"),
+        asset_server.load("chaser/chaser_mob_animation2.png"),
+        asset_server.load("chaser/chaser_mob_animation3.png"),
+        asset_server.load("chaser/chaser_mob_animation2.png"),
     ];
     
     let hit_frames: Vec<Handle<Image>> = vec![
-    asset_server.load("chaser_mob_bite1.png"),
-    asset_server.load("chaser_mob_bite2.png"),
+    asset_server.load("chaser/chaser_mob_bite1.png"),
+    asset_server.load("chaser/chaser_mob_bite2.png"),
     ];
     commands.insert_resource(EnemyRes{
         frames,
@@ -166,7 +166,6 @@ pub fn animate_enemy_hit(
     for (entity, mut sprite, mut hit) in &mut enemies {
         hit.timer.tick(time.delta());
 
-        
         if hit.timer.elapsed_secs() < 1.0 {
             sprite.image = enemy_res.hit_frames[0].clone();
         } else {

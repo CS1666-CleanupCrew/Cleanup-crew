@@ -34,7 +34,7 @@ impl Plugin for TablePlugin {
 }
 
 fn load_table_graphics(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let broken_handle = asset_server.load("table_broken.png");
+    let broken_handle = asset_server.load("map/table_broken.png");
     commands.insert_resource(TableGraphics {
         broken: broken_handle,
     });
@@ -66,9 +66,9 @@ fn animate_broken_tables(
     for (entity, mut visibility, mut timer) in query.iter_mut() {
         timer.0.tick(time.delta());
 
-        if timer.0.just_finished() {
-            *visibility = Visibility::Hidden;
+        //if timer.0.just_finished() {
+            //*visibility = Visibility::Hidden;
             commands.entity(entity).remove::<Collidable>();
-        }
+        //}
     }
 }
