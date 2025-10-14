@@ -10,6 +10,18 @@ const RELAXATION_TIME: f32 = 0.55;
 //how long it takes particles to get back to the original state after the serious destrurbance
 const OMEGA: f32 = 1.0 / RELAXATION_TIME;
 
+// breach values
+// pressure of the vaccume of space
+const VACUUM_PREASSURE: f32 = 0.001;
+// the fraction of air that gets transfered from a neighbor's cell into the breach cell
+const TRANSFER_FRACTION: f32 = 0.02;
+// strength of pushing neighbor cell's velocity towards the breach cell
+const PUSH_STRENGTH: f32 = 0.15;
+// saftey for the density value
+const MIN_RHO: f32 = 1e-6;
+// how much the neighbor cell's distribution is replaced with equilibrum
+const BLEND: f32 = 0.4;
+
 //D2Q9 directions
 const C_X: [f32; 9] = [0.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, -1.0, 1.0];
 const C_Y: [f32; 9] = [0.0, 0.0, 1.0, 0.0, -1.0, 1.0, 1.0, -1.0, -1.0];
@@ -247,4 +259,85 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
         grid.distribution = new_dist;
     }
 }
+
+// simulates the breach forces
+fn apply_breach_forces(mut query: Query<&mut FluidGrid>) {
+    // see coordinates of where the breach has occured
+    for mut grid in &mut query {
+        // if it doesn't find any breaches we don't have to simulate anything so continue
+        if grid.breaches.is_empty() {
+            continue;
+        }
+        // checks if each breach coordinate is on the grid
+        for &(bx, by) in &grid.breaches {
+            if bx >= grid.width || by >= grid.height {
+                continue;
+            }
+
+
+            let breach_index = grid.get_index(bx, by);
+            // make the density of the breach cell to be close to 0
+            // not exactly 0 because of float division I think so it's (0.001)
+            // also sets the velocity to 0
+            // simulates a vacuum
+            for i in 0..9 {
+                grid.distribution[breach_index][i] = grid.compute_equilibrium(VACUUM_PREASSURE, 0.0, 0.0, i)
+            }
+
+            // transfer some energy to neighbors on the N, S, E, W coordinates (not the 9 directions)
+            let neighbor_offsets: &[(isize, isize)] = &[(1,0), (-1,0), (0,1), (0,-1)];
+
+            // interates over the cell's neighbors, calculates neighbor's coordinates
+            for &(ox, oy) in neighbor_offsets {
+                let nx_isize = bx as isize + ox;
+                let ny_isize = by as isize + oy;
+
+                if (nx_isize < 0 || nx_isize >= grid.width as isize || ny_isize < 0 || ny_isize >= grid.height as isize) {
+                    continue;
+                }
+
+                let nx = nx_isize as usize;
+                let ny = ny_isize as usize;
+                let neighbor_index =  grid.get_index(nx, ny);
+
+                // ignores obsticles
+                if grid.obstacles[neighbor_index] {
+                    continue;
+                }
+                
+                // transfer mass/ air flow from neighbor's cell to breach cell
+                for i in 0..9 {
+                    let transfer_mass = grid.distribution[neighbor_index][i] * TRANSFER_FRACTION;
+                    grid.distribution[neighbor_index][i] -= transfer_mass;
+                    grid.distribution[breach_index][i] += transfer_mass;
+                }
+
+                // recalculate the neighbor cell's macroscopic state
+                let (mut rho, mut ux, mut uy) = grid.compute_macroscopic(nx, ny) ;
+                if rho < MIN_RHO {
+                    rho = MIN_RHO;
+                }
+
+                // slightly push neighbor's velocity towards the breach location
+                let dir_x = bx as f32 - nx as f32;
+                let dir_y = bx as f32 - ny as f32;
+                // formula to compute the squared distance of a 2d vector
+                let distance = (dir_x * dir_x + dir_y * dir_y).sqrt().max(1.0);
+                let push_x = (dir_x /distance) * PUSH_STRENGTH;
+                let push_y = (dir_y /distance) * PUSH_STRENGTH;
+                ux += push_x;
+                uy += push_y;
+
+                // remakes the neighbor's distributions by blend toward the new equilibrium
+                for i in 0..9 {
+                    let f_eq = grid.compute_equilibrium(rho, ux, uy, i);
+                    grid.distribution[neighbor_index][i] = (1.0 - BLEND) * grid.distribution[neighbor_index][i] + BLEND * f_eq;
+                }
+            }
+        }
+
+
+    }
+
+
 }
