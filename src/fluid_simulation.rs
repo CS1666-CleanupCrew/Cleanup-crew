@@ -10,6 +10,18 @@ const RELAXATION_TIME: f32 = 0.55;
 //how long it takes particles to get back to the original state after the serious destrurbance
 const OMEGA: f32 = 1.0 / RELAXATION_TIME;
 
+// breach values
+// pressure of the vaccume of space
+const VACUUM_PREASSURE: f32 = 0.001;
+// the fraction of air that gets transfered from a neighbor's cell into the breach cell
+const TRANSFER_FRACTION: f32 = 0.02;
+// strength of pushing neighbor cell's velocity towards the breach cell
+const PUSH_STRENGTH: f32 = 0.15;
+// saftey for the density value
+const MIN_RHO: f32 = 1e-6;
+// how much the neighbor cell's distribution is replaced with equilibrum
+const BLEND: f32 = 0.4;
+
 //D2Q9 directions
 const C_X: [f32; 9] = [0.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, -1.0, 1.0];
 const C_Y: [f32; 9] = [0.0, 0.0, 1.0, 0.0, -1.0, 1.0, 1.0, -1.0, -1.0];

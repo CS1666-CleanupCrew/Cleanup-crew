@@ -60,7 +60,7 @@ pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(OnEnter(GameState::Playing), load_enemy)
+            .add_systems(Startup, load_enemy)
             .add_systems(OnEnter(GameState::Playing), spawn_enemy.after(load_enemy))
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_enemy.run_if(in_state(GameState::Playing)))
@@ -72,15 +72,15 @@ impl Plugin for EnemyPlugin {
 fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Load 3 separate frames
     let frames: Vec<Handle<Image>> = vec![
-        asset_server.load("chaser_mob_animation1.png"),
-        asset_server.load("chaser_mob_animation2.png"),
-        asset_server.load("chaser_mob_animation3.png"),
-        asset_server.load("chaser_mob_animation2.png"),
+        asset_server.load("chaser/chaser_mob_animation1.png"),
+        asset_server.load("chaser/chaser_mob_animation2.png"),
+        asset_server.load("chaser/chaser_mob_animation3.png"),
+        asset_server.load("chaser/chaser_mob_animation2.png"),
     ];
     
     let hit_frames: Vec<Handle<Image>> = vec![
-    asset_server.load("chaser_mob_bite1.png"),
-    asset_server.load("chaser_mob_bite2.png"),
+    asset_server.load("chaser/chaser_mob_bite1.png"),
+    asset_server.load("chaser/chaser_mob_bite2.png"),
     ];
     commands.insert_resource(EnemyRes{
         frames,
@@ -166,7 +166,6 @@ pub fn animate_enemy_hit(
     for (entity, mut sprite, mut hit) in &mut enemies {
         hit.timer.tick(time.delta());
 
-        
         if hit.timer.elapsed_secs() < 1.0 {
             sprite.image = enemy_res.hit_frames[0].clone();
         } else {
@@ -185,6 +184,7 @@ fn move_enemy(
     time: Res<Time>,
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
     mut enemy_query: Query<(&mut Transform, &mut Velocity), With<Enemy>>,
+    wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>, Without<Player>)>,
 ) {
     if let Ok(player_transform) = player_query.get_single() {
         let deltat = time.delta_secs();
@@ -207,10 +207,48 @@ fn move_enemy(
             };
 
             let change = **enemy_velocity * deltat;
+            let mut pos = enemy_transform.translation;
+            let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
-            // Update the enemy's position
-            enemy_transform.translation.x += change.x;
-            enemy_transform.translation.y += change.y;
+            // ---- X axis ----
+            if change.x != 0.0 {
+                let mut nx = pos.x + change.x;
+                let px = nx;
+                let py = pos.y;
+                for (wall_tf, wall_collider) in &wall_query {
+                    let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
+                    if crate::player::aabb_overlap(px, py, enemy_half, wx, wy, wall_collider.half_extents) {
+                        if change.x > 0.0 {
+                            nx = wx - (enemy_half.x + wall_collider.half_extents.x);
+                        } else {
+                            nx = wx + (enemy_half.x + wall_collider.half_extents.x);
+                        }
+                        enemy_velocity.velocity.x = 0.0;
+                    }
+                }
+                pos.x = nx;
+            }
+
+            // ---- Y axis ----
+            if change.y != 0.0 {
+                let mut ny = pos.y + change.y;
+                let px = pos.x;
+                let py = ny;
+                for (wall_tf, wall_collider) in &wall_query {
+                    let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
+                    if crate::player::aabb_overlap(px, py, enemy_half, wx, wy, wall_collider.half_extents) {
+                        if change.y > 0.0 {
+                            ny = wy - (enemy_half.y + wall_collider.half_extents.y);
+                        } else {
+                            ny = wy + (enemy_half.y + wall_collider.half_extents.y);
+                        }
+                        enemy_velocity.velocity.y = 0.0;
+                    }
+                }
+                pos.y = ny;
+            }
+
+            enemy_transform.translation = pos;
         }
     }
 }

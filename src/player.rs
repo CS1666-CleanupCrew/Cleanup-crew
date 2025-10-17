@@ -6,10 +6,12 @@ use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WI
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
 
-const BULLET_SPD: f32 = 500.;
+const BULLET_SPD: f32 = 700.;
+const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
+
 
 #[derive(Component)]
-pub struct Player;
+pub struct Player;                          
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Velocity(Vec2);
@@ -49,7 +51,11 @@ pub struct Facing(pub FacingDirection);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FacingDirection {
     Up,
+    UpRight,
+    UpLeft,
     Down,
+    DownRight,
+    DownLeft,
     Left,
     Right,
 }
@@ -81,8 +87,8 @@ impl From<Vec2> for Velocity {
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Playing), load_player)
-            .add_systems(OnEnter(GameState::Playing), load_bullet)
+        app.add_systems(Startup, load_player)
+            .add_systems(Startup, load_bullet)
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
             .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
@@ -98,15 +104,15 @@ impl Plugin for PlayerPlugin {
 
 fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     let player = PlayerRes {
-        up: asset_server.load("Player_Sprite_Up.png"),
-        right: asset_server.load("Player_Sprite_Right.png"),
-        down: asset_server.load("Player_Sprite_Down.png"),
-        left: asset_server.load("Player_Sprite_Left.png"),
+        up: asset_server.load("player/Player_Sprite_Up.png"),
+        right: asset_server.load("player/Player_Sprite_Right.png"),
+        down: asset_server.load("player/Player_Sprite_Down.png"),
+        left: asset_server.load("player/Player_Sprite_Left.png"),
     };
     commands.insert_resource(player);
 
     //Change time for how fast the player can shoot
-    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Repeating)));
+    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Once)));
     
 }
 
@@ -169,10 +175,29 @@ fn move_player(
         facing.0 = FacingDirection::Down;
     }
 
-    if input.pressed(KeyCode::Space) && shoot_timer.0.tick(time.delta()).finished() {
+    // decide what direction the player is facing if is diagonal
+    if dir == vec2(1.0,1.0){
+        facing.0 = FacingDirection::UpRight;
+    }
+    if dir == vec2(-1.0,1.0){
+        facing.0 = FacingDirection::UpLeft;
+    }
+    if dir == vec2(1.0,-1.0){
+        facing.0 = FacingDirection::DownRight;
+    }
+    if dir == vec2(-1.0,-1.0){
+        facing.0 = FacingDirection::DownLeft;
+    }
+
+    shoot_timer.0.tick(time.delta());
+    if input.pressed(KeyCode::Space) && shoot_timer.0.finished() {
         let bullet_dir = match facing.0 {
             FacingDirection::Up => Vec2::new(0.0, 1.0),
+            FacingDirection::UpRight => Vec2::new(1.0, 1.0),
+            FacingDirection::UpLeft => Vec2::new(-1.0, 1.0),
             FacingDirection::Down => Vec2::new(0.0, -1.0),
+            FacingDirection::DownRight => Vec2::new(1.0, -1.0),
+            FacingDirection::DownLeft => Vec2::new(-1.0, -1.0),
             FacingDirection::Left => Vec2::new(-1.0, 0.0),
             FacingDirection::Right => Vec2::new(1.0, 0.0),
         };
@@ -228,7 +253,11 @@ fn move_player(
                 } else {
                     nx = cx + (player_half.x + c.half_extents.x);
                 }
-                **velocity = Vec2::new(0.0, velocity.y);
+                // wall friction
+                if dir.y != 0.0 {
+                    velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
+                }
+                velocity.x = 0.0;
             }
         }
         pos.x = nx;
@@ -248,7 +277,11 @@ fn move_player(
                 } else {
                     ny = cy + (player_half.y + c.half_extents.y);
                 }
-                **velocity = Vec2::new(velocity.x, 0.0);
+                // wall friciton
+                if dir.x != 0.0 {
+                    velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
+                }
+                velocity.y = 0.0;
             }
         }
         pos.y = ny;
@@ -398,8 +431,10 @@ fn move_bullet(
 ){
 
     for (mut transform, b) in &mut bullet {
-        transform.translation.x += b.x * BULLET_SPD * time.delta_secs();
-        transform.translation.y += b.y * BULLET_SPD * time.delta_secs();
+        let norm = b.normalize_or_zero();
+
+        transform.translation.x += norm.x * BULLET_SPD * time.delta_secs();
+        transform.translation.y += norm.y * BULLET_SPD * time.delta_secs();
     }
 }
 
@@ -461,7 +496,7 @@ fn bullet_hits_enemy(
     bullet_query: Query<(&Transform, Entity), With<Bullet>>,
     mut commands: Commands,
 ) {
-    let bullet_half = Vec2::splat(8.0);
+    let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
     let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
     for (bullet_tf, bullet_entity) in &bullet_query {
         let bullet_pos = bullet_tf.translation;
