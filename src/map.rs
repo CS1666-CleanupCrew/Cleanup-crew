@@ -1,5 +1,6 @@
 use bevy::log::Level;
 use bevy::prelude::*;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
@@ -9,6 +10,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player;
 use crate::table;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
+use crate::procgen::{load_rooms, write_room};
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -47,7 +49,10 @@ pub struct LevelRes {
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Loading), load_map)
+        app
+            .add_systems(OnEnter(GameState::Loading), load_rooms)
+            .add_systems(OnEnter(GameState::Loading), write_room.after(load_rooms))
+            .add_systems(OnEnter(GameState::Loading), load_map.after(write_room))
             .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
             .add_systems(
                 OnEnter(GameState::Loading),
@@ -71,7 +76,6 @@ fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
 }
 
 fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
-
     let mut level = LevelRes {
         level: Vec::new(),
     };

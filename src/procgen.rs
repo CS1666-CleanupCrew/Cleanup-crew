@@ -5,9 +5,13 @@ use rand::rngs::StdRng;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
+use std::io::{BufWriter, Write};
 use std::io::prelude::*;
 
 use crate::GameState;
+
+#[derive(Event)]
+pub struct LevelWritten;
 
 
 pub type TablePositions = HashSet<(usize, usize)>;
@@ -51,15 +55,15 @@ pub struct ProcGen;
 
 impl Plugin for ProcGen{
     fn build(&self, app: &mut App) {
-        App::new()
-            .add_systems(OnEnter(GameState::Loading), load_rooms)
+        app
+            // .add_systems(OnEnter(GameState::Loading), load_rooms)
+            // .add_systems(OnEnter(GameState::Loading), write_room.after(load_rooms))
             ;
     }
 }
 
-fn load_rooms(
+pub fn load_rooms(
     mut commands: Commands,
-
 ){
     //Update numroom here to increase or decrease the number of rooms
     let mut rooms:RoomRes = RoomRes{
@@ -67,7 +71,6 @@ fn load_rooms(
         room1:RoomLayout::new(),
         room2:RoomLayout::new(),
     };
-
    
     for n in 1..=rooms.numroom{
         let room = rooms.room(n);
@@ -89,6 +92,20 @@ fn load_rooms(
     }
 
     commands.insert_resource(rooms);
+}
+
+pub fn write_room(
+    mut commands: Commands,
+    rooms: Res<RoomRes>,
+){
+    
+    let f = File::create("assets/rooms/level.txt").expect("file don't exist");
+    let mut writer = BufWriter::new(f);
+
+    for line in &rooms.room1.layout{
+        writer.write(line.as_bytes()).expect("Smth went wrong");
+        writer.write("\n".as_bytes()).expect("Smth went wrong");
+    }
 }
 
 /// Generates table positions from a grid representation of the room.
