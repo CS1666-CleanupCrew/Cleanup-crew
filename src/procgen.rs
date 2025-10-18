@@ -12,6 +12,7 @@ use crate::GameState;
 
 pub type TablePositions = HashSet<(usize, usize)>;
 
+//Layout of each room
 pub struct RoomLayout{
     layout: Vec<String>,
     width: f32,
@@ -28,6 +29,7 @@ impl RoomLayout{
     }
 }
 
+//Contains all the different rooms
 #[derive(Resource)]
 pub struct RoomRes {
     numroom: i8,
@@ -66,22 +68,26 @@ fn load_rooms(
         room2:RoomLayout::new(),
     };
 
-    //Create the filename for each room
+   
     for n in 1..=rooms.numroom{
         let room = rooms.room(n);
 
+        //Create the filename for each room
         let mut filename: String = "assets/rooms/room".to_owned();
         filename.push_str(&n.to_string());
         filename.push_str(".txt");
 
+        //Read the file for that room
         let f = File::open(filename).expect("file don't exist");
         let reader = BufReader::new(f);
         
+        //Push each line into the Vec<String> in room.layout
         for line_result in reader.lines() {
             let line = line_result.unwrap();
             room.layout.push(line);
         }
     }
+
     commands.insert_resource(rooms);
 }
 
