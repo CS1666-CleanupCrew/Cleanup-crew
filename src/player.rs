@@ -374,6 +374,7 @@ fn update_player_sprite(
         sprite.image = new_handle.clone(); // now works
     }
 }
+//-------------------------------------------------------------------------------------------------------------
 
 /**
  * BULLET SECTION
