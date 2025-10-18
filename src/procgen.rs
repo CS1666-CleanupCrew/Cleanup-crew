@@ -8,8 +8,6 @@ use std::io::BufReader;
 use std::io::{BufWriter, Write};
 use std::io::prelude::*;
 
-use crate::GameState;
-
 #[derive(Event)]
 pub struct LevelWritten;
 
