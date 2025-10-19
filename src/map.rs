@@ -179,7 +179,6 @@ pub fn setup_tilemap(
                         },
                         Collidable,
                         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Damage { amount: 10.0 },
                         Name::new("Table"),
                         table::Table,
                         table::Health(50.0),
