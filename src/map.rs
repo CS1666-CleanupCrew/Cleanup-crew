@@ -174,7 +174,7 @@ pub fn setup_tilemap(
                         sprite,
                         Transform {
                             translation: Vec3::new(x, y, Z_FLOOR + 2.0),
-                            scale: Vec3::new(0.6, 0.6, 1.0),
+                            scale: Vec3::new(0.5, 1.0, 1.0),
                             ..Default::default()
                         },
                         Collidable,
