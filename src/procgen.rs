@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::io::{BufWriter, Write};
 use std::io::prelude::*;
-
+use crate::GameState;
 #[derive(Event)]
 pub struct LevelWritten;
 
@@ -37,6 +37,10 @@ pub struct RoomRes {
     numroom: i8,
     room1: RoomLayout,
     room2: RoomLayout,
+    room3: RoomLayout,
+    room4: RoomLayout,
+    room5: RoomLayout,
+    room6: RoomLayout,
 }
 
 impl RoomRes{
@@ -44,6 +48,10 @@ impl RoomRes{
         match n {
             1 => &mut self.room1,
             2 => &mut self.room2,
+            3 => &mut self.room3,
+            4 => &mut self.room4,
+            5 => &mut self.room5,
+            6 => &mut self.room6,
             _ => panic!("Room doesn't exist"),
         }
     }
@@ -51,23 +59,28 @@ impl RoomRes{
 
 pub struct ProcGen;
 
-impl Plugin for ProcGen{
+impl Plugin for ProcGen {
     fn build(&self, app: &mut App) {
         app
-            // .add_systems(OnEnter(GameState::Loading), load_rooms)
-            // .add_systems(OnEnter(GameState::Loading), write_room.after(load_rooms))
-            ;
+            .add_systems(OnEnter(GameState::Loading), load_rooms)
+            .add_systems(OnEnter(GameState::Loading), build_full_level.after(load_rooms));
     }
 }
+
+
 
 pub fn load_rooms(
     mut commands: Commands,
 ){
     //Update numroom here to increase or decrease the number of rooms
     let mut rooms:RoomRes = RoomRes{
-        numroom:2,
+        numroom:6,
         room1:RoomLayout::new(),
         room2:RoomLayout::new(),
+        room3:RoomLayout::new(),
+        room4:RoomLayout::new(),
+        room5:RoomLayout::new(),
+        room6:RoomLayout::new(),
     };
    
     for n in 1..=rooms.numroom{
@@ -92,19 +105,58 @@ pub fn load_rooms(
     commands.insert_resource(rooms);
 }
 
-pub fn write_room(
-    mut commands: Commands,
+pub fn build_full_level(
     rooms: Res<RoomRes>,
-){
-    
-    let f = File::create("assets/rooms/level.txt").expect("file don't exist");
+) {
+    const MAP_W: usize = 300;
+    const MAP_H: usize = 300;
+
+    // full map of '.'
+    let mut map: Vec<Vec<char>> = vec![vec!['.'; MAP_W]; MAP_H];
+
+    // Empty map now created add starting room
+
+    write_room(&mut map, &rooms.room1, 120, 120);
+
+
+
+    let f = File::create("assets/rooms/level.txt").expect("Couldn't create output file");
     let mut writer = BufWriter::new(f);
 
-    for line in &rooms.room1.layout{
-        writer.write(line.as_bytes()).expect("Smth went wrong");
-        writer.write("\n".as_bytes()).expect("Smth went wrong");
+    for row in map {
+        let line: String = row.into_iter().collect();
+        writeln!(writer, "{line}").expect("Failed to write map row");
+    }    
+}
+
+// Writes a room into an existing map at a given top-left coordinate.
+// `top_left_x` and `top_left_y` are the coordinates of the room's top-left corner in the map.
+pub fn write_room(
+    map: &mut Vec<Vec<char>>,
+    room: &RoomLayout,
+    top_left_x: usize,
+    top_left_y: usize,
+) {
+    let map_height = map.len();
+    let map_width = if map_height > 0 { map[0].len() } else { 0 };
+
+    for (row_idx, row_str) in room.layout.iter().enumerate() {
+        let y = top_left_y + row_idx;
+        if y >= map_height {
+            continue;
+        }
+
+        for (col_idx, ch) in row_str.chars().enumerate() {
+            let x = top_left_x + col_idx;
+            if x >= map_width {
+                continue;
+            }
+
+            map[y][x] = ch;
+        }
     }
 }
+
 
 /// Generates table positions from a grid representation of the room.
 /// `grid` is a slice of strings where each string represents a row in the room.

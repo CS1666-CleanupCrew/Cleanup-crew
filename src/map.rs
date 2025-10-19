@@ -10,7 +10,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player;
 use crate::table;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
-use crate::procgen::{load_rooms, write_room};
+use crate::procgen::{load_rooms, bu};
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -48,9 +48,8 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(OnEnter(GameState::Loading), load_rooms)
-            .add_systems(OnEnter(GameState::Loading), write_room.after(load_rooms))
-            .add_systems(OnEnter(GameState::Loading), load_map.after(write_room))
+
+            .add_systems(OnEnter(GameState::Loading), load_map.after(build_full_level))
             .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
             .add_systems(
                 OnEnter(GameState::Loading),
