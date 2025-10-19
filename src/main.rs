@@ -75,6 +75,7 @@ fn main() {
             endcredits::EndCreditPlugin,
             enemy::EnemyPlugin,
             table::TablePlugin,
+            procgen::ProcGen,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Loading), log_state_change)

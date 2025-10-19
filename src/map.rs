@@ -1,5 +1,6 @@
+use bevy::log::Level;
 use bevy::prelude::*;
-use rand::prelude::*;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
@@ -9,6 +10,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player;
 use crate::table;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
+use crate::procgen::{load_rooms, write_room};
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -29,25 +31,28 @@ struct FloorTile;
 struct Wall;
 
 #[derive(Resource)]
-struct TileRes {
+pub struct TileRes {
     floor: Handle<Image>,
     wall: Handle<Image>,
     glass: Handle<Image>,
     table: Handle<Image>,
+    door: Handle<Image>,
 }
 #[derive(Resource)]
 pub struct BackgroundRes(pub Handle<Image>);
 
 #[derive(Resource)]
-pub struct RoomRes {
-    pub room1: Vec<String>,
-    pub room2: Vec<String>,
+pub struct LevelRes {
+    level: Vec<String>,
 }
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Loading), load_map)
+        app
+            .add_systems(OnEnter(GameState::Loading), load_rooms)
+            .add_systems(OnEnter(GameState::Loading), write_room.after(load_rooms))
+            .add_systems(OnEnter(GameState::Loading), load_map.after(write_room))
             .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
             .add_systems(
                 OnEnter(GameState::Loading),
@@ -71,15 +76,15 @@ fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
 }
 
 fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let mut rooms = RoomRes {
-        room1: Vec::new(),
-        room2: Vec::new(),
+    let mut level = LevelRes {
+        level: Vec::new(),
     };
     let tiles = TileRes {
         floor: asset_server.load("map/floortile.png"),
         wall: asset_server.load("map/walls.png"),
         glass: asset_server.load("map/window.png"),
         table: asset_server.load("map/table.png"),
+        door: asset_server.load("map/closed_door.png"),
     };
     let space_tex = BackgroundRes(asset_server.load("map/space.png"));
 
@@ -92,23 +97,25 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     for line_result in reader.lines() {
         let line = line_result.unwrap();
-        rooms.room1.push(line);
+        level.level.push(line);
     }
-    commands.insert_resource(rooms);
+    commands.insert_resource(level);
 }
 
 pub fn setup_tilemap(
     mut commands: Commands, 
-    asset_server: Res<AssetServer>,
-    rooms: Res<RoomRes>,
+    level: Res<LevelRes>,
+    tiles: Res<TileRes>,
     space_tex:Res<BackgroundRes>,
 ) {
-    let floor_tex: Handle<Image> = asset_server.load("map/floortile.png");
-    let wall_tex: Handle<Image>  = asset_server.load("map/walls.png");
-    let table_tex: Handle<Image> = asset_server.load("map/table.png");
+    let floor_tex: Handle<Image> = tiles.floor.clone();
+    let wall_tex: Handle<Image>  = tiles.wall.clone();
+    let table_tex: Handle<Image> = tiles.table.clone();
+    let door_tex: Handle<Image> = tiles.door.clone();
 
-    let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
-    let map_rows = rooms.room1.len() as f32;
+
+    let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
+    let map_rows = level.level.len() as f32;
 
     let map_px_w = map_cols * TILE_SIZE;
     let map_px_h = map_rows * TILE_SIZE;
@@ -140,10 +147,10 @@ pub fn setup_tilemap(
     }
 
     // lets you pick the number of tables and an optional seed
-    let generated_tables = generate_tables_from_grid(&rooms.room1, 25, None);
+    let generated_tables = generate_tables_from_grid(&level.level, 25, None);
 
     // Loop through the room grid
-    for (row_i, row) in rooms.room1.iter().enumerate() {
+    for (row_i, row) in level.level.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
             let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE;
@@ -178,6 +185,18 @@ pub fn setup_tilemap(
                         table::Table,
                         table::Health(50.0),
                         table::TableState::Intact,
+                    ));
+                }
+
+                ('D', _) => {
+                    let mut sprite = Sprite::from_image(door_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Door"),
                     ));
                 }
 
@@ -233,15 +252,15 @@ fn follow_player(
     //finds all entities that are able to transform and are made of the player component
     player_query: Query<&Transform, (With<player::Player>, Without<MainCamera>)>,
     mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<player::Player>)>,
-    rooms: Res<RoomRes>,
+    level: Res<LevelRes>,
 ) {
     //players current position.
     if let Ok(player_transform) = player_query.get_single() {
         //This will error out if we would like to have several cameras, this makes the camera mutable
         if let Ok(mut camera_transform) = camera_query.get_single_mut() {
             //level bounds  calculation given 40x23
-            let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
-            let map_rows = rooms.room1.len() as f32;
+            let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
+            let map_rows = level.level.len() as f32;
             let level_width = map_cols * TILE_SIZE;
             let level_height = map_rows * TILE_SIZE;
 
