@@ -9,7 +9,7 @@ use crate::procgen::generate_tables_from_grid;
 use crate::collidable::{Collidable, Collider};
 use crate::player;
 use crate::table;
-use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
+use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
 use crate::procgen::{load_rooms, write_room};
 
 #[derive(Component)]
@@ -24,12 +24,6 @@ struct ParallaxCell {
     iy: i32,
 }
 
-#[derive(Component)]
-struct FloorTile;
-
-#[derive(Component)]
-struct Wall;
-
 #[derive(Resource)]
 pub struct TileRes {
     floor: Handle<Image>,
@@ -38,6 +32,7 @@ pub struct TileRes {
     table: Handle<Image>,
     door: Handle<Image>,
 }
+
 #[derive(Resource)]
 pub struct BackgroundRes(pub Handle<Image>);
 
@@ -45,6 +40,9 @@ pub struct BackgroundRes(pub Handle<Image>);
 pub struct LevelRes {
     level: Vec<String>,
 }
+
+#[derive(Resource, Default)]
+pub struct EnemySpawnPoints(pub Vec<Vec3>);
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
@@ -122,10 +120,12 @@ pub fn setup_tilemap(
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
 
-        let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
+    let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
     let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
+
+    let mut spawns = EnemySpawnPoints::default();
 
     for iy in -1..(ny + 1) {
         for ix in -1..(nx + 1) {
@@ -157,8 +157,8 @@ pub fn setup_tilemap(
 
             let is_generated_table = generated_tables.contains(&(col_i, row_i));
 
-            // Always draw a floor tile under walls/tables
-            if ch == '#' || ch == 'T' || ch == 'W' || is_generated_table {
+            // Always draw a floor tile under walls/tables/spawns
+            if ch == '#' || ch == 'T' || ch == 'W' || ch == 'E' || is_generated_table {
                 commands.spawn((
                     Sprite::from_image(floor_tex.clone()),
                     Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
@@ -212,17 +212,24 @@ pub fn setup_tilemap(
                         Name::new("Wall"),
                     ));
                 }
+
+                // Spawn enemies
+                ('E', _) => {
+                    spawns.0.push(Vec3::new(x, y, Z_ENTITIES));
+                }
+
                 _ => {}
             }
         }
     }
+    commands.insert_resource(spawns);
 }
 
 fn parallax_scroll(
     cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
     mut bg_q: Query<(&ParallaxBg, &ParallaxCell, &mut Transform), With<ParallaxBg>>,
 ) {
-    let Ok(cam_tf) = cam_q.get_single() else {
+    let Ok(cam_tf) = cam_q.single() else {
         return;
     };
     let cam = cam_tf.translation;
@@ -255,9 +262,9 @@ fn follow_player(
     level: Res<LevelRes>,
 ) {
     //players current position.
-    if let Ok(player_transform) = player_query.get_single() {
+    if let Ok(player_transform) = player_query.single() {
         //This will error out if we would like to have several cameras, this makes the camera mutable
-        if let Ok(mut camera_transform) = camera_query.get_single_mut() {
+        if let Ok(mut camera_transform) = camera_query.single_mut() {
             //level bounds  calculation given 40x23
             let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
             let map_rows = level.level.len() as f32;

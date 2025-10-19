@@ -5,9 +5,9 @@ use crate::collidable::{Collidable, Collider};
 pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
 pub const ENEMY_ACCEL: f32 = 1800.;
-static mut ENEMY_START_POS: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
 
-use crate::{GameState, Z_ENTITIES};
+use crate::map::EnemySpawnPoints;
+use crate::GameState;
 
 const ANIM_TIME: f32 = 0.2;
 
@@ -19,6 +19,8 @@ pub struct Velocity {
     pub velocity: Vec2,
 }
 
+#[derive(Component)]
+pub struct ActiveEnemy;
 
 #[derive(Component)]
 pub struct Health(pub f32);
@@ -61,7 +63,7 @@ impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Startup, load_enemy)
-            .add_systems(OnEnter(GameState::Playing), spawn_enemy.after(load_enemy))
+            .add_systems(OnEnter(GameState::Playing), spawn_enemies_from_points)
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
@@ -89,19 +91,6 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 }
 
-// Getter
-pub fn enemy_start_pos() -> Vec3 {
-    unsafe { ENEMY_START_POS }
-}
-
-// Setter
-pub fn set_enemy_start_pos(new_pos: Vec3) {
-    unsafe {
-        ENEMY_START_POS = new_pos;
-    }
-}
-
-
 //if enemy's hp = 0, then despawn
 fn check_enemy_health(
     mut commands: Commands,
@@ -114,31 +103,37 @@ fn check_enemy_health(
     }
 }
 
-pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
-    commands.spawn((
+pub fn spawn_enemy_at(
+    commands: &mut Commands,
+    enemy_res: &EnemyRes,
+    at: Vec3,
+    active: bool,
+) {
+    let mut e = commands.spawn((
         Sprite::from_image(enemy_res.frames[0].clone()),
-        Transform {
-            translation: Vec3::new(
-                unsafe { ENEMY_START_POS.x },
-                unsafe { ENEMY_START_POS.y },
-                Z_ENTITIES,
-            ),
-            ..default()
-        },
+        Transform { translation: at, ..Default::default() },
         Enemy,
         Velocity::new(),
         Health::new(50.0),
         AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
-        EnemyFrames {
-            handles: enemy_res.frames.clone(),
-            index: 0,
-        },
+        EnemyFrames { handles: enemy_res.frames.clone(), index: 0 },
     ));
+    if active { e.insert(ActiveEnemy); }
+}
+
+fn spawn_enemies_from_points(
+    mut commands: Commands,
+    enemy_res: Res<EnemyRes>,
+    points: Res<EnemySpawnPoints>,
+) {
+    for &p in &points.0 {
+        spawn_enemy_at(&mut commands, &enemy_res, p, true); // active now
+    }
 }
 
 fn animate_enemy(
     time: Res<Time>,
-    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames, &Velocity), With<Enemy>>,
+    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames, &Velocity), (With<Enemy>, With<ActiveEnemy>)>,
 ) {
     for (mut sprite, mut timer, mut frames, velocity) in &mut query {
         timer.tick(time.delta());
@@ -183,10 +178,10 @@ pub fn animate_enemy_hit(
 fn move_enemy(
     time: Res<Time>,
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut enemy_query: Query<(&mut Transform, &mut Velocity), With<Enemy>>,
+    mut enemy_query: Query<(&mut Transform, &mut Velocity), (With<Enemy>, With<ActiveEnemy>)>,
     wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>, Without<Player>)>,
 ) {
-    if let Ok(player_transform) = player_query.get_single() {
+    if let Ok(player_transform) = player_query.single() {
         let deltat = time.delta_secs();
         let accel = ENEMY_ACCEL * deltat;
 
