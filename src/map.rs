@@ -10,7 +10,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player;
 use crate::table;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
-use crate::procgen::{load_rooms, bu};
+use crate::procgen::{load_rooms, build_full_level};
 
 #[derive(Component)]
 struct ParallaxBg {
