@@ -223,13 +223,13 @@ fn move_player(
     };
     let change = **velocity * deltat;
 
-    let min = Vec3::new(
+    let _min = Vec3::new(
         -WIN_W / 2. + (TILE_SIZE as f32) / 2.,
         -WIN_H / 2. + (TILE_SIZE as f32) * 1.5,
         900.,
     );
 
-    let max = Vec3::new(
+    let _max = Vec3::new(
         LEVEL_LEN - (WIN_W / 2. + (TILE_SIZE as f32) / 2.),
         WIN_H / 2. - (TILE_SIZE as f32) / 2.,
         900.,

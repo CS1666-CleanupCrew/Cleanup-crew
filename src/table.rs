@@ -63,7 +63,7 @@ fn animate_broken_tables(
     time: Res<Time>,
     mut query: Query<(Entity, &mut Visibility, &mut BrokenTimer), With<Table>>,
 ) {
-    for (entity, mut visibility, mut timer) in query.iter_mut() {
+    for (entity, _visibility, mut timer) in query.iter_mut() {
         timer.0.tick(time.delta());
 
         //if timer.0.just_finished() {

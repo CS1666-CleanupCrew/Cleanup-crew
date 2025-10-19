@@ -136,7 +136,7 @@ fn damage_on_collision(
 ) {
     cooldown.0.tick(time.delta());
 
-    if let Ok((mut health, p_tf)) = player_q.get_single_mut() {
+    if let Ok((mut health, p_tf)) = player_q.single_mut() {
         if !cooldown.0.finished() { return; }
 
         let player_half = Vec2::splat(TILE_SIZE * 0.5);
