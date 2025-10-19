@@ -204,7 +204,7 @@ pub fn setup_tilemap(
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
                         sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
                         Collidable,
                         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
                         Name::new("Wall"),
