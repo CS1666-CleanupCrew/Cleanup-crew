@@ -335,6 +335,10 @@ fn enemy_hits_player(
                 enemy_half,
             ) {
                 if damage_timer.0.finished() {
+                    info!(
+                        "Player hit by entity {:?} at position {:?}",
+                        enemy_entity, enemy_pos
+                    );
                     health.0 -= 15.0;
                     damage_timer.0.reset();
                     commands.entity(enemy_entity).insert(HitAnimation {
