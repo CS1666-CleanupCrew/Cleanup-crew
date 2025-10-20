@@ -22,6 +22,6 @@ impl PerlinField {
         let nx = x as f64 * self.scale;
         let ny = y as f64 * self.scale;
         let val = self.perlin.get([nx, ny]) as f32;
-        ((val + 1.0) * 0.5) * 5.0;
+        ((val + 1.0) * 0.5) * 5.0
     }
 }
