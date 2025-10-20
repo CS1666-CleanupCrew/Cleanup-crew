@@ -126,8 +126,10 @@ pub fn setup_tilemap(
 
     let mut spawns = EnemySpawnPoints::default();
 
-    for iy in -1..(ny + 1) {
-        for ix in -1..(nx + 1) {
+
+    let pad: i32 = 3;
+    for iy in -pad..(ny + 1) {
+        for ix in -pad..(nx + 1) {
             let cx = (ix as f32) * BG_WORLD;
             let cy = (iy as f32) * BG_WORLD;
 
