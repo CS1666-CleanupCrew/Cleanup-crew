@@ -26,6 +26,9 @@ const BLEND: f32 = 0.4;
 const C_X: [f32; 9] = [0.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, -1.0, 1.0];
 const C_Y: [f32; 9] = [0.0, 0.0, 1.0, 0.0, -1.0, 1.0, 1.0, -1.0, -1.0];
 
+//D2Q9 opposite directions for bounce back
+const OPPOSITE_DIR: [usize; 9] = [0, 3, 4, 1, 2, 7, 8, 5, 6];
+
 // D2Q9 weights
 const WEIGHTS: [f32; 9] = [
     4.0 / 9.0,
@@ -226,6 +229,8 @@ fn collision_step(mut query: Query<&mut FluidGrid>)
 fn streaming_step(mut query: Query<&mut FluidGrid>) {
     for mut grid in &mut query 
     {
+        //used as a buffer
+        let old_dist = grid.distribution.clone();
         //copy of the entire grid
         let mut new_dist = grid.distribution.clone();
         //loop through all the cells
@@ -239,19 +244,39 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
                 {
                     continue;
                 }
-                //this loop goes through all the directions aside from the rest state
-                for i in 1..9 
+                //this loop goes through all the directions
+                for i in 0..9 
                 {
                     // see where did the particles came from, not where they are going. this is backstreaming
                     let src_x = x as isize - C_X[i] as isize;
                     let src_y = y as isize - C_Y[i] as isize;
+
+                    //check for bounce back (off the grid or into obstacle)
+                    let mut bounced_back = false;
+
                     //check for bounds
-                    if src_x >= 0 && src_x < grid.width as isize 
-                        && src_y >= 0 && src_y < grid.height as isize {
+                    if src_x < 0 || src_x >= grid.width as isize || 
+                    src_y < 0 || src_y >= grid.height as isize {
+                            //came from out of bounds
+                            bounced_back = true;
+                    } else {
+                        //check if it came from an obstacle
                         let src_idx = grid.get_index(src_x as usize, src_y as usize);
-                         //particles that were moving in direction i at the source have now arrived at the current cell.
-                        new_dist[idx][i] = grid.distribution[src_idx][i];
+                        if grid.obstacles[src_idx] {
+                            bounced_back = true;
+                        }
                     }
+
+                    //if bounced back, reverse direction
+                    if bounced_back {
+                        let opposite_i = OPPOSITE_DIR[i];
+                        new_dist[idx][i] = old_dist[idx][opposite_i];
+                    }
+                    else {
+                        //normal streaming, no bounch back
+                        let src_idx = grid.get_index(src_x as usize, src_y as usize);
+                        new_dist[idx][i] = old_dist[src_idx][i];
+                    }   
                 }
             }
         }
@@ -387,4 +412,4 @@ pub fn world_to_grid(world_pos: Vec2, grid_width: usize, grid_height: usize) -> 
     
     (grid_x, grid_y)
 }
-}
+
