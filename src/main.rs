@@ -9,6 +9,8 @@ pub mod player;
 pub mod table;
 pub mod map;
 pub mod procgen;
+pub mod air;
+pub mod noise;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
