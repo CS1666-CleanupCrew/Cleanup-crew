@@ -40,7 +40,7 @@ pub struct BackgroundRes(pub Handle<Image>);
 
 #[derive(Resource)]
 pub struct LevelRes {
-    level: Vec<String>,
+    pub level: Vec<String>,
 }
 
 #[derive(Resource, Default)]

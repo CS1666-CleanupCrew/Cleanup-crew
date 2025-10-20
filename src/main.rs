@@ -1,6 +1,7 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
+use crate::air::init_air_grid;
 
 pub mod collidable;
 pub mod endcredits;
@@ -9,6 +10,8 @@ pub mod player;
 pub mod table;
 pub mod map;
 pub mod procgen;
+pub mod air;
+pub mod noise;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
