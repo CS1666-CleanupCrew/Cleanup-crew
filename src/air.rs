@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 use crate::noise::PerlinField;
 
-// Import your level rows; adjust the path/names to match your project.
 use crate::map::LevelRes;
 
 #[derive(Resource)]
@@ -46,9 +45,9 @@ for y in 0..h {
         let ch = row.as_bytes()[x] as char;
 
         if ch == 'W' {
-            let i = y * grid.w + x;      // <-- compute index first
-            grid.obstacles[i] = true;     // <-- mutate using the index
-            grid.set(x, y, 1.0);          // separate statement; fine
+            let i = y * grid.w + x;
+            grid.obstacles[i] = true;
+            grid.set(x, y, 1.0);          
             continue;
         }
 
