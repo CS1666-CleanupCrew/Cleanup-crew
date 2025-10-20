@@ -244,8 +244,8 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
                 {
                     continue;
                 }
-                //this loop goes through all the directions aside from the rest state
-                for i in 1..9 
+                //this loop goes through all the directions
+                for i in 0..9 
                 {
                     // see where did the particles came from, not where they are going. this is backstreaming
                     let src_x = x as isize - C_X[i] as isize;
@@ -255,8 +255,8 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
                     let mut bounced_back = false;
 
                     //check for bounds
-                    if src_x >= 0 && src_x < grid.width as isize 
-                        && src_y >= 0 && src_y < grid.height as isize {
+                    if src_x < 0 || src_x >= grid.width as isize || 
+                    src_y < 0 || src_y >= grid.height as isize {
                             //came from out of bounds
                             bounced_back = true;
                     } else {
