@@ -84,7 +84,6 @@ fn main() {
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
-        .add_systems(OnEnter(GameState::Playing), init_air_grid)
         .add_systems(Startup, setup_ui_health)
         .add_systems(
             Update,
