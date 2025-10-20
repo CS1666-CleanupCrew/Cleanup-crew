@@ -17,11 +17,11 @@ impl PerlinField {
         }
     }
 
-    // Returns a density value between roughly `[1.0 - amplitude, 1.0 + amplitude]`.
+    // Returns a density value between roughly
     pub fn density(&self, x: usize, y: usize) -> f32 {
         let nx = x as f64 * self.scale;
         let ny = y as f64 * self.scale;
-        let val = self.perlin.get([nx, ny]) as f32; // [-1, 1]
-        1.0 + val * self.amplitude
+        let val = self.perlin.get([nx, ny]) as f32;
+        ((val + 1.0) * 0.5) * 5.0;
     }
 }

@@ -47,7 +47,7 @@ for y in 0..h {
         if ch == 'W' {
             let i = y * grid.w + x;
             grid.obstacles[i] = true;
-            grid.set(x, y, 1.0);          
+            grid.set(x, y, 0.0);          
             continue;
         }
 
