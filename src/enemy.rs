@@ -133,6 +133,7 @@ pub fn spawn_enemy(mut commands: Commands, enemy_res: Res<EnemyRes>) {
             handles: enemy_res.frames.clone(),
             index: 0,
         },
+        crate::fluiddynamics::PulledByFluid { mass: 50.0 },
     ));
 }
 

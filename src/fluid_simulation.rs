@@ -1,9 +1,10 @@
+
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 
 //Division of the room in small grids for the airflow measurement there
-const GRID_WIDTH: usize = 128;
-const GRID_HEIGHT: usize = 96;
+pub const GRID_WIDTH: usize = 128;
+pub const GRID_HEIGHT: usize = 96;
 
 //responsible for the thickness of the air
 const RELAXATION_TIME: f32 = 0.55;
@@ -176,7 +177,7 @@ impl FluidGrid {
 }
 
 //this method will be called from the map generation
-fn setup_fluid_grid(mut commands: Commands) {
+pub fn setup_fluid_grid(mut commands: Commands) {
     let mut grid = FluidGrid::new(GRID_WIDTH, GRID_HEIGHT);
     grid.initialize_with_perlin(42);
     
@@ -301,8 +302,8 @@ fn apply_breach_forces(mut query: Query<&mut FluidGrid>)
 //apply suction forces to objects, pulling them toward breaches
 fn pull_objects_toward_breaches(
     grid_query: Query<&FluidGrid>,
-    mut objects: Query<(&Transform, &mut Velocity, &PulledByFluid), Without<crate::player::Player>>,
-) 
+    mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
+)
 {
     //get the fluid grid, exit if it doesn't exist
     let Ok(grid) = grid_query.get_single() else 
@@ -364,12 +365,12 @@ fn pull_objects_toward_breaches(
         //add influence from fluid flow itself
         let fluid_force = Vec2::new(fluid_vx, fluid_vy) * 100.0;
         //apply acceleration assuming 60fps
-        velocity.0 += (acceleration + fluid_force) * 0.016;
+        velocity.velocity += (acceleration + fluid_force) * 0.016;
         //prevent objects from flying too fast
         let max_velocity = 300.0;
-        if velocity.0.length() > max_velocity 
+        if velocity.velocity.length() > max_velocity 
         {
-            velocity.0 = velocity.0.normalize() * max_velocity;
+           velocity.velocity = velocity.velocity.normalize() * max_velocity;
         }
     }
 }
@@ -387,4 +388,4 @@ pub fn world_to_grid(world_pos: Vec2, grid_width: usize, grid_height: usize) -> 
     
     (grid_x, grid_y)
 }
-}
+

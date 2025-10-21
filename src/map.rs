@@ -48,7 +48,7 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Loading), load_map)
-            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
+            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map).after(crate::fluiddynamics::setup_fluid_grid))
             .add_systems(
                 OnEnter(GameState::Loading),
                 playing_state.after(setup_tilemap),
@@ -101,11 +101,13 @@ pub fn setup_tilemap(
     mut commands: Commands, 
     asset_server: Res<AssetServer>,
     rooms: Res<RoomRes>,
-    space_tex:Res<BackgroundRes>,
+    space_tex: Res<BackgroundRes>,
+    mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
 ) {
     let floor_tex: Handle<Image> = asset_server.load("map/floortile.png");
     let wall_tex: Handle<Image>  = asset_server.load("map/walls.png");
     let table_tex: Handle<Image> = asset_server.load("map/table.png");
+    let glass_tex: Handle<Image> = asset_server.load("map/window.png");
 
     let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = rooms.room1.len() as f32;
@@ -115,7 +117,7 @@ pub fn setup_tilemap(
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
 
-        let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
+    let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
     let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
@@ -130,7 +132,7 @@ pub fn setup_tilemap(
 
             commands.spawn((
                 bg,
-                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)), // behind floor
+                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
                 Visibility::default(),
                 ParallaxBg { factor: 0.9, tile: BG_WORLD },
                 ParallaxCell { ix, iy },
@@ -139,10 +141,10 @@ pub fn setup_tilemap(
         }
     }
 
-    // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&rooms.room1, 25, None);
 
-    // Loop through the room grid
+    let mut breach_positions = Vec::new();
+
     for (row_i, row) in rooms.room1.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
@@ -150,8 +152,7 @@ pub fn setup_tilemap(
 
             let is_generated_table = generated_tables.contains(&(col_i, row_i));
 
-            // Always draw a floor tile under walls/tables
-            if ch == '#' || ch == 'T' || ch == 'W' || is_generated_table {
+            if ch == '#' || ch == 'T' || ch == 'W' || ch == 'G' || is_generated_table {
                 commands.spawn((
                     Sprite::from_image(floor_tex.clone()),
                     Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
@@ -160,7 +161,6 @@ pub fn setup_tilemap(
             }
 
             match (ch, is_generated_table) {
-                // Spawn either authored ('T') or generated tables
                 ('T', _) | ('#', true) => {
                     let mut sprite = Sprite::from_image(table_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
@@ -181,7 +181,6 @@ pub fn setup_tilemap(
                     ));
                 }
 
-                // Spawn walls
                 ('W', _) => {
                     let mut sprite = Sprite::from_image(wall_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
@@ -193,10 +192,33 @@ pub fn setup_tilemap(
                         Name::new("Wall"),
                     ));
                 }
+
+                ('G', _) => {
+                    let mut sprite = Sprite::from_image(glass_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Name::new("Glass"),
+                    ));
+                    
+                    let breach_pos = crate::fluiddynamics::world_to_grid(
+                        Vec2::new(x, y),
+                        crate::fluiddynamics::GRID_WIDTH,
+                        crate::fluiddynamics::GRID_HEIGHT,
+                    );
+                    breach_positions.push(breach_pos);
+                }
                 _ => {}
             }
         }
     }
+
+    if let Ok(mut grid) = fluid_query.single_mut() {
+    for (bx, by) in breach_positions {
+        grid.add_breach(bx, by);
+    }
+}
 }
 
 fn parallax_scroll(

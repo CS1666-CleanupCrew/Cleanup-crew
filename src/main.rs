@@ -9,6 +9,8 @@ pub mod player;
 pub mod table;
 pub mod map;
 pub mod procgen;
+#[path = "fluid_simulation.rs"]
+pub mod fluiddynamics;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -75,6 +77,7 @@ fn main() {
             endcredits::EndCreditPlugin,
             enemy::EnemyPlugin,
             table::TablePlugin,
+            fluiddynamics::FluidSimPlugin,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Loading), log_state_change)

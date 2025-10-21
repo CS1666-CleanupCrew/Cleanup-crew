@@ -53,7 +53,8 @@ fn check_for_broken_tables(
 
             commands
                 .entity(entity)
-                .insert(BrokenTimer(Timer::from_seconds(1.5, TimerMode::Once)));
+                .insert(BrokenTimer(Timer::from_seconds(1.5, TimerMode::Once)))
+                .insert(crate::fluiddynamics::PulledByFluid { mass: 30.0 });
         }
     }
 }
