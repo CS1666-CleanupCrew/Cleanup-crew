@@ -12,6 +12,7 @@ pub mod map;
 pub mod procgen;
 pub mod air;
 pub mod noise;
+pub mod menu;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -49,6 +50,7 @@ struct DamageCooldown(Timer);
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum GameState {
     #[default]
+    Menu,
     Loading,
     Playing,
     EndCredits,
@@ -79,8 +81,10 @@ fn main() {
             enemy::EnemyPlugin,
             table::TablePlugin,
             procgen::ProcGen,
+            menu::MenuPlugin,
         ))
         .add_systems(Startup, setup_camera)
+        .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
