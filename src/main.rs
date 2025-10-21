@@ -1,6 +1,7 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
+use crate::air::init_air_grid;
 
 pub mod collidable;
 pub mod endcredits;
@@ -10,6 +11,9 @@ pub mod table;
 pub mod window;
 pub mod map;
 pub mod procgen;
+pub mod air;
+pub mod noise;
+pub mod menu;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -47,6 +51,7 @@ struct DamageCooldown(Timer);
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum GameState {
     #[default]
+    Menu,
     Loading,
     Playing,
     EndCredits,
@@ -78,8 +83,10 @@ fn main() {
             table::TablePlugin,
             window::WindowPlugin,
             procgen::ProcGen,
+            menu::MenuPlugin,
         ))
         .add_systems(Startup, setup_camera)
+        .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)

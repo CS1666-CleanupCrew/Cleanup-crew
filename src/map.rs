@@ -8,6 +8,7 @@ use crate::procgen::generate_tables_from_grid;
 
 use crate::collidable::{Collidable, Collider};
 use crate::player;
+use crate::enemy::Enemy;
 use crate::table;
 use crate::window;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
@@ -31,7 +32,8 @@ pub struct TileRes {
     wall: Handle<Image>,
     glass: Handle<Image>,
     table: Handle<Image>,
-    door: Handle<Image>,
+    closed_door: Handle<Image>,
+    open_door: Handle<Image>,
 }
 
 #[derive(Resource)]
@@ -39,11 +41,16 @@ pub struct BackgroundRes(pub Handle<Image>);
 
 #[derive(Resource)]
 pub struct LevelRes {
-    level: Vec<String>,
+    pub level: Vec<String>,
 }
 
 #[derive(Resource, Default)]
 pub struct EnemySpawnPoints(pub Vec<Vec3>);
+
+#[derive(Component)]
+pub struct Door {
+    pub is_open: bool,
+}
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
@@ -57,7 +64,8 @@ impl Plugin for MapPlugin {
                 playing_state.after(setup_tilemap),
             )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, parallax_scroll);
+            .add_systems(Update, parallax_scroll)
+            .add_systems(Update, open_doors_when_clear.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -83,7 +91,8 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
         wall: asset_server.load("map/walls.png"),
         glass: asset_server.load("map/window.png"),
         table: asset_server.load("map/table.png"),
-        door: asset_server.load("map/closed_door.png"),
+        closed_door: asset_server.load("map/closed_door.png"),
+        open_door: asset_server.load("map/open_door.png"),
     };
     let space_tex = BackgroundRes(asset_server.load("map/space.png"));
 
@@ -110,8 +119,9 @@ pub fn setup_tilemap(
     let floor_tex: Handle<Image> = tiles.floor.clone();
     let wall_tex: Handle<Image>  = tiles.wall.clone();
     let table_tex: Handle<Image> = tiles.table.clone();
-    let door_tex: Handle<Image> = tiles.door.clone();
     let glass_tex: Handle<Image> = tiles.glass.clone();
+    let closed_door_tex: Handle<Image> = tiles.closed_door.clone();
+    let open_door_tex: Handle<Image> = tiles.open_door.clone();
 
 
     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
@@ -129,8 +139,10 @@ pub fn setup_tilemap(
 
     let mut spawns = EnemySpawnPoints::default();
 
-    for iy in -1..(ny + 1) {
-        for ix in -1..(nx + 1) {
+
+    let pad: i32 = 3;
+    for iy in -pad..(ny + 1) {
+        for ix in -pad..(nx + 1) {
             let cx = (ix as f32) * BG_WORLD;
             let cy = (iy as f32) * BG_WORLD;
 
@@ -190,7 +202,7 @@ pub fn setup_tilemap(
                 }
 
                 ('D', _) => {
-                    let mut sprite = Sprite::from_image(door_tex.clone());
+                    let mut sprite = Sprite::from_image(closed_door_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
                         sprite,
@@ -198,6 +210,7 @@ pub fn setup_tilemap(
                         Collidable,
                         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
                         Name::new("Door"),
+                        Door { is_open: false },
                     ));
                 }
 
@@ -241,6 +254,30 @@ pub fn setup_tilemap(
     }
     commands.insert_resource(spawns);
 }
+
+fn open_doors_when_clear(
+        enemies: Query<Entity, With<Enemy>>,
+        mut doors: Query<(Entity, &mut Sprite, &mut Door)>,
+        tiles: Res<TileRes>,
+        mut commands: Commands,
+    ) {
+        // If any enemies exist, do nothing
+        if !enemies.is_empty() {
+            return;
+        }
+
+        // Open any closed doors if no enemies
+        for (entity, mut sprite, mut door) in &mut doors {
+            if !door.is_open {
+                sprite.image = tiles.open_door.clone();
+                door.is_open = true;
+
+                // Remove collision
+                commands.entity(entity).remove::<Collidable>();
+                commands.entity(entity).remove::<Collider>();
+            }
+        }
+    }
 
 fn parallax_scroll(
     cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
