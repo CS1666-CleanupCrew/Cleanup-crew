@@ -2,6 +2,7 @@ use bevy::{prelude::*};
 
 use crate::collidable::{Collidable, Collider};
 use crate::table;
+use crate::window;
 use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
@@ -98,6 +99,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
             .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
             ;
     }
 }
@@ -538,6 +540,36 @@ fn bullet_hits_table(
                     table_pos.x,
                     table_pos.y,
                     table_half,
+                ) {
+                    health.0 -= 25.0; // Deal 25 damage
+                    commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                    continue 'bullet_loop; // Move to the next bullet
+                }
+            }
+        }
+    }
+}
+
+fn bullet_hits_window(
+    mut commands: Commands,
+    mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
+    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+) {
+    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
+    let window_half = Vec2::splat(TILE_SIZE * 0.5); // window's collider size
+
+    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        for (window_tf, mut health, state) in &mut window_query {
+            if *state == window::GlassState::Intact{
+                let window_pos = window_tf.translation;
+                if aabb_overlap(
+                    bullet_pos.x,
+                    bullet_pos.y,
+                    bullet_half,
+                    window_pos.x,
+                    window_pos.y,
+                    window_half,
                 ) {
                     health.0 -= 25.0; // Deal 25 damage
                     commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
