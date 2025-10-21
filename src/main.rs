@@ -8,6 +8,7 @@ pub mod endcredits;
 pub mod enemy;
 pub mod player;
 pub mod table;
+pub mod window;
 pub mod map;
 pub mod procgen;
 pub mod air;
@@ -80,6 +81,7 @@ fn main() {
             endcredits::EndCreditPlugin,
             enemy::EnemyPlugin,
             table::TablePlugin,
+            window::WindowPlugin,
             procgen::ProcGen,
             menu::MenuPlugin,
         ))

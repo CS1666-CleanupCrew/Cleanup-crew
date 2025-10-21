@@ -10,6 +10,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player;
 use crate::enemy::Enemy;
 use crate::table;
+use crate::window;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
 use crate::procgen::{load_rooms, build_full_level};
 
@@ -74,6 +75,7 @@ impl Plugin for MapPlugin {
 //  '.' = empty
 //  'T' = table (floor renders underneath)
 //  'W' = wall (floor renders underneath + collidable wall sprite)
+//   'G' = glass window
 // Minimum of 40 cols (1280/32), 23 rows (720/32 = 22.5))
 
 fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
@@ -117,6 +119,7 @@ pub fn setup_tilemap(
     let floor_tex: Handle<Image> = tiles.floor.clone();
     let wall_tex: Handle<Image>  = tiles.wall.clone();
     let table_tex: Handle<Image> = tiles.table.clone();
+    let glass_tex: Handle<Image> = tiles.glass.clone();
     let closed_door_tex: Handle<Image> = tiles.closed_door.clone();
     let open_door_tex: Handle<Image> = tiles.open_door.clone();
 
@@ -223,6 +226,22 @@ pub fn setup_tilemap(
                         Name::new("Wall"),
                     ));
                 }
+
+                ('G', _) => {
+                    let mut sprite = Sprite::from_image(glass_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Glass"),
+                        window::Window,
+                        window::Health(50.0),
+                        window::GlassState::Intact,
+                    ));
+                }
+
 
                 // Spawn enemies
                 ('E', _) => {
