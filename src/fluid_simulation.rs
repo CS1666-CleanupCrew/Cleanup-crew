@@ -183,8 +183,8 @@ pub fn setup_fluid_grid(mut commands: Commands) {
     
   
    
-    //grid.add_breach(10, 48); 
-    //grid.add_breach(118, 48); 
+     grid.add_breach(20, 48);  
+    grid.add_breach(100, 48); 
     
     commands.spawn((grid, Name::new("FluidGrid")));
     info!("Fluid simulation with breach aaaaaaaahhhhhh");
@@ -314,6 +314,11 @@ fn pull_objects_toward_breaches(
     if grid.breaches.is_empty() 
     {
         return;
+    }
+
+     let obj_count = objects.iter().len();
+    if obj_count > 0 {
+        info!("Pulling {} objects toward {} breaches", obj_count, grid.breaches.len());
     }
     
     //conversion between world coordinates and grid coordinates

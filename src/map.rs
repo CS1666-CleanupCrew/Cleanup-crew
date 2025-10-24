@@ -178,6 +178,8 @@ pub fn setup_tilemap(
                         table::Table,
                         table::Health(50.0),
                         table::TableState::Intact,
+                        crate::fluiddynamics::PulledByFluid { mass: 30.0 },  
+                        crate::enemy::Velocity::new(),
                     ));
                 }
 

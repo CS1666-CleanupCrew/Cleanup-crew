@@ -22,13 +22,14 @@ struct TableGraphics {
 }
 
 pub struct TablePlugin;
+use crate::enemy::Velocity;
 
 impl Plugin for TablePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, load_table_graphics)
             .add_systems(
                 Update,
-                (check_for_broken_tables, animate_broken_tables),
+                (check_for_broken_tables, animate_broken_tables, apply_table_velocity),
             );
     }
 }
@@ -52,9 +53,10 @@ fn check_for_broken_tables(
             sprite.image = table_graphics.broken.clone();
 
             commands
-                .entity(entity)
+                 .entity(entity)
                 .insert(BrokenTimer(Timer::from_seconds(1.5, TimerMode::Once)))
-                .insert(crate::fluiddynamics::PulledByFluid { mass: 30.0 });
+                .insert(crate::fluiddynamics::PulledByFluid { mass: 30.0 })
+                .insert(Velocity::new());
         }
     }
 }
@@ -71,5 +73,22 @@ fn animate_broken_tables(
             //*visibility = Visibility::Hidden;
             commands.entity(entity).remove::<Collidable>();
         //}
+    }
+}
+
+fn apply_table_velocity(
+    time: Res<Time>,
+    mut query: Query<(&mut Transform, &crate::enemy::Velocity), With<Table>>,
+) {
+    for (mut transform, velocity) in &mut query {
+        let delta = velocity.velocity * time.delta_secs();
+        transform.translation.x += delta.x;
+        transform.translation.y += delta.y;
+        
+        if velocity.velocity.length() > 0.1 {
+            info!("Table moving: vel=({:.1}, {:.1}), pos=({:.1}, {:.1})", 
+                  velocity.velocity.x, velocity.velocity.y,
+                  transform.translation.x, transform.translation.y);
+        }
     }
 }
