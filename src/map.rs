@@ -161,27 +161,29 @@ pub fn setup_tilemap(
             }
 
             match (ch, is_generated_table) {
-                ('T', _) | ('#', true) => {
-                    let mut sprite = Sprite::from_image(table_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
-                    commands.spawn((
-                        sprite,
-                        Transform {
-                            translation: Vec3::new(x, y, Z_FLOOR + 2.0),
-                            scale: Vec3::new(0.6, 0.6, 1.0),
-                            ..Default::default()
-                        },
-                        Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Damage { amount: 10.0 },
-                        Name::new("Table"),
-                        table::Table,
-                        table::Health(50.0),
-                        table::TableState::Intact,
-                        crate::fluiddynamics::PulledByFluid { mass: 30.0 },  
-                        crate::enemy::Velocity::new(),
-                    ));
-                }
+                    ('T', _) | ('#', true) => {
+                        let mut sprite = Sprite::from_image(table_tex.clone());
+                        sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+                        let table_entity = commands.spawn((
+                            sprite,
+                            Transform {
+                                translation: Vec3::new(x, y, Z_FLOOR + 2.0),
+                                scale: Vec3::new(0.6, 0.6, 1.0),
+                                ..Default::default()
+                            },
+                            Collidable,
+                            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                            Damage { amount: 10.0 },
+                            Name::new("Table"),
+                            table::Table,
+                            table::Health(50.0),
+                            table::TableState::Intact,
+                            crate::fluiddynamics::PulledByFluid { mass: 30.0 },
+                            crate::enemy::Velocity::new(),
+                        )).id();
+                        
+                        info!("Spawned table at world pos ({}, {}) with PulledByFluid component", x, y);
+                    }
 
                 ('W', _) => {
                     let mut sprite = Sprite::from_image(wall_tex.clone());

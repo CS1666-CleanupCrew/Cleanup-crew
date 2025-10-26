@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 
 //Division of the room in small grids for the airflow measurement there
-pub const GRID_WIDTH: usize = 128;
-pub const GRID_HEIGHT: usize = 96;
+pub const GRID_WIDTH: usize = 79;
+pub const GRID_HEIGHT: usize = 39;
 
 //responsible for the thickness of the air
 const RELAXATION_TIME: f32 = 0.55;
@@ -183,8 +183,8 @@ pub fn setup_fluid_grid(mut commands: Commands) {
     
   
    
-     grid.add_breach(20, 48);  
-    grid.add_breach(100, 48); 
+      grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
+     
     
     commands.spawn((grid, Name::new("FluidGrid")));
     info!("Fluid simulation with breach aaaaaaaahhhhhh");
@@ -262,6 +262,7 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
 }
 fn apply_breach_forces(mut query: Query<&mut FluidGrid>) 
 {
+
     for mut grid in &mut query 
     {
         //loop through each breach position
@@ -297,6 +298,7 @@ fn apply_breach_forces(mut query: Query<&mut FluidGrid>)
             }
         }
     }
+    
 }
 
 //apply suction forces to objects, pulling them toward breaches
@@ -305,77 +307,70 @@ fn pull_objects_toward_breaches(
     mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
 )
 {
-    //get the fluid grid, exit if it doesn't exist
     let Ok(grid) = grid_query.get_single() else 
     {
         return;
     };
-    //no breaches means no pulling force
+    
     if grid.breaches.is_empty() 
     {
         return;
     }
-
-     let obj_count = objects.iter().len();
-    if obj_count > 0 {
-        info!("Pulling {} objects toward {} breaches", obj_count, grid.breaches.len());
-    }
     
-    //conversion between world coordinates and grid coordinates
-    let cell_size = 8.0;
+    // Use TILE_SIZE instead of hard-coded 8.0
+    let cell_size = crate::TILE_SIZE; // 32.0
     let grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
     let grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
-    //loop through all objects that can be pulled by fluid
+    
+    info!("Grid: {}×{}, cell_size: {}, origin: ({}, {})", 
+          grid.width, grid.height, cell_size, grid_origin_x, grid_origin_y);
+    
     for (transform, mut velocity, pulled) in &mut objects 
     {
         let world_pos = transform.translation.truncate();
-        //convert world position to grid coordinates
+        
         let grid_x = ((world_pos.x - grid_origin_x) / cell_size) as usize;
         let grid_y = ((world_pos.y - grid_origin_y) / cell_size) as usize;
         
-        //skip objects outside the grid
         if grid_x >= grid.width || grid_y >= grid.height 
         {
+            info!("SKIPPING object at world ({:.0}, {:.0}) - grid pos ({}, {}) out of bounds (grid is {}×{})!", 
+                  world_pos.x, world_pos.y, grid_x, grid_y, grid.width, grid.height);
             continue;
         }
         
-        //get fluid state at object's position
-        let (density, fluid_vx, fluid_vy) = grid.compute_macroscopic(grid_x, grid_y);
-        //accumulate forces from all breaches
         let mut total_force = Vec2::ZERO;
-        //calculate pull force from each breach
+        
         for &(bx, by) in &grid.breaches 
         {
-            //convert breach grid position to world position
             let breach_world_x = grid_origin_x + (bx as f32 * cell_size);
             let breach_world_y = grid_origin_y + (by as f32 * cell_size);
             let breach_pos = Vec2::new(breach_world_x, breach_world_y);
-            //vector from object to breach
+            
             let to_breach = breach_pos - world_pos;
             let distance = to_breach.length();
             
-            //only apply force if not too close to breach
             if distance > 1.0 
             {
-                //inverse square law for suction force (like gravity)
-                let force_magnitude = 5000.0 / (distance * distance);
-                //low air density means stronger vacuum pull
-                let vacuum_multiplier = (1.0 - density).max(0.0) * 2.0;
-                total_force += to_breach.normalize() * force_magnitude * vacuum_multiplier;
+                // CONSTANT force - all tables pull equally
+                let force_magnitude = 100000.0;
+                total_force += to_breach.normalize() * force_magnitude;
             }
         }
         
-        //heavier objects resist more (F = ma, so a = F/m)
         let acceleration = total_force / pulled.mass;
-        //add influence from fluid flow itself
-        let fluid_force = Vec2::new(fluid_vx, fluid_vy) * 100.0;
-        //apply acceleration assuming 60fps
-        velocity.velocity += (acceleration + fluid_force) * 0.016;
-        //prevent objects from flying too fast
-        let max_velocity = 300.0;
+        velocity.velocity += acceleration * 0.016;
+        
+        let max_velocity = 1000.0;
         if velocity.velocity.length() > max_velocity 
         {
            velocity.velocity = velocity.velocity.normalize() * max_velocity;
+        }
+        
+        if velocity.velocity.length() > 1.0 {
+            info!("Object at ({:.0}, {:.0}) - velocity: ({:.1}, {:.1})", 
+                  world_pos.x, world_pos.y,
+                  velocity.velocity.x, velocity.velocity.y);
         }
     }
 }

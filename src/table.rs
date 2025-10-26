@@ -85,10 +85,11 @@ fn apply_table_velocity(
         transform.translation.x += delta.x;
         transform.translation.y += delta.y;
         
-        if velocity.velocity.length() > 0.1 {
-            info!("Table moving: vel=({:.1}, {:.1}), pos=({:.1}, {:.1})", 
-                  velocity.velocity.x, velocity.velocity.y,
-                  transform.translation.x, transform.translation.y);
+        // Debug - show which tables are moving
+        if velocity.velocity.length() > 1.0 {
+            info!("Table at ({:.0}, {:.0}) moving with velocity ({:.1}, {:.1})", 
+                  transform.translation.x, transform.translation.y,
+                  velocity.velocity.x, velocity.velocity.y);
         }
     }
 }
