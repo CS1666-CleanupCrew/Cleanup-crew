@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 
-#[derive(Component)]
 pub struct Room{
     pub cleared: bool,
     pub num_of_enemies: i32,
