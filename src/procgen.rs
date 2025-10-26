@@ -8,13 +8,9 @@ use std::io::BufReader;
 use std::io::{BufWriter, Write};
 use std::io::prelude::*;
 use crate::GameState;
-#[derive(Event)]
-pub struct LevelWritten;
-
 
 pub type TablePositions = HashSet<(usize, usize)>;
 
-//Layout of each room
 pub struct RoomLayout{
     layout: Vec<String>,
     width: f32,
@@ -86,12 +82,10 @@ pub fn load_rooms(
     for n in 1..=rooms.numroom{
         let room = rooms.room(n);
 
-        //Create the filename for each room
         let mut filename: String = "assets/rooms/room".to_owned();
         filename.push_str(&n.to_string());
         filename.push_str(".txt");
 
-        //Read the file for that room
         let f = File::open(filename).expect("file don't exist");
         let reader = BufReader::new(f);
         
@@ -100,6 +94,7 @@ pub fn load_rooms(
             let line = line_result.unwrap();
             room.layout.push(line);
         }
+        
     }
 
     commands.insert_resource(rooms);

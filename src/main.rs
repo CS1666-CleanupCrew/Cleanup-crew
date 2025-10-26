@@ -14,6 +14,7 @@ pub mod procgen;
 pub mod air;
 pub mod noise;
 pub mod menu;
+pub mod room;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
