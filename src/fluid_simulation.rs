@@ -350,10 +350,10 @@ fn pull_objects_toward_breaches(
             let to_breach = breach_pos - world_pos;
             let distance = to_breach.length();
             
-            if distance > 1.0 
+        if distance > 1.0 
             {
-                // CONSTANT force - all tables pull equally
-                let force_magnitude = 100000.0;
+                
+                let force_magnitude = 5000.0; 
                 total_force += to_breach.normalize() * force_magnitude;
             }
         }
@@ -361,16 +361,11 @@ fn pull_objects_toward_breaches(
         let acceleration = total_force / pulled.mass;
         velocity.velocity += acceleration * 0.016;
         
-        let max_velocity = 1000.0;
+       
+        let max_velocity = 200.0;
         if velocity.velocity.length() > max_velocity 
         {
            velocity.velocity = velocity.velocity.normalize() * max_velocity;
-        }
-        
-        if velocity.velocity.length() > 1.0 {
-            info!("Object at ({:.0}, {:.0}) - velocity: ({:.1}, {:.1})", 
-                  world_pos.x, world_pos.y,
-                  velocity.velocity.x, velocity.velocity.y);
         }
     }
 }
