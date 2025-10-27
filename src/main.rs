@@ -124,7 +124,7 @@ fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>) {
             font_size: 24.0,
             ..default()
         },
-        TextColzc(Color::srgb(1.0, 0.0, 0.0)),
+        TextColor(Color::srgb(1.0, 0.0, 0.0)),
         ZIndex(10),
         HealthDisplay,
     ));
