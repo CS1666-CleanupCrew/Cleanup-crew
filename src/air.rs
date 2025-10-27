@@ -15,11 +15,11 @@ pub struct AirParams {
 impl Default for AirParams {
     fn default() -> Self {
         Self {
-            seed: 42,
-            scale: 0.05,
-            octaves: 1,
-            gain: 0.5,
-            lacunarity: 2.0,
+            seed: 42, // controls random starting state of the noise
+            scale: 0.05, // controls how zoomed into the noise image we are
+            octaves: 1, // controls how many layers will be stacked
+            gain: 0.5, // controls the intensity falloff of each octave
+            lacunarity: 2.0, // controls the frequency increase of each octave
         }
     }
 }
