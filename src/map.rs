@@ -65,7 +65,8 @@ impl Plugin for MapPlugin {
             )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, parallax_scroll)
-            .add_systems(Update, open_doors_when_clear.run_if(in_state(GameState::Playing)));
+            //.add_systems(Update, open_doors_when_clear.run_if(in_state(GameState::Playing)))
+            ;
     }
 }
 
@@ -255,29 +256,29 @@ pub fn setup_tilemap(
     commands.insert_resource(spawns);
 }
 
-fn open_doors_when_clear(
-        enemies: Query<Entity, With<Enemy>>,
-        mut doors: Query<(Entity, &mut Sprite, &mut Door)>,
-        tiles: Res<TileRes>,
-        mut commands: Commands,
-    ) {
-        // If any enemies exist, do nothing
-        if !enemies.is_empty() {
-            return;
-        }
+// fn open_doors_when_clear(
+//         enemies: Query<Entity, With<Enemy>>,
+//         mut doors: Query<(Entity, &mut Sprite, &mut Door)>,
+//         tiles: Res<TileRes>,
+//         mut commands: Commands,
+//     ) {
+//         // If any enemies exist, do nothing
+//         if !enemies.is_empty() {
+//             return;
+//         }
 
-        // Open any closed doors if no enemies
-        for (entity, mut sprite, mut door) in &mut doors {
-            if !door.is_open {
-                sprite.image = tiles.open_door.clone();
-                door.is_open = true;
+//         // Open any closed doors if no enemies
+//         for (entity, mut sprite, mut door) in &mut doors {
+//             if !door.is_open {
+//                 sprite.image = tiles.open_door.clone();
+//                 door.is_open = true;
 
-                // Remove collision
-                commands.entity(entity).remove::<Collidable>();
-                commands.entity(entity).remove::<Collider>();
-            }
-        }
-    }
+//                 // Remove collision
+//                 commands.entity(entity).remove::<Collidable>();
+//                 commands.entity(entity).remove::<Collider>();
+//             }
+//         }
+//     }
 
 fn parallax_scroll(
     cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
