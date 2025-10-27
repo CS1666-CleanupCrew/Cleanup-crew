@@ -19,10 +19,10 @@ pub struct Velocity(Vec2);
 
 #[derive(Resource)]
 pub struct PlayerRes{
-    up: Handle<Image>,
-    right: Handle<Image>,
-    down: Handle<Image>,
-    left: Handle<Image>,
+    up: (Handle<Image>, Handle<TextureAtlasLayout>),
+    right: (Handle<Image>, Handle<TextureAtlasLayout>),
+    down: (Handle<Image>, Handle<TextureAtlasLayout>),
+    left: (Handle<Image>, Handle<TextureAtlasLayout>),
 }
 
 #[derive(Component)]
@@ -104,12 +104,30 @@ impl Plugin for PlayerPlugin {
     }
 }
 
-fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,) {
+    let frame_size = UVec2::new(650, 1560);
+
+    let up_image = asset_server.load("player/PlayerUp.png");
+    let up_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let up_handle = texture_atlases.add(up_layout);
+
+    let right_image = asset_server.load("player/PlayerRight.png");
+    let right_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let right_handle = texture_atlases.add(right_layout);
+
+    let down_image = asset_server.load("player/PlayerDown.png");
+    let down_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let down_handle = texture_atlases.add(down_layout);
+
+    let left_image = asset_server.load("player/PlayerLeft.png");
+    let left_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let left_handle = texture_atlases.add(left_layout);
+
     let player = PlayerRes {
-        up: asset_server.load("player/Player_Sprite_Up.png"),
-        right: asset_server.load("player/Player_Sprite_Right.png"),
-        down: asset_server.load("player/Player_Sprite_Down.png"),
-        left: asset_server.load("player/Player_Sprite_Left.png"),
+        up: (up_image, up_handle),
+        right: (right_image, right_handle),
+        down: (down_image, down_handle),
+        left: (left_image, left_handle),
     };
     commands.insert_resource(player);
 
@@ -119,12 +137,20 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
-    commands.spawn((
-        Sprite::from_image(player_sheet.down.clone()),
+    let (image, layout) = &player_sheet.down;
+
+        commands.spawn((
+            Sprite::from_atlas_image(
+                image.clone(),
+                TextureAtlas {
+                    layout: layout.clone(),
+                    index: 0,
+                },
+            ),
         Transform {
-            translation: Vec3::new(0., 0., 0.),
-            scale: Vec3::new(0.04, 0.04, 0.04),
-            ..Default::default()
+        translation: Vec3::new(0., 0., 0.),
+        scale: Vec3::new(0.04, 0.04, 0.04),
+        ..Default::default()
         },
         Player,
         Velocity::new(),
@@ -359,12 +385,20 @@ fn enemy_hits_player(
  */
 
 fn update_player_sprite(
+    time: Res<Time>,
     mut query: Query<&mut Sprite, With<Player>>,
     player_res: Res<PlayerRes>,
     input: Res<ButtonInput<KeyCode>>,
+    mut frame_timer: Local<f32>,
 ) {
+    *frame_timer += time.delta_secs();
+
+    let frame = ((*frame_timer / 0.1) as usize) % 8;
+
+
     for mut sprite in &mut query {
-        let new_handle = if input.pressed(KeyCode::KeyW) {
+        // Select the current sprite sheet based on input
+        let (image, layout_handle) = if input.pressed(KeyCode::KeyW) {
             &player_res.up
         } else if input.pressed(KeyCode::KeyS) {
             &player_res.down
@@ -375,9 +409,12 @@ fn update_player_sprite(
         } else {
             continue;
         };
-
-        sprite.custom_size = None;
-        sprite.image = new_handle.clone(); // now works
+        
+        sprite.texture_atlas = Some(TextureAtlas {
+            layout: layout_handle.clone(),
+            index: frame,
+        });
+        sprite.image = image.clone();
     }
 }
 //-------------------------------------------------------------------------------------------------------------
