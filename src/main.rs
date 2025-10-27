@@ -1,7 +1,7 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
-use crate::air::init_air_grid;
+use crate::air::{init_air_grid, spawn_pressure_labels};
 
 pub mod collidable;
 pub mod endcredits;
@@ -14,6 +14,7 @@ pub mod procgen;
 pub mod air;
 pub mod noise;
 pub mod menu;
+
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -90,6 +91,9 @@ fn main() {
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
+        .add_systems(OnEnter(GameState::Playing), init_air_grid)
+        .add_systems(OnEnter(GameState::Playing), spawn_pressure_labels.after(init_air_grid))
+
         .add_systems(Startup, setup_ui_health)
         .add_systems(
             Update,
