@@ -14,6 +14,7 @@ pub mod procgen;
 pub mod air;
 pub mod noise;
 pub mod menu;
+pub mod bullet;
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -84,6 +85,7 @@ fn main() {
             window::WindowPlugin,
             procgen::ProcGen,
             menu::MenuPlugin,
+            bullet::BulletPlugin,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Menu), log_state_change)
@@ -122,7 +124,7 @@ fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>) {
             font_size: 24.0,
             ..default()
         },
-        TextColor(Color::srgb(1.0, 0.0, 0.0)),
+        TextColzc(Color::srgb(1.0, 0.0, 0.0)),
         ZIndex(10),
         HealthDisplay,
     ));
