@@ -1,62 +1,87 @@
-// use bevy::prelude::*;
+use bevy::ecs::system::command;
+use bevy::prelude::*;
 
-// pub struct Room{
-//     cleared: bool,
-//     num_of_enemies: i32,
-//     doors: Vec<Door>,
-//     top_left_corner: Vec2,
-//     bot_right_corner: Vec2,
-// }
+use crate::collidable::{Collidable, Collider};
+use crate::{TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
+use crate::map::Door;
+use crate::player::Player;
 
-// impl Room{
-//     fn new(ne: i32, tlc: Vec2, brc: Vec2) -> Self{
-//         Self{
-//             cleared: false,
-//             num_of_enemies: ne,
-//             doors: Vec::new(),
-//             top_left_corner: tlc.clone(),
-//             bot_right_corner: brc.clone(),
-//         }
-//     }
+#[derive(Resource)]
+pub struct RoomVec(pub Vec<Room>);
+pub struct Room{
+    entered: bool,
+    cleared: bool,
+    pub doors:Vec<Entity>,
+    num_of_enemies: i32,
+    top_left_corner: Vec2,
+    bot_right_corner: Vec2,
+}
 
-//     pub fn doors(&self, mut commands: Commands) -> bool{
-//         if self.num_of_enemies == 0{
-//             return false
-//         }
+impl Room{
+    pub fn new(ne: i32, tlc: Vec2, brc: Vec2) -> Self{
+        Self{
+            entered: false,
+            cleared: false,
+            doors:Vec::new(),
+            num_of_enemies: ne,
+            top_left_corner: tlc.clone(),
+            bot_right_corner: brc.clone(),
+        }
+    }
 
-//         for door in self.doors.iter(){
-//             if !door.is_open {
-//                 sprite.image = tiles.open_door.clone();
-//                 door.is_open = true;
+    pub fn bounds_check(&self, pos:Vec2) -> bool{
+        self.top_left_corner.x <= pos.x && self.top_left_corner.y >= pos.y && self.bot_right_corner.x >= pos.x && self.bot_right_corner.y <= pos.y
+    }
+}
 
-//                 // Remove collision
-//                 commands.entity(entity).remove::<Collidable>();
-//                 commands.entity(entity).remove::<Collider>();
-//                 return true
-//             }
-//             return true
-//         }
-//     }
-// }
+//ne = number of enemies
+//tlc = top left corner
+//brc = bottom right corner
+pub fn create_room(
+    ne: i32,
+    tlc: Vec2,
+    brc: Vec2,
+    room_vec: &mut RoomVec,
+){
+    room_vec.0.push(Room::new(ne, tlc, brc));
+}
 
-// #[derive(Component)]
-// pub struct Door {
-//     pub is_open: bool,
-// }
+pub fn assign_doors(
+    doors: Query<(Entity, &Transform, &mut Door)>,
+    mut rooms: ResMut<RoomVec>,
+){
+    for (entity, pos, door) in doors.iter(){
 
-// impl Plugin for Room{
-//     fn build(&self, app: &mut App){
-        
-//     }
-// }
+        for room in rooms.0.iter_mut(){
 
-// //ne = number of enemies
-// //tlc = top left corner
-// //brc = bottome right corner
-// pub fn create_room(
-//     ne: i32,
-//     tlc: Vec2,
-//     brc: Vec2,
-// ) -> Room{
-//     Room::new(ne, tlc, brc)
-// }
+            if room.bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) {
+                room.doors.push(entity);
+                break;
+            }
+
+        }
+    }
+
+}
+
+
+
+pub fn track_rooms(
+    player: Single<&Transform, With<Player>>,
+    mut rooms: ResMut<RoomVec>,
+){
+    let pos = player.into_inner();
+    
+    for room in rooms.0.iter_mut(){
+
+        if room.bounds_check(Vec2::new(pos.translation.x, pos.translation.y)){
+            room.entered = true;
+            println!("Entered Room! {}", room.top_left_corner.x);
+        }
+        else{
+            room.entered = false;
+        }
+
+    }
+    
+}
