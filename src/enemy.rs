@@ -65,7 +65,7 @@ impl Plugin for EnemyPlugin {
             .add_systems(Startup, load_enemy)
             .add_systems(OnEnter(GameState::Playing), spawn_enemies_from_points)
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, move_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, (move_enemy, collide_enemies_with_enemies.after(move_enemy)).run_if(in_state(GameState::Playing)))
             .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_enemy_hit);
     }
@@ -247,6 +247,42 @@ fn move_enemy(
         }
     }
 }
+
+//collide enemies with each other
+fn collide_enemies_with_enemies(
+    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>)>,
+) {
+    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+
+    // get all combinations of 2 enemies
+    let mut combinations = enemy_query.iter_combinations_mut();
+    while let Some([(mut e1_transform), (mut e2_transform)]) =
+        combinations.fetch_next()
+    {
+        let (p1, h1) = (e1_transform.translation.truncate(), enemy_half);
+        let (p2, h2) = (e2_transform.translation.truncate(), enemy_half);
+
+        // check if they overlap
+        if crate::player::aabb_overlap(p1.x, p1.y, h1, p2.x, p2.y, h2) {
+
+            let overlap_x = (h1.x + h2.x) - (p1.x - p2.x).abs();
+            let overlap_y = (h1.y + h2.y) - (p1.y - p2.y).abs();
+
+            if overlap_x < overlap_y {
+                let sign = if p1.x > p2.x { 1.0 } else { -1.0 };
+                let push = sign * overlap_x * 0.5; 
+                e1_transform.translation.x += push;
+                e2_transform.translation.x -= push;
+            } else {
+                let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
+                let push = sign * overlap_y * 0.5; 
+                e1_transform.translation.y += push;
+                e2_transform.translation.y -= push;
+            }
+        }
+    }
+}
+
 
 
 
