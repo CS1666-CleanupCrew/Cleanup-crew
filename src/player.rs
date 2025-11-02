@@ -6,6 +6,7 @@ use crate::window;
 use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
+use crate::map::{LevelRes, MapGridMeta};
 
 const BULLET_SPD: f32 = 700.;
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
@@ -136,30 +137,55 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut textu
     
 }
 
-fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
+fn spawn_player(
+    mut commands: Commands,
+    player_sheet: Res<PlayerRes>,
+    level: Res<LevelRes>,
+    grid: Res<MapGridMeta>,
+) {
     let (image, layout) = &player_sheet.down;
 
-        commands.spawn((
-            Sprite::from_atlas_image(
-                image.clone(),
-                TextureAtlas {
-                    layout: layout.clone(),
-                    index: 0,
-                },
-            ),
+    // 1) Try to find an 'S' (explicit spawn) in the ASCII level
+    let mut spawn_grid: Option<(usize, usize)> = None;
+    'outer: for (y, row) in level.level.iter().enumerate() {
+        if let Some(x) = row.chars().position(|c| c == 'S') {
+            spawn_grid = Some((x, y));
+            break 'outer;
+        }
+    }
+
+    // 2) Fallback: pick the first '#'
+    if spawn_grid.is_none() {
+        for (y, row) in level.level.iter().enumerate() {
+            if let Some(x) = row.chars().position(|c| c == '#') {
+                spawn_grid = Some((x, y));
+                break;
+            }
+        }
+    }
+
+    let (gx, gy) = spawn_grid.unwrap_or((0, 0));
+
+    // Grid → world (note the same vertical flip you use in setup_tilemap)
+    let world_x = grid.x0 + gx as f32 * TILE_SIZE;
+    let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE;
+
+    commands.spawn((
+        Sprite::from_atlas_image(
+            image.clone(),
+            TextureAtlas { layout: layout.clone(), index: 0 },
+        ),
         Transform {
-        translation: Vec3::new(0., 0., 0.),
-        scale: Vec3::new(0.04, 0.04, 0.04),
-        ..Default::default()
+            translation: Vec3::new(world_x, world_y, 0.0),
+            scale: Vec3::new(0.04, 0.04, 0.04),
+            ..Default::default()
         },
         Player,
         Velocity::new(),
         Health::new(100.0),
         DamageTimer::new(1.0),
         Collidable,
-        Collider {
-            half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0),
-        },
+        Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
     ));
 }
