@@ -1,6 +1,7 @@
 
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
+use std::fs;
 
 //Division of the room in small grids for the airflow measurement there
 pub const GRID_WIDTH: usize = 79;
@@ -26,6 +27,9 @@ const BLEND: f32 = 0.4;
 //D2Q9 directions
 const C_X: [f32; 9] = [0.0, 1.0, 0.0, -1.0, 0.0, 1.0, -1.0, -1.0, 1.0];
 const C_Y: [f32; 9] = [0.0, 0.0, 1.0, 0.0, -1.0, 1.0, 1.0, -1.0, -1.0];
+
+//D2Q9 opposite directions for bounce back
+const OPPOSITE_DIR: [usize; 9] = [0, 3, 4, 1, 2, 7, 8, 5, 6];
 
 // D2Q9 weights
 const WEIGHTS: [f32; 9] = [
@@ -79,6 +83,31 @@ impl FluidGrid {
             distribution: vec![[0.0; 9]; size],
             obstacles: vec![false; size],
             breaches: Vec::new(),
+        }
+    }
+
+    pub fn set_obstacles_from_map(&mut self, map_content: &str) {
+        self.obstacles = vec![false; self.width * self.height];
+
+        // loop for y coordinate
+        for (y, line) in map_content.lines().enumerate() {
+            // stops if the map file is differnt from grid height
+            if y >= self.height {
+                break;
+            }
+            
+            // loop for x coordinate
+            for (x, char) in line.chars().enumerate() {
+                // stop if map file is wider than grid width
+                if x >= self.width {
+                    break;
+                }
+
+                let idx = self.get_index(x, y);
+                if char == 'W' {
+                    self.obstacles[idx] = true; // adds wall to obstacles
+                }
+            }
         }
     }
 
@@ -181,6 +210,16 @@ pub fn setup_fluid_grid(mut commands: Commands) {
     let mut grid = FluidGrid::new(GRID_WIDTH, GRID_HEIGHT);
     grid.initialize_with_perlin(42);
     
+    //this part for loading the walls from map file
+    let map_path = "assets/rooms/level.txt";
+    match fs::read_to_string(map_path) {
+        Ok(map_content) => {
+            grid.set_obstacles_from_map(&map_content);
+        }
+        Err(e) => {
+            error!("Failed to read map file");
+        }
+    }
   
    
       grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
@@ -227,6 +266,8 @@ fn collision_step(mut query: Query<&mut FluidGrid>)
 fn streaming_step(mut query: Query<&mut FluidGrid>) {
     for mut grid in &mut query 
     {
+        //used as a buffer
+        let old_dist = grid.distribution.clone();
         //copy of the entire grid
         let mut new_dist = grid.distribution.clone();
         //loop through all the cells
@@ -240,19 +281,39 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
                 {
                     continue;
                 }
-                //this loop goes through all the directions aside from the rest state
-                for i in 1..9 
+                //this loop goes through all the directions
+                for i in 0..9 
                 {
                     // see where did the particles came from, not where they are going. this is backstreaming
                     let src_x = x as isize - C_X[i] as isize;
                     let src_y = y as isize - C_Y[i] as isize;
+
+                    //check for bounce back (off the grid or into obstacle)
+                    let mut bounced_back = false;
+
                     //check for bounds
-                    if src_x >= 0 && src_x < grid.width as isize 
-                        && src_y >= 0 && src_y < grid.height as isize {
+                    if src_x < 0 || src_x >= grid.width as isize || 
+                    src_y < 0 || src_y >= grid.height as isize {
+                            //came from out of bounds
+                            bounced_back = true;
+                    } else {
+                        //check if it came from an obstacle
                         let src_idx = grid.get_index(src_x as usize, src_y as usize);
-                         //particles that were moving in direction i at the source have now arrived at the current cell.
-                        new_dist[idx][i] = grid.distribution[src_idx][i];
+                        if grid.obstacles[src_idx] {
+                            bounced_back = true;
+                        }
                     }
+
+                    //if bounced back, reverse direction
+                    if bounced_back {
+                        let opposite_i = OPPOSITE_DIR[i];
+                        new_dist[idx][i] = old_dist[idx][opposite_i];
+                    }
+                    else {
+                        //normal streaming, no bounch back
+                        let src_idx = grid.get_index(src_x as usize, src_y as usize);
+                        new_dist[idx][i] = old_dist[src_idx][i];
+                    }   
                 }
             }
         }
@@ -260,6 +321,7 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
         grid.distribution = new_dist;
     }
 }
+
 fn apply_breach_forces(mut query: Query<&mut FluidGrid>) 
 {
 
@@ -322,8 +384,8 @@ fn pull_objects_toward_breaches(
     let grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
     let grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
     
-    info!("Grid: {}×{}, cell_size: {}, origin: ({}, {})", 
-          grid.width, grid.height, cell_size, grid_origin_x, grid_origin_y);
+    //info!("Grid: {}×{}, cell_size: {}, origin: ({}, {})", 
+      //    grid.width, grid.height, cell_size, grid_origin_x, grid_origin_y);
     
     for (transform, mut velocity, pulled) in &mut objects 
     {
@@ -383,4 +445,3 @@ pub fn world_to_grid(world_pos: Vec2, grid_width: usize, grid_height: usize) -> 
     
     (grid_x, grid_y)
 }
-
