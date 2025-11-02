@@ -7,7 +7,10 @@ use std::fs::File;
 use std::io::BufReader;
 use std::io::{BufWriter, Write};
 use std::io::prelude::*;
-use crate::GameState;
+use crate::map::TileRes;
+use crate::{GameState, TILE_SIZE};
+use crate::room::*;
+
 #[derive(Event)]
 pub struct LevelWritten;
 struct Rect {
@@ -207,6 +210,8 @@ pub fn load_rooms(mut commands: Commands) {
         room6: RoomLayout::new(),
     };
 
+    commands.insert_resource(RoomVec(Vec::new()));
+
     for n in 1..=rooms.numroom {
         // create the filename for each room
         let filename = format!("assets/rooms/room{}.txt", n);
@@ -224,6 +229,9 @@ pub fn load_rooms(mut commands: Commands) {
         // now borrow the room mutably and set its layout
         let room = rooms.room_mut(n);
         room.layout = lines;
+        
+        room.height = room.layout.len() as f32;
+        room.width = room.layout[0].len() as f32;
     }
 
     // insert the rooms resource
@@ -232,18 +240,19 @@ pub fn load_rooms(mut commands: Commands) {
 
 pub fn build_full_level(
     rooms: Res<RoomRes>,
+    mut room_vec: ResMut<RoomVec>,
 ) {
     const MAP_W: usize = 500;
     const MAP_H: usize = 500;
     const MIN_LEAF_SIZE: usize = 100;
     const MIN_ROOM_SIZE: usize = 40;
-    const SEED: u64 = 144;
+    const SEED: u64 = 122;
 
     // full map of '.'
     let mut map: Vec<Vec<char>> = vec![vec!['.'; MAP_W]; MAP_H];
 
     // empty map now created add rooms
-    bsp_generate_level(&mut map, &rooms, MIN_LEAF_SIZE, MIN_ROOM_SIZE, SEED);
+    bsp_generate_level(&mut map, &rooms, MIN_LEAF_SIZE, MIN_ROOM_SIZE, SEED, &mut room_vec);
     
     generate_walls(&mut map);
 
@@ -268,6 +277,7 @@ fn bsp_generate_level(
     min_leaf_size: usize,
     min_room_size: usize,
     seed: u64,
+    room_vec: &mut RoomVec,
 ) {
     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
     let map_w = map[0].len();
@@ -306,7 +316,7 @@ fn bsp_generate_level(
                 let top_left_x = room_rect.x + (room_rect.w.saturating_sub(preset_room.layout[0].len())) / 2;
                 let top_left_y = room_rect.y + (room_rect.h.saturating_sub(preset_room.layout.len())) / 2;
 
-                write_room(map, preset_room, top_left_x, top_left_y);
+                write_room(map, preset_room, top_left_x, top_left_y, room_vec);
             } else {
                 // random rectangle
                 let temp_w = rng.random_range(min_room_size..=room_rect.w);
@@ -474,9 +484,22 @@ pub fn write_room(
     room: &RoomLayout,
     top_left_x: usize,
     top_left_y: usize,
+    room_vec: &mut RoomVec,
 ) {
     let map_height = map.len();
     let map_width = if map_height > 0 { map[0].len() } else { 0 };
+
+    let actual_top_left_x = (top_left_x as f32 - 250.0) * TILE_SIZE;
+    let actual_top_left_y = -(top_left_y as f32 - 250.0) * TILE_SIZE;
+
+    let actual_bot_right_x = actual_top_left_x + (room.width * TILE_SIZE);
+    let actual_bot_right_y = actual_top_left_y - (room.height * TILE_SIZE);
+
+    let bot_right_xy = Vec2::new(actual_bot_right_x, actual_bot_right_y);
+    let top_left_xy = Vec2::new(actual_top_left_x, actual_top_left_y);
+
+    create_room(0, top_left_xy, bot_right_xy, room_vec);
+
 
     for (row_idx, row_str) in room.layout.iter().enumerate() {
         let y = top_left_y + row_idx;

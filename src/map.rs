@@ -13,6 +13,7 @@ use crate::table;
 use crate::window;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
 use crate::procgen::{load_rooms, build_full_level};
+use crate::room::*;
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -50,6 +51,7 @@ pub struct EnemySpawnPoints(pub Vec<Vec3>);
 #[derive(Component)]
 pub struct Door {
     pub is_open: bool,
+    pub pos: Vec2,
 }
 
 pub struct MapPlugin;
@@ -59,12 +61,14 @@ impl Plugin for MapPlugin {
 
             .add_systems(OnEnter(GameState::Loading), load_map.after(build_full_level))
             .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
+            .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
             .add_systems(
                 OnEnter(GameState::Loading),
                 playing_state.after(setup_tilemap),
             )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, parallax_scroll)
+            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)))
             //.add_systems(Update, open_doors_when_clear.run_if(in_state(GameState::Playing)))
             ;
     }
@@ -206,12 +210,12 @@ pub fn setup_tilemap(
                     let mut sprite = Sprite::from_image(closed_door_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
-                        sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
-                        Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Name::new("Door"),
-                        Door { is_open: false },
+                    sprite,
+                    Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                    // Collidable,
+                    // Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                    Name::new("Door"),
+                    Door { is_open: false, pos: Vec2::new(x, y)},
                     ));
                 }
 
