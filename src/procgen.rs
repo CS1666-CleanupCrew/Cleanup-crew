@@ -11,7 +11,6 @@ use crate::{GameState, TILE_SIZE};
 use crate::room::*;
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::room::{RoomVec, create_room};
 
 #[derive(Event)]
 pub struct LevelWritten;

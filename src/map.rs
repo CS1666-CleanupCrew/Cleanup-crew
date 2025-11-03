@@ -1,3 +1,4 @@
+use bevy::log::Level;
 use bevy::prelude::*;
 
 use std::fs::File;
@@ -5,9 +6,7 @@ use std::io::BufReader;
 use std::io::prelude::*;
 
 use crate::collidable::{Collidable, Collider};
-use crate::enemy::Enemy;
 use crate::player;
-use crate::procgen::build_full_level;
 use crate::procgen::generate_tables_from_grid;
 use crate::room::track_rooms;
 use crate::room::*; // track_rooms()
@@ -16,6 +15,8 @@ use crate::window;
 use crate::{
     BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_ENTITIES, Z_FLOOR,
 };
+use crate::enemy::Enemy;
+use crate::procgen::{load_rooms, build_full_level};
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -42,7 +43,7 @@ pub struct TileRes {
 #[derive(Resource)]
 pub struct BackgroundRes(pub Handle<Image>);
 
-#[derive(Resource, Clone)]
+#[derive(Resource)]
 pub struct LevelRes {
     pub level: Vec<String>,
 }
@@ -79,10 +80,15 @@ impl Plugin for MapPlugin {
                     assign_doors.after(setup_tilemap),
                     playing_state.after(assign_doors),
                 ),
+            .add_systems(
+                OnEnter(GameState::Loading),
+                playing_state.after(setup_tilemap),
             )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, parallax_scroll)
-            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)));
+            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)))
+            //.add_systems(Update, open_doors_when_clear.run_if(in_state(GameState::Playing)))
+            ;
     }
 }
 
@@ -92,17 +98,17 @@ impl Plugin for MapPlugin {
 //  '.' = empty
 //  'T' = table (floor renders underneath)
 //  'W' = wall (floor renders underneath + collidable wall sprite)
-//  'G' = glass window
-//  'D' = door (closed by default)
-//  'E' = enemy spawn
+//   'G' = glass window
+// Minimum of 40 cols (1280/32), 23 rows (720/32 = 22.5))
 
 fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
     next_state.set(GameState::Playing);
 }
 
 fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let mut level = LevelRes { level: Vec::new() };
-
+    let mut level = LevelRes {
+        level: Vec::new(),
+    };
     let tiles = TileRes {
         floor: asset_server.load("map/floortile.png"),
         wall: asset_server.load("map/walls.png"),
@@ -116,9 +122,10 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(tiles);
     commands.insert_resource(space_tex);
 
-    // Change this path for a different map
-    let f = File::open("assets/rooms/level.txt").expect("file doesn't exist");
+    //Change this path for a different map
+    let f = File::open("assets/rooms/level.txt").expect("file don't exist");
     let reader = BufReader::new(f);
+
     for line_result in reader.lines() {
         let line = line_result.unwrap();
         level.level.push(line);
@@ -127,21 +134,19 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 pub fn setup_tilemap(
-    mut commands: Commands,
+    mut commands: Commands, 
     level: Res<LevelRes>,
     tiles: Res<TileRes>,
-    space_tex: Res<BackgroundRes>,
-    // optional: add breaches to the fluid grid based on walls/windows we place
-    mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
+    space_tex:Res<BackgroundRes>,
 ) {
     let floor_tex: Handle<Image> = tiles.floor.clone();
-    let wall_tex: Handle<Image> = tiles.wall.clone();
+    let wall_tex: Handle<Image>  = tiles.wall.clone();
     let table_tex: Handle<Image> = tiles.table.clone();
     let glass_tex: Handle<Image> = tiles.glass.clone();
     let closed_door_tex: Handle<Image> = tiles.closed_door.clone();
-    // let open_door_tex: Handle<Image> = tiles.open_door.clone(); // used when opening doors
+    let open_door_tex: Handle<Image> = tiles.open_door.clone();
 
-    // map geometry
+
     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = level.level.len() as f32;
 
@@ -149,21 +154,22 @@ pub fn setup_tilemap(
     let map_px_h = map_rows * TILE_SIZE;
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
+    
+        commands.insert_resource(MapGridMeta {
+    x0,
+    y0,
+    cols: map_cols as usize,
+    rows: map_rows as usize,
+});
 
-    commands.insert_resource(MapGridMeta {
-        x0,
-        y0,
-        cols: map_cols as usize,
-        rows: map_rows as usize,
-    });
-
-    // background tiling
     let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
     let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
 
+
     let mut spawns = EnemySpawnPoints::default();
+
 
     let pad: i32 = 3;
     for iy in -pad..(ny + 1) {
@@ -176,7 +182,7 @@ pub fn setup_tilemap(
 
             commands.spawn((
                 bg,
-                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
+                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)), // behind floor
                 Visibility::default(),
                 ParallaxBg {
                     factor: 0.9,
@@ -191,10 +197,7 @@ pub fn setup_tilemap(
     // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
 
-    // positions we’ll mark as breaches in the fluid grid (e.g., windows)
-    let mut breach_positions = Vec::new();
-
-    // tile placement
+    // Loop through the room grid
     for (row_i, row) in level.level.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
@@ -202,8 +205,8 @@ pub fn setup_tilemap(
 
             let is_generated_table = generated_tables.contains(&(col_i, row_i));
 
-            // always draw floor under solid/interactive tiles & enemy spawns
-            if ch == '#' || ch == 'T' || ch == 'W' || ch == 'G' || ch == 'E' || is_generated_table {
+            // Always draw a floor tile under walls/tables/spawns
+            if ch == '#' || ch == 'T' || ch == 'W' || ch == 'E' || is_generated_table {
                 commands.spawn((
                     Sprite::from_image(floor_tex.clone()),
                     Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
@@ -318,6 +321,31 @@ pub fn setup_tilemap(
 }
 
 
+}
+
+// fn open_doors_when_clear(
+//         enemies: Query<Entity, With<Enemy>>,
+//         mut doors: Query<(Entity, &mut Sprite, &mut Door)>,
+//         tiles: Res<TileRes>,
+//         mut commands: Commands,
+//     ) {
+//         // If any enemies exist, do nothing
+//         if !enemies.is_empty() {
+//             return;
+//         }
+
+//         // Open any closed doors if no enemies
+//         for (entity, mut sprite, mut door) in &mut doors {
+//             if !door.is_open {
+//                 sprite.image = tiles.open_door.clone();
+//                 door.is_open = true;
+
+//                 // Remove collision
+//                 commands.entity(entity).remove::<Collidable>();
+//                 commands.entity(entity).remove::<Collider>();
+//             }
+//         }
+//     }
 
 fn parallax_scroll(
     cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
@@ -329,13 +357,16 @@ fn parallax_scroll(
     let cam = cam_tf.translation;
 
     for (bg, cell, mut tf) in &mut bg_q {
+        // continuous parallax offset
         let off_x = -cam.x * (1.0 - bg.factor);
         let off_y = -cam.y * (1.0 - bg.factor);
 
+        // wrap offset into [0, tile)
         let wrap = |v: f32, t: f32| ((v % t) + t) % t;
         let ox = wrap(off_x, bg.tile);
         let oy = wrap(off_y, bg.tile);
 
+        // base so the grid stays centered around origin
         let base_x = (cell.ix as f32) * bg.tile;
         let base_y = (cell.iy as f32) * bg.tile;
 
@@ -344,24 +375,31 @@ fn parallax_scroll(
     }
 }
 
-// Camera clamp to level size
+// If you have a problem or a question about this code, talk to vlad.
 fn follow_player(
+    //these functions are provided directly from bevy
+    //finds all entities that are able to transform and are made of the player component
     player_query: Query<&Transform, (With<player::Player>, Without<MainCamera>)>,
     mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<player::Player>)>,
     level: Res<LevelRes>,
 ) {
+    //players current position.
     if let Ok(player_transform) = player_query.single() {
+        //This will error out if we would like to have several cameras, this makes the camera mutable
         if let Ok(mut camera_transform) = camera_query.single_mut() {
+            //level bounds  calculation given 40x23
             let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
             let map_rows = level.level.len() as f32;
             let level_width = map_cols * TILE_SIZE;
             let level_height = map_rows * TILE_SIZE;
 
+            //these are the bounds for the camera, but it will not move horizontally because we have an exact match between the window and tile width
             let max_x = (level_width - WIN_W) * 0.5;
             let min_x = -(level_width - WIN_W) * 0.5;
             let max_y = (level_height - WIN_H) * 0.5;
             let min_y = -(level_height - WIN_H) * 0.5;
 
+            //camera following the player given the bounds
             let target_x = player_transform.translation.x.clamp(min_x, max_x);
             let target_y = player_transform.translation.y.clamp(min_y, max_y);
             camera_transform.translation.x = target_x;
