@@ -259,6 +259,34 @@ fn collide_enemies_with_enemies(
     while let Some([(mut e1_transform), (mut e2_transform)]) =
         combinations.fetch_next()
     {
+        let world_pos = transform.translation.truncate();
+        
+        let grid_x = ((world_pos.x - grid_origin_x) / cell_size) as usize;
+        let grid_y = ((world_pos.y - grid_origin_y) / cell_size) as usize;
+        
+        // if grid_x >= grid.width || grid_y >= grid.height 
+        // {
+        //     info!("SKIPPING object at world ({:.0}, {:.0}) - grid pos ({}, {}) out of bounds (grid is {}×{})!", 
+        //           world_pos.x, world_pos.y, grid_x, grid_y, grid.width, grid.height);
+        //     continue;
+        // }
+        
+        let mut total_force = Vec2::ZERO;
+        
+        for &(bx, by) in &grid.breaches 
+        {
+            let breach_world_x = grid_origin_x + (bx as f32 * cell_size);
+            let breach_world_y = grid_origin_y + (by as f32 * cell_size);
+            let breach_pos = Vec2::new(breach_world_x, breach_world_y);
+            
+            let to_breach = breach_pos - world_pos;
+            let distance = to_breach.length();
+            
+        if distance > 1.0 
+            {
+                
+                let force_magnitude = 5000.0; 
+                total_force += to_breach.normalize() * force_magnitude;
         let (p1, h1) = (e1_transform.translation.truncate(), enemy_half);
         let (p2, h2) = (e2_transform.translation.truncate(), enemy_half);
 
