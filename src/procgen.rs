@@ -218,8 +218,8 @@ pub fn build_full_level(
     mut room_vec: ResMut<RoomVec>,
 ) {
     // +40 and +20 are padding
-    const MAP_W: usize = 500 + 40;
-    const MAP_H: usize = 500 + 20;
+    const MAP_W: usize = 400 + 40;
+    const MAP_H: usize = 400 + 20;
     const MIN_LEAF_SIZE: usize = 100;
     const MIN_ROOM_SIZE: usize = 40;
     const SEED: u64 = 122;
@@ -293,8 +293,8 @@ fn bsp_generate_level(
                 write_room(map, preset_room, top_left_x, top_left_y, room_vec);
             } else {
                 // Random room
-                let temp_w = rng.random_range(min_room_size..=room_rect.w);
-                let temp_h = rng.random_range(min_room_size..=room_rect.h);
+                let temp_w = rng.random_range(min_room_size..=min_room_size+20);
+                let temp_h = rng.random_range(min_room_size..=min_room_size+20);
                 let temp_x = rng.random_range(room_rect.x..=(room_rect.x + room_rect.w - temp_w));
                 let temp_y = rng.random_range(room_rect.y..=(room_rect.y + room_rect.h - temp_h));
 
@@ -415,38 +415,44 @@ fn connect_terminals(terminals: &[LeafRef], map: &mut Vec<Vec<char>>) {
 fn draw_hallway(start: &Rect, end: &Rect, map: &mut Vec<Vec<char>>) {
     let (x1, y1) = start.center();
     let (x2, y2) = end.center();
-    let thickness = 5; // 5 tiles thick
+    let thickness = 5;
+    let half = thickness as isize / 2;
+
+    let (x1, y1, x2, y2) = (x1 as isize, y1 as isize, x2 as isize, y2 as isize);
+
+    let mut draw_rect = |x: isize, y: isize| {
+        if x >= 0 && y >= 0 && y < map.len() as isize && x < map[0].len() as isize {
+            map[y as usize][x as usize] = '#';
+        }
+    };
 
     if rand::random() {
         // horizontal then vertical
         for x in x1.min(x2)..=x1.max(x2) {
-            for dy in 0..thickness {
-                let y = (y1 + dy).min(map.len() - 1);
-                map[y][x] = '#';
+            for dy in -half..=half {
+                draw_rect(x, y1 + dy);
             }
         }
         for y in y1.min(y2)..=y1.max(y2) {
-            for dx in 0..thickness {
-                let x = (x2 + dx).min(map[0].len() - 1);
-                map[y][x] = '#';
+            for dx in -half..=half {
+                draw_rect(x2 + dx, y);
             }
         }
     } else {
         // vertical then horizontal
         for y in y1.min(y2)..=y1.max(y2) {
-            for dx in 0..thickness {
-                let x = (x1 + dx).min(map[0].len() - 1);
-                map[y][x] = '#';
+            for dx in -half..=half {
+                draw_rect(x1 + dx, y);
             }
         }
         for x in x1.min(x2)..=x1.max(x2) {
-            for dy in 0..thickness {
-                let y = (y2 + dy).min(map.len() - 1);
-                map[y][x] = '#';
+            for dy in -half..=half {
+                draw_rect(x, y2 + dy);
             }
         }
     }
 }
+
 
 
 
