@@ -33,7 +33,7 @@ pub struct TileRes {
     wall: Handle<Image>,
     glass: Handle<Image>,
     table: Handle<Image>,
-    closed_door: Handle<Image>,
+    pub closed_door: Handle<Image>,
     open_door: Handle<Image>,
 }
 
@@ -68,7 +68,6 @@ impl Plugin for MapPlugin {
             )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, parallax_scroll)
-            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)))
             //.add_systems(Update, open_doors_when_clear.run_if(in_state(GameState::Playing)))
             ;
     }
@@ -120,6 +119,8 @@ pub fn setup_tilemap(
     level: Res<LevelRes>,
     tiles: Res<TileRes>,
     space_tex:Res<BackgroundRes>,
+    mut enemies:ResMut<EnemyPosition>,
+    rooms: Res<RoomVec>,
 ) {
     let floor_tex: Handle<Image> = tiles.floor.clone();
     let wall_tex: Handle<Image>  = tiles.wall.clone();
@@ -167,6 +168,7 @@ pub fn setup_tilemap(
 
     // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
+    generate_enemies_from_grid(&level.level, 5, None, &mut enemies, & rooms);
 
     // Loop through the room grid
     for (row_i, row) in level.level.iter().enumerate() {
@@ -175,9 +177,10 @@ pub fn setup_tilemap(
             let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE;
 
             let is_generated_table = generated_tables.contains(&(col_i, row_i));
+            let is_generated_enemy = enemies.0.contains(&(col_i,row_i));
 
             // Always draw a floor tile under walls/tables/spawns
-            if ch == '#' || ch == 'T' || ch == 'W' || ch == 'E' || is_generated_table {
+            if ch == '#' || ch == 'T' || ch == 'W' || ch == 'E' || is_generated_table || is_generated_enemy{
                 commands.spawn((
                     Sprite::from_image(floor_tex.clone()),
                     Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
@@ -185,9 +188,9 @@ pub fn setup_tilemap(
                 ));
             }
 
-            match (ch, is_generated_table) {
+            match (ch, is_generated_table, is_generated_enemy) {
                 // Spawn either authored ('T') or generated tables
-                ('T', _) | ('#', true) => {
+                ('T', _, _) | ('#', true, _) => {
                     let mut sprite = Sprite::from_image(table_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
                     commands.spawn((
@@ -206,8 +209,8 @@ pub fn setup_tilemap(
                     ));
                 }
 
-                ('D', _) => {
-                    let mut sprite = Sprite::from_image(closed_door_tex.clone());
+                ('D', _, _) => {
+                    let mut sprite = Sprite::from_image(open_door_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
                     sprite,
@@ -220,7 +223,7 @@ pub fn setup_tilemap(
                 }
 
                 // Spawn walls
-                ('W', _) => {
+                ('W', _, _) => {
                     let mut sprite = Sprite::from_image(wall_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
@@ -232,7 +235,7 @@ pub fn setup_tilemap(
                     ));
                 }
 
-                ('G', _) => {
+                ('G', _, _)=> {
                     let mut sprite = Sprite::from_image(glass_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
@@ -249,7 +252,7 @@ pub fn setup_tilemap(
 
 
                 // Spawn enemies
-                ('E', _) => {
+                ('E', _, _) | ('#', _, true) => {
                     spawns.0.push(Vec3::new(x, y, Z_ENTITIES));
                 }
 

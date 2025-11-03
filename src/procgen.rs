@@ -498,7 +498,10 @@ pub fn write_room(
     let bot_right_xy = Vec2::new(actual_bot_right_x, actual_bot_right_y);
     let top_left_xy = Vec2::new(actual_top_left_x, actual_top_left_y);
 
-    create_room(0, top_left_xy, bot_right_xy, room_vec);
+    let tile_top_xy = Vec2::new(top_left_x as f32, top_left_y as f32);
+    let tile_bot_xy = Vec2::new((top_left_x as f32+room.width), (top_left_y as f32-room.height));
+
+    create_room(top_left_xy, bot_right_xy, tile_top_xy, tile_bot_xy, room_vec);
 
 
     for (row_idx, row_str) in room.layout.iter().enumerate() {

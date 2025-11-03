@@ -88,6 +88,7 @@ fn main() {
             procgen::ProcGen,
             menu::MenuPlugin,
             bullet::BulletPlugin,
+            room::RoomPlugin,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Menu), log_state_change)
