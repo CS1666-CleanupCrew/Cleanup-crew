@@ -82,6 +82,7 @@ fn main() {
         .init_state::<GameState>()
         //Calls the plugin
         .add_plugins((
+            procgen::ProcGen,
             map::MapPlugin,
             player::PlayerPlugin,
             endcredits::EndCreditPlugin,
@@ -89,7 +90,6 @@ fn main() {
             table::TablePlugin,
             fluiddynamics::FluidSimPlugin,
             window::WindowPlugin,
-            procgen::ProcGen,
             menu::MenuPlugin,
             bullet::BulletPlugin,
         ))
