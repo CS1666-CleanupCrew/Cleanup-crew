@@ -2,9 +2,11 @@ use bevy::{prelude::*};
 
 use crate::collidable::{Collidable, Collider};
 use crate::table;
+use crate::window;
 use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
+use crate::map::{LevelRes, MapGridMeta};
 
 const BULLET_SPD: f32 = 700.;
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
@@ -18,10 +20,10 @@ pub struct Velocity(Vec2);
 
 #[derive(Resource)]
 pub struct PlayerRes{
-    up: Handle<Image>,
-    right: Handle<Image>,
-    down: Handle<Image>,
-    left: Handle<Image>,
+    up: (Handle<Image>, Handle<TextureAtlasLayout>),
+    right: (Handle<Image>, Handle<TextureAtlasLayout>),
+    down: (Handle<Image>, Handle<TextureAtlasLayout>),
+    left: (Handle<Image>, Handle<TextureAtlasLayout>),
 }
 
 #[derive(Component)]
@@ -98,16 +100,35 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
             .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
             ;
     }
 }
 
-fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,) {
+    let frame_size = UVec2::new(650, 1560);
+
+    let up_image = asset_server.load("player/PlayerUp.png");
+    let up_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let up_handle = texture_atlases.add(up_layout);
+
+    let right_image = asset_server.load("player/PlayerRight.png");
+    let right_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let right_handle = texture_atlases.add(right_layout);
+
+    let down_image = asset_server.load("player/PlayerDown.png");
+    let down_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let down_handle = texture_atlases.add(down_layout);
+
+    let left_image = asset_server.load("player/PlayerLeft.png");
+    let left_layout = TextureAtlasLayout::from_grid(frame_size, 8, 1, None, None);
+    let left_handle = texture_atlases.add(left_layout);
+
     let player = PlayerRes {
-        up: asset_server.load("player/Player_Sprite_Up.png"),
-        right: asset_server.load("player/Player_Sprite_Right.png"),
-        down: asset_server.load("player/Player_Sprite_Down.png"),
-        left: asset_server.load("player/Player_Sprite_Left.png"),
+        up: (up_image, up_handle),
+        right: (right_image, right_handle),
+        down: (down_image, down_handle),
+        left: (left_image, left_handle),
     };
     commands.insert_resource(player);
 
@@ -116,11 +137,46 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     
 }
 
-fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
+fn spawn_player(
+    mut commands: Commands,
+    player_sheet: Res<PlayerRes>,
+    level: Res<LevelRes>,
+    grid: Res<MapGridMeta>,
+) {
+    let (image, layout) = &player_sheet.down;
+
+    // 1) Try to find an 'S' (explicit spawn) in the ASCII level
+    let mut spawn_grid: Option<(usize, usize)> = None;
+    'outer: for (y, row) in level.level.iter().enumerate() {
+        if let Some(x) = row.chars().position(|c| c == 'S') {
+            spawn_grid = Some((x, y));
+            break 'outer;
+        }
+    }
+
+    // 2) Fallback: pick the first '#'
+    if spawn_grid.is_none() {
+        for (y, row) in level.level.iter().enumerate() {
+            if let Some(x) = row.chars().position(|c| c == '#') {
+                spawn_grid = Some((x, y));
+                break;
+            }
+        }
+    }
+
+    let (gx, gy) = spawn_grid.unwrap_or((0, 0));
+
+    // Grid → world (note the same vertical flip you use in setup_tilemap)
+    let world_x = grid.x0 + gx as f32 * TILE_SIZE;
+    let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE;
+
     commands.spawn((
-        Sprite::from_image(player_sheet.down.clone()),
+        Sprite::from_atlas_image(
+            image.clone(),
+            TextureAtlas { layout: layout.clone(), index: 0 },
+        ),
         Transform {
-            translation: Vec3::new(0., 0., 0.),
+            translation: Vec3::new(world_x, world_y, 0.0),
             scale: Vec3::new(0.04, 0.04, 0.04),
             ..Default::default()
         },
@@ -129,9 +185,7 @@ fn spawn_player(mut commands: Commands, player_sheet: Res<PlayerRes>) {
         Health::new(100.0),
         DamageTimer::new(1.0),
         Collidable,
-        Collider {
-            half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0),
-        },
+        Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
     ));
 }
@@ -223,13 +277,13 @@ fn move_player(
     };
     let change = **velocity * deltat;
 
-    let min = Vec3::new(
+    let _min = Vec3::new(
         -WIN_W / 2. + (TILE_SIZE as f32) / 2.,
         -WIN_H / 2. + (TILE_SIZE as f32) * 1.5,
         900.,
     );
 
-    let max = Vec3::new(
+    let _max = Vec3::new(
         LEVEL_LEN - (WIN_W / 2. + (TILE_SIZE as f32) / 2.),
         WIN_H / 2. - (TILE_SIZE as f32) / 2.,
         900.,
@@ -335,6 +389,10 @@ fn enemy_hits_player(
                 enemy_half,
             ) {
                 if damage_timer.0.finished() {
+                    info!(
+                        "Player hit by entity {:?} at position {:?}",
+                        enemy_entity, enemy_pos
+                    );
                     health.0 -= 15.0;
                     damage_timer.0.reset();
                     commands.entity(enemy_entity).insert(HitAnimation {
@@ -353,12 +411,20 @@ fn enemy_hits_player(
  */
 
 fn update_player_sprite(
+    time: Res<Time>,
     mut query: Query<&mut Sprite, With<Player>>,
     player_res: Res<PlayerRes>,
     input: Res<ButtonInput<KeyCode>>,
+    mut frame_timer: Local<f32>,
 ) {
+    *frame_timer += time.delta_secs();
+
+    let frame = ((*frame_timer / 0.1) as usize) % 8;
+
+
     for mut sprite in &mut query {
-        let new_handle = if input.pressed(KeyCode::KeyW) {
+        // Select the current sprite sheet based on input
+        let (image, layout_handle) = if input.pressed(KeyCode::KeyW) {
             &player_res.up
         } else if input.pressed(KeyCode::KeyS) {
             &player_res.down
@@ -369,11 +435,15 @@ fn update_player_sprite(
         } else {
             continue;
         };
-
-        sprite.custom_size = None;
-        sprite.image = new_handle.clone(); // now works
+        
+        sprite.texture_atlas = Some(TextureAtlas {
+            layout: layout_handle.clone(),
+            index: frame,
+        });
+        sprite.image = image.clone();
     }
 }
+//-------------------------------------------------------------------------------------------------------------
 
 /**
  * BULLET SECTION
@@ -533,6 +603,36 @@ fn bullet_hits_table(
                     table_pos.x,
                     table_pos.y,
                     table_half,
+                ) {
+                    health.0 -= 25.0; // Deal 25 damage
+                    commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                    continue 'bullet_loop; // Move to the next bullet
+                }
+            }
+        }
+    }
+}
+
+fn bullet_hits_window(
+    mut commands: Commands,
+    mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
+    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+) {
+    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
+    let window_half = Vec2::splat(TILE_SIZE * 0.5); // window's collider size
+
+    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        for (window_tf, mut health, state) in &mut window_query {
+            if *state == window::GlassState::Intact{
+                let window_pos = window_tf.translation;
+                if aabb_overlap(
+                    bullet_pos.x,
+                    bullet_pos.y,
+                    bullet_half,
+                    window_pos.x,
+                    window_pos.y,
+                    window_half,
                 ) {
                     health.0 -= 25.0; // Deal 25 damage
                     commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
