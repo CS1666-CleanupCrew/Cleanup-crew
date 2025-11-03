@@ -85,6 +85,7 @@ pub fn create_room(
     room_vec: &mut RoomVec,
 ){
     room_vec.0.push(Room::new(tlc, brc, tile_tlc, tile_brc));
+    println!("{}",room_vec.0.len());
 }
 
 pub fn assign_doors(
@@ -190,12 +191,15 @@ pub fn generate_enemies_from_grid(
     enemy_hash: &mut EnemyPosition,
     rooms: & RoomVec,
 ){  
-    for room in rooms.0.iter()
+    for (i, room) in rooms.0.iter().enumerate()
     {
+        println!("For Room: {i}");
         let mut floors: Vec<(usize, usize)> = Vec::new();
-        let test = room.tile_bot_right_corner.y;
 
-        for y in (room.tile_top_left_corner.y as usize )..(room.tile_bot_right_corner.y as usize )
+        let top = room.tile_top_left_corner.y as usize;
+        let bot = room.tile_bot_right_corner.y as usize;
+
+        for y in bot..top
         { 
             let row = &grid[y];
 
@@ -224,5 +228,6 @@ pub fn generate_enemies_from_grid(
         }
 
         enemy_hash.0.extend(floors.into_iter().take(num_of_enemies));
+        println!("# of enemies after adding {}",enemy_hash.0.len());
     }
 }

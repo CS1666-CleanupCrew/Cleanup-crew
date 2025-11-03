@@ -68,7 +68,7 @@ impl Plugin for MapPlugin {
         app
 
             .add_systems(OnEnter(GameState::Loading), load_map.after(build_full_level))
-            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
+            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map).after(build_full_level))
             .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
             .add_systems(
                 OnEnter(GameState::Loading),
@@ -184,7 +184,8 @@ pub fn setup_tilemap(
 
     // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
-    generate_enemies_from_grid(&level.level, 5, None, &mut enemies, & rooms);
+    generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
+    println!("# of enemies: {}", enemies.0.len());
 
     // Loop through the room grid
     for (row_i, row) in level.level.iter().enumerate() {
@@ -206,7 +207,7 @@ pub fn setup_tilemap(
 
             match (ch, is_generated_table, is_generated_enemy) {
                 // Spawn either authored ('T') or generated tables
-                ('T', _, _) | ('#', true, _) => {
+                ('T', _, _) | ('#', true, false) => {
                     let mut sprite = Sprite::from_image(table_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
                     commands.spawn((

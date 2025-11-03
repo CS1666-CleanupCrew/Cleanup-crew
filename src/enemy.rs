@@ -126,7 +126,7 @@ fn spawn_enemies_from_points(
     enemy_res: Res<EnemyRes>,
     points: Res<EnemySpawnPoints>,
 ) {
-    for &p in &points.0 {
+    for (i, &p) in points.0.iter().enumerate(){
         spawn_enemy_at(&mut commands, &enemy_res, p, true); // active now
     }
 }
