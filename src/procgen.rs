@@ -31,6 +31,12 @@ impl Rect {
     }
 }
 
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub enum ProcgenSet {
+    LoadRooms,
+    BuildFullLevel,
+}
+
 
 type LeafRef = Rc<RefCell<Leaf>>;
 
@@ -91,9 +97,9 @@ pub type TablePositions = HashSet<(usize, usize)>;
 
 // layout of each room
 pub struct RoomLayout{
-    layout: Vec<String>,
-    width: f32,
-    height: f32,
+    pub layout: Vec<String>,
+    pub width: f32,
+    pub height: f32,
 }
 
 impl RoomLayout{
@@ -110,12 +116,12 @@ impl RoomLayout{
 #[derive(Resource)]
 pub struct RoomRes {
     numroom: i8,
-    room1: RoomLayout,
-    room2: RoomLayout,
-    room3: RoomLayout,
-    room4: RoomLayout,
-    room5: RoomLayout,
-    room6: RoomLayout,
+    pub room1: RoomLayout,
+    pub room2: RoomLayout,
+    pub room3: RoomLayout,
+    pub room4: RoomLayout,
+    pub room5: RoomLayout,
+    pub room6: RoomLayout,
 }
 
 impl RoomRes {
@@ -151,11 +157,20 @@ pub struct ProcGen;
 impl Plugin for ProcGen {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(OnEnter(GameState::Loading), load_rooms)
-            .add_systems(OnEnter(GameState::Loading), build_full_level.after(load_rooms));
+            // label the room-loading system
+            .add_systems(
+                OnEnter(GameState::Loading),
+                load_rooms.in_set(ProcgenSet::LoadRooms),
+            )
+            // label the BSP/full-level build and order it after load-rooms
+            .add_systems(
+                OnEnter(GameState::Loading),
+                build_full_level
+                    .in_set(ProcgenSet::BuildFullLevel)
+                    .after(ProcgenSet::LoadRooms),
+            );
     }
 }
-
 
 
 pub fn load_rooms(mut commands: Commands) {

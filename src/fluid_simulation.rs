@@ -1,4 +1,3 @@
-
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 use std::fs;
@@ -14,14 +13,19 @@ const OMEGA: f32 = 1.0 / RELAXATION_TIME;
 
 // breach values
 // pressure of the vaccume of space
-const VACUUM_PREASSURE: f32 = 0.001;
+#[allow(dead_code)]
+const VACUUM_PRESSURE: f32 = 0.001;
 // the fraction of air that gets transfered from a neighbor's cell into the breach cell
+#[allow(dead_code)]
 const TRANSFER_FRACTION: f32 = 0.02;
 // strength of pushing neighbor cell's velocity towards the breach cell
+#[allow(dead_code)]
 const PUSH_STRENGTH: f32 = 0.15;
 // saftey for the density value
+#[allow(dead_code)]
 const MIN_RHO: f32 = 1e-6;
 // how much the neighbor cell's distribution is replaced with equilibrum
+#[allow(dead_code)]
 const BLEND: f32 = 0.4;
 
 //D2Q9 directions
@@ -43,6 +47,7 @@ const WEIGHTS: [f32; 9] = [
     1.0 / 36.0,
     1.0 / 36.0,
 ];
+
 //2d coordinates are transfered into a 1d array
 #[derive(Component)]
 pub struct FluidGrid {
@@ -57,6 +62,7 @@ pub struct FluidGrid {
 pub struct PulledByFluid {
     pub mass: f32, //this is like the mass of the object. coeff by how much the object is being pulled towards the window
 }
+
 pub struct FluidSimPlugin;
 
 impl Plugin for FluidSimPlugin {
@@ -65,10 +71,10 @@ impl Plugin for FluidSimPlugin {
             .add_systems(
                 Update, 
                 (
-                    collision_step,
-                    streaming_step,
-                    apply_breach_forces,
-                    pull_objects_toward_breaches,
+                    collision_step,          // step 1 of LBM: local relaxation (BGK)
+                    streaming_step,          // step 2 of LBM: move distributions to neighbors (with bounce-back)
+                    apply_breach_forces,     // simple density reduction near breaches
+                    pull_objects_toward_breaches, // game objects suction towards breaches
                 ).chain()
             );
     }
@@ -112,9 +118,10 @@ impl FluidGrid {
     }
 
     pub fn initialize_with_perlin(&mut self, seed: u32) {
+        // The `noise` crate’s Perlin may not accept a seed on some versions.
+        // If yours doesn't, use Perlin::new(0) and add (seed as f64) to sample coords.
         let perlin = Perlin::new(seed);
         //frequency multiplier for the noise
-
         let scale = 0.05;
         
         //loop throught the whole grid
@@ -140,30 +147,26 @@ impl FluidGrid {
                 }
             }
         }
-        
-        
     }
 
- /// Add a breach that sucks air out (creates vacuum)
-    pub fn add_breach(&mut self, x: usize, y: usize) 
-    {
+    /// Add a breach that sucks air out (creates vacuum)
+    pub fn add_breach(&mut self, x: usize, y: usize) {
         if x < self.width && y < self.height {
             self.breaches.push((x, y));
-            info!("Breach created at ({}, {}) ", x, y);
+            // quieter than info! to avoid console spam in release
+            debug!("Breach created at ({}, {}) ", x, y);
         }
     }
 
     // convert from vector to 2d
     #[inline]
-    fn get_index(&self, x: usize, y: usize) -> usize 
-    {
+    fn get_index(&self, x: usize, y: usize) -> usize {
         y * self.width + x
     }
 
     // mystirious formula that was passed down from wise men(or women)
     #[inline]
-    fn compute_equilibrium(&self, density: f32, vx: f32, vy: f32, i: usize) -> f32 
-    {
+    fn compute_equilibrium(&self, density: f32, vx: f32, vy: f32, i: usize) -> f32 {
         // according to website this is like a dot product of lattice velocity 
         let cu = C_X[i] * vx + C_Y[i] * vy;
         // kinetic enegry of the flow
@@ -176,14 +179,12 @@ impl FluidGrid {
     fn compute_macroscopic(&self, x: usize, y: usize) -> (f32, f32, f32) {
         let idx = self.get_index(x, y);
         
-
         //these are the accumulators for the velocity. they sum up all the 9 directions
         let mut rho = 0.0;
         let mut ux = 0.0;
         let mut uy = 0.0;
         
-        for i in 0..9 
-        {
+        for i in 0..9 {
             //total density is the sum of all distribution functions. Each f[i] tells us how many particles move in direction i, so summing gives total particles in the cell
             let f = self.distribution[idx][i];
             rho += f;
@@ -192,12 +193,10 @@ impl FluidGrid {
             uy += C_Y[i] * f;
         }
         //check that if the velocity is very small because of the breach, we would rather set it to be a very small number. no division
-        if rho > 0.001 
-        {
+        if rho > 0.001 {
             ux /= rho;
             uy /= rho;
-        } else 
-        {
+        } else {
             ux = 0.0;
             uy = 0.0;
         }
@@ -217,40 +216,33 @@ pub fn setup_fluid_grid(mut commands: Commands) {
             grid.set_obstacles_from_map(&map_content);
         }
         Err(e) => {
-            error!("Failed to read map file");
+            // avoid panic; just warn and proceed with empty obstacles
+            warn!("Failed to read map file '{}': {}", map_path, e);
         }
     }
   
-   
-      grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
+    // a simple default breach so you see suction effects
+    grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
      
-    
     commands.spawn((grid, Name::new("FluidGrid")));
-    info!("Fluid simulation with breach aaaaaaaahhhhhh");
+    info!("Fluid simulation initialized");
 }
 
 
 //step 1 of LBM: Particles are supposed to collide in each cell and then, using other methods they should come back to the optimal stage
-fn collision_step(mut query: Query<&mut FluidGrid>) 
-{
-    for mut grid in &mut query 
-    {
-        for y in 0..grid.height 
-        {
-            for x in 0..grid.width 
-            {
+fn collision_step(mut query: Query<&mut FluidGrid>) {
+    for mut grid in &mut query {
+        for y in 0..grid.height {
+            for x in 0..grid.width {
                 let idx = grid.get_index(x, y);
-                
 
                 //if there is no collission in the cell, then it is fine. nothing needs to be changed
-                if grid.obstacles[idx] 
-                {
+                if grid.obstacles[idx] {
                     continue;
                 }
                 let (rho, ux, uy) = grid.compute_macroscopic(x, y); // get the classic density and velocity of particles in the given cell
                 
-                for i in 0..9 
-                {
+                for i in 0..9 {
                     // current distribution of particles in the cell
                     let f_old = grid.distribution[idx][i];
                     //calculating the optimal one
@@ -262,47 +254,38 @@ fn collision_step(mut query: Query<&mut FluidGrid>)
         }
     }
 }
+
 //moving particles into the neighboring cells based on the direction
 fn streaming_step(mut query: Query<&mut FluidGrid>) {
-    for mut grid in &mut query 
-    {
+    for mut grid in &mut query {
         //used as a buffer
         let old_dist = grid.distribution.clone();
         //copy of the entire grid
         let mut new_dist = grid.distribution.clone();
         //loop through all the cells
-        for y in 0..grid.height 
-        {
-            for x in 0..grid.width 
-            {
+        for y in 0..grid.height {
+            for x in 0..grid.width {
                 let idx = grid.get_index(x, y);
                 
-                if grid.obstacles[idx] 
-                {
+                if grid.obstacles[idx] {
                     continue;
                 }
                 //this loop goes through all the directions
-                for i in 0..9 
-                {
+                for i in 0..9 {
                     // see where did the particles came from, not where they are going. this is backstreaming
                     let src_x = x as isize - C_X[i] as isize;
                     let src_y = y as isize - C_Y[i] as isize;
 
                     //check for bounce back (off the grid or into obstacle)
-                    let mut bounced_back = false;
-
-                    //check for bounds
-                    if src_x < 0 || src_x >= grid.width as isize || 
-                    src_y < 0 || src_y >= grid.height as isize {
-                            //came from out of bounds
-                            bounced_back = true;
+                    let bounced_back = if src_x < 0 || src_x >= grid.width as isize || 
+                        src_y < 0 || src_y >= grid.height as isize {
+                        //came from out of bounds
+                        true
                     } else {
                         //check if it came from an obstacle
                         let src_idx = grid.get_index(src_x as usize, src_y as usize);
-                        if grid.obstacles[src_idx] {
-                            bounced_back = true;
-                        }
-                    }
+                        grid.obstacles[src_idx]
+                    };
 
                     //if bounced back, reverse direction
                     if bounced_back {
@@ -322,38 +305,32 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
     }
 }
 
-fn apply_breach_forces(mut query: Query<&mut FluidGrid>) 
-{
-
-    for mut grid in &mut query 
-    {
+fn apply_breach_forces(mut query: Query<&mut FluidGrid>) {
+    for mut grid in &mut query {
+        //collect breach positions first
+        let breach_positions: Vec<(usize, usize)> = grid.breaches.clone();
         //loop through each breach position
-        for &(bx, by) in &grid.breaches.clone() 
-        {
+        for &(bx, by) in &breach_positions {
             let breach_radius = 5;
             //loop through all cells in a square around the breach
-            for dy in -(breach_radius as isize)..=(breach_radius as isize) 
-            {
-                for dx in -(breach_radius as isize)..=(breach_radius as isize) 
-                {
-                    let x = (bx as isize + dx) as usize;
-                    let y = (by as isize + dy) as usize;
+            for dy in -(breach_radius as isize)..=(breach_radius as isize) {
+                for dx in -(breach_radius as isize)..=(breach_radius as isize) {
+                    let x = (bx as isize + dx) as isize;
+                    let y = (by as isize + dy) as isize;
                     //check if this cell is within grid bounds
-                    if x < grid.width && y < grid.height 
-                    {
-                        let idx = grid.get_index(x, y);
-                        //calculate distance squared from breach center
-                        let dist_sq = (dx * dx + dy * dy) as f32;
-                        //only affect cells within circular radius
-                        if dist_sq < (breach_radius * breach_radius) as f32 
-                        {
-                            //vacuum strength decreases with distance from breach
-                            let vacuum_strength = 1.0 - (dist_sq / (breach_radius * breach_radius) as f32);
-                            //reduce air density in all directions
-                            for i in 0..9 
-                            {
-                                grid.distribution[idx][i] *= 1.0 - (vacuum_strength * 0.1);
-                            }
+                    if x < 0 || y < 0 || x >= grid.width as isize || y >= grid.height as isize {
+                        continue;
+                    }
+                    let idx = grid.get_index(x as usize, y as usize);
+                    //calculate distance squared from breach center
+                    let dist_sq = (dx * dx + dy * dy) as f32;
+                    //only affect cells within circular radius
+                    if dist_sq < (breach_radius * breach_radius) as f32 {
+                        //vacuum strength decreases with distance from breach
+                        let vacuum_strength = 1.0 - (dist_sq / (breach_radius * breach_radius) as f32);
+                        //reduce air density in all directions
+                        for i in 0..9 {
+                            grid.distribution[idx][i] *= 1.0 - (vacuum_strength * 0.1);
                         }
                     }
                 }
@@ -367,72 +344,37 @@ fn apply_breach_forces(mut query: Query<&mut FluidGrid>)
 fn pull_objects_toward_breaches(
     grid_query: Query<&FluidGrid>,
     mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
-)
-{
-    let Ok(grid) = grid_query.get_single() else 
-    {
+) {
+    let Ok(grid) = grid_query.get_single() else {
         return;
     };
     
-    if grid.breaches.is_empty() 
-    {
+    if grid.breaches.is_empty() {
         return;
     }
     
     // Use TILE_SIZE instead of hard-coded 8.0
     let cell_size = crate::TILE_SIZE; // 32.0
+    //calculate grid origin (center of grid is at world origin 0,0)
     let grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
     let grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
     
     //info!("Grid: {}×{}, cell_size: {}, origin: ({}, {})", 
-      //    grid.width, grid.height, cell_size, grid_origin_x, grid_origin_y);
+    //      grid.width, grid.height, cell_size, grid_origin_x, grid_origin_y);
     
-    for (transform, mut velocity, pulled) in &mut objects 
-    {
+    for (transform, mut velocity, pulled) in &mut objects {
         let world_pos = transform.translation.truncate();
-        
-        let grid_x = ((world_pos.x - grid_origin_x) / cell_size) as usize;
-        let grid_y = ((world_pos.y - grid_origin_y) / cell_size) as usize;
-        
-        // if grid_x >= grid.width || grid_y >= grid.height 
-        // {
-        //     info!("SKIPPING object at world ({:.0}, {:.0}) - grid pos ({}, {}) out of bounds (grid is {}×{})!", 
-        //           world_pos.x, world_pos.y, grid_x, grid_y, grid.width, grid.height);
-        //     continue;
-        // }
-        
-        let mut total_force = Vec2::ZERO;
-        
-        for &(bx, by) in &grid.breaches 
-        {
-            let breach_world_x = grid_origin_x + (bx as f32 * cell_size);
-            let breach_world_y = grid_origin_y + (by as f32 * cell_size);
-            let breach_pos = Vec2::new(breach_world_x, breach_world_y);
-            
-            let to_breach = breach_pos - world_pos;
-            let distance = to_breach.length();
-            
-        if distance > 1.0 
-            {
-                
-                let force_magnitude = 5000.0; 
-                total_force += to_breach.normalize() * force_magnitude;
-        let world_pos = transform.translation.truncate();
-        
-        let grid_x = ((world_pos.x - grid_origin_x) / cell_size) as usize;
-        let grid_y = ((world_pos.y - grid_origin_y) / cell_size) as usize;
-        
-        if grid_x >= grid.width || grid_y >= grid.height 
-        {
-            info!("SKIPPING object at world ({:.0}, {:.0}) - grid pos ({}, {}) out of bounds (grid is {}×{})!", 
-                  world_pos.x, world_pos.y, grid_x, grid_y, grid.width, grid.height);
+
+        // If you later need to read fluid cell values (rho/vel) where this object is,
+        // keep this mapping, but don’t spam logs if outside the grid—just skip quietly.
+        if world_to_grid_opt(world_pos, grid.width, grid.height, cell_size).is_none() {
+            // Silently skip objects that are far outside the fluid grid
             continue;
         }
         
         let mut total_force = Vec2::ZERO;
         
-        for &(bx, by) in &grid.breaches 
-        {
+        for &(bx, by) in &grid.breaches {
             let breach_world_x = grid_origin_x + (bx as f32 * cell_size);
             let breach_world_y = grid_origin_y + (by as f32 * cell_size);
             let breach_pos = Vec2::new(breach_world_x, breach_world_y);
@@ -440,29 +382,52 @@ fn pull_objects_toward_breaches(
             let to_breach = breach_pos - world_pos;
             let distance = to_breach.length();
             
-        if distance > 1.0 
-            {
-                
+            if distance > 1.0 {
+                // tune this constant to taste
                 let force_magnitude = 5000.0; 
                 total_force += to_breach.normalize() * force_magnitude;
             }
         }
         
         let acceleration = total_force / pulled.mass;
+        // If you have Time, multiply by delta; here we assume ~16ms/frame.
         velocity.velocity += acceleration * 0.016;
         
-       
+        // clamp runaway speeds
         let max_velocity = 200.0;
-        if velocity.velocity.length() > max_velocity 
-        {
+        if velocity.velocity.length() > max_velocity  {
            velocity.velocity = velocity.velocity.normalize() * max_velocity;
         }
     }
 }
 
-pub fn world_to_grid(world_pos: Vec2, grid_width: usize, grid_height: usize) -> (usize, usize) 
-{
-    let cell_size = 8.0;
+// Quiet helper: World → grid; returns None if outside (no logs)
+fn world_to_grid_opt(
+    world_pos: Vec2,
+    grid_width: usize,
+    grid_height: usize,
+    cell_size: f32,
+) -> Option<(usize, usize)> {
+    //calculate grid origin (center of grid is at world origin 0,0)
+    let grid_origin_x = -(grid_width as f32 * cell_size) / 2.0;
+    let grid_origin_y = -(grid_height as f32 * cell_size) / 2.0;
+    
+    let gx = (world_pos.x - grid_origin_x) / cell_size;
+    let gy = (world_pos.y - grid_origin_y) / cell_size;
+
+    if gx < 0.0 || gy < 0.0 {
+        return None;
+    }
+    let (ux, uy) = (gx as usize, gy as usize);
+    if ux >= grid_width || uy >= grid_height {
+        return None;
+    }
+    Some((ux, uy))
+}
+
+// Kept for compatibility with any existing callers; uses TILE_SIZE
+pub fn world_to_grid(world_pos: Vec2, grid_width: usize, grid_height: usize) -> (usize, usize) {
+    let cell_size = crate::TILE_SIZE;
     //calculate grid origin (center of grid is at world origin 0,0)
     let grid_origin_x = -(grid_width as f32 * cell_size) / 2.0;
     let grid_origin_y = -(grid_height as f32 * cell_size) / 2.0;
