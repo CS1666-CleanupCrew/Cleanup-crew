@@ -185,7 +185,6 @@ pub fn setup_tilemap(
     // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
     generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
-    println!("# of enemies: {}", enemies.0.len());
 
     // Loop through the room grid
     for (row_i, row) in level.level.iter().enumerate() {
