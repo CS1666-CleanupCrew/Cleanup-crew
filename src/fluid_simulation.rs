@@ -394,12 +394,12 @@ fn pull_objects_toward_breaches(
         let grid_x = ((world_pos.x - grid_origin_x) / cell_size) as usize;
         let grid_y = ((world_pos.y - grid_origin_y) / cell_size) as usize;
         
-        if grid_x >= grid.width || grid_y >= grid.height 
-        {
-            info!("SKIPPING object at world ({:.0}, {:.0}) - grid pos ({}, {}) out of bounds (grid is {}×{})!", 
-                  world_pos.x, world_pos.y, grid_x, grid_y, grid.width, grid.height);
-            continue;
-        }
+        // if grid_x >= grid.width || grid_y >= grid.height 
+        // {
+        //     info!("SKIPPING object at world ({:.0}, {:.0}) - grid pos ({}, {}) out of bounds (grid is {}×{})!", 
+        //           world_pos.x, world_pos.y, grid_x, grid_y, grid.width, grid.height);
+        //     continue;
+        // }
         
         let mut total_force = Vec2::ZERO;
         

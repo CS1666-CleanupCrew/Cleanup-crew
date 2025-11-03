@@ -1,19 +1,21 @@
 use bevy::prelude::*;
 
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::BufReader;
+use std::io::prelude::*;
 
 use crate::collidable::{Collidable, Collider};
 use crate::enemy::Enemy;
 use crate::player;
+use crate::procgen::build_full_level;
 use crate::procgen::generate_tables_from_grid;
+use crate::room::track_rooms;
 use crate::room::*; // track_rooms()
-use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_ENTITIES, Z_FLOOR};
 use crate::table;
 use crate::window;
-use crate::room::track_rooms;
-
+use crate::{
+    BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_ENTITIES, Z_FLOOR,
+};
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -65,16 +67,18 @@ pub struct MapGridMeta {
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Loading), load_map)
-            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map).after(crate::fluiddynamics::setup_fluid_grid))
         app
-
-            .add_systems(OnEnter(GameState::Loading), load_map.after(build_full_level))
-            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
-            .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
+            // Everything that happens once when we enter Loading:
             .add_systems(
                 OnEnter(GameState::Loading),
-                playing_state.after(setup_tilemap),
+                (
+                    load_map,
+                    setup_tilemap
+                        .after(load_map)
+                        .after(crate::fluiddynamics::setup_fluid_grid),
+                    assign_doors.after(setup_tilemap),
+                    playing_state.after(assign_doors),
+                ),
             )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, parallax_scroll)
@@ -174,18 +178,16 @@ pub fn setup_tilemap(
                 bg,
                 Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
                 Visibility::default(),
-                ParallaxBg { factor: 0.9, tile: BG_WORLD },
+                ParallaxBg {
+                    factor: 0.9,
+                    tile: BG_WORLD,
+                },
                 ParallaxCell { ix, iy },
                 Name::new("SpaceBG"),
             ));
         }
     }
 
-    let generated_tables = generate_tables_from_grid(&rooms.room1, 25, None);
-
-    let mut breach_positions = Vec::new();
-
-    for (row_i, row) in rooms.room1.iter().enumerate() {
     // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
 
@@ -210,10 +212,11 @@ pub fn setup_tilemap(
             }
 
             match (ch, is_generated_table) {
-                    ('T', _) | ('#', true) => {
-                        let mut sprite = Sprite::from_image(table_tex.clone());
-                        sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
-                        let table_entity = commands.spawn((
+                ('T', _) | ('#', true) => {
+                    let mut sprite = Sprite::from_image(table_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+                    let table_entity = commands
+                        .spawn((
                             sprite,
                             Transform {
                                 translation: Vec3::new(x, y, Z_FLOOR + 2.0),
@@ -221,7 +224,9 @@ pub fn setup_tilemap(
                                 ..Default::default()
                             },
                             Collidable,
-                            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                            Collider {
+                                half_extents: Vec2::splat(TILE_SIZE * 0.5),
+                            },
                             Damage { amount: 10.0 },
                             Name::new("Table"),
                             table::Table,
@@ -229,10 +234,14 @@ pub fn setup_tilemap(
                             table::TableState::Intact,
                             crate::fluiddynamics::PulledByFluid { mass: 30.0 },
                             crate::enemy::Velocity::new(),
-                        )).id();
-                        
-                        info!("Spawned table at world pos ({}, {}) with PulledByFluid component", x, y);
-                    }
+                        ))
+                        .id();
+
+                    info!(
+                        "Spawned table at world pos ({}, {}) with PulledByFluid component",
+                        x, y
+                    );
+                }
 
                 ('W', _) => {
                     let mut sprite = Sprite::from_image(wall_tex.clone());
@@ -241,7 +250,9 @@ pub fn setup_tilemap(
                         sprite,
                         Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
                         Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Collider {
+                            half_extents: Vec2::splat(TILE_SIZE * 0.5),
+                        },
                         Name::new("Wall"),
                     ));
                 }
@@ -249,26 +260,28 @@ pub fn setup_tilemap(
                 ('G', _) => {
                     let mut sprite = Sprite::from_image(glass_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+
                     commands.spawn((
                         sprite,
                         Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
                         Name::new("Glass"),
-                        Transform {
-                            translation: Vec3::new(x, y, Z_FLOOR + 2.0),
-                            scale: Vec3::new(0.6, 0.6, 1.0),
-                            ..Default::default()
-                        },
                         Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Damage { amount: 10.0 },
-                        Name::new("Table"),
-                        table::Table,
-                        table::Health(50.0),
-                        table::TableState::Intact,
-                        // allow fluid pulling
-                        crate::fluiddynamics::PulledByFluid { mass: 30.0 },
-                        crate::enemy::Velocity::new(),
+                        Collider {
+                            half_extents: Vec2::splat(TILE_SIZE * 0.5),
+                        },
+                        // window components (not table!)
+                        window::Window,
+                        window::Health(50.0),
+                        window::GlassState::Intact,
                     ));
+
+                    // mark this tile as a breach for the fluid sim
+                    let (bx, by) = crate::fluiddynamics::world_to_grid(
+                        Vec2::new(x, y),
+                        crate::fluiddynamics::GRID_WIDTH,
+                        crate::fluiddynamics::GRID_HEIGHT,
+                    );
+                    breach_positions.push((bx, by));
                 }
 
                 // door (closed)
@@ -279,52 +292,11 @@ pub fn setup_tilemap(
                         sprite,
                         Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
                         Name::new("Door"),
-                        Door { is_open: false, pos: Vec2::new(x, y) },
+                        Door {
+                            is_open: false,
+                            pos: Vec2::new(x, y),
+                        },
                     ));
-                }
-
-                // wall (solid)
-                ('W', _) => {
-                    let mut sprite = Sprite::from_image(wall_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
-                    commands.spawn((
-                        sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
-                        Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Name::new("Wall"),
-                    ));
-                    
-                    let breach_pos = crate::fluiddynamics::world_to_grid(
-                        Vec2::new(x, y),
-                        crate::fluiddynamics::GRID_WIDTH,
-                        crate::fluiddynamics::GRID_HEIGHT,
-                    );
-                    breach_positions.push(breach_pos);
-                }
-
-                // glass window (solid + breach point for fluid)
-                ('G', _) => {
-                    let mut sprite = Sprite::from_image(glass_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
-                    commands.spawn((
-                        sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
-                        Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Name::new("Glass"),
-                        window::Window,
-                        window::Health(50.0),
-                        window::GlassState::Intact,
-                    ));
-
-                    // mark this tile as a breach for the fluid grid
-                    let (bx, by) = crate::fluiddynamics::world_to_grid(
-                        Vec2::new(x, y),
-                        crate::fluiddynamics::GRID_WIDTH,
-                        crate::fluiddynamics::GRID_HEIGHT,
-                    );
-                    breach_positions.push((bx, by));
                 }
 
                 // enemy spawn
@@ -336,21 +308,16 @@ pub fn setup_tilemap(
             }
         }
     }
-
-    if let Ok(mut grid) = fluid_query.single_mut() {
-    for (bx, by) in breach_positions {
-        grid.add_breach(bx, by);
-    }
-}
-    commands.insert_resource(spawns);
-
     // push any recorded breach positions into the fluid grid
-    if let Ok(mut grid) = fluid_query.get_single_mut() {
-        for (bx, by) in breach_positions {
+    if let Ok(mut grid) = fluid_query.single_mut() {
+        for &(bx, by) in &breach_positions {
             grid.add_breach(bx, by);
         }
     }
+    commands.insert_resource(spawns);
 }
+
+
 
 fn parallax_scroll(
     cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
