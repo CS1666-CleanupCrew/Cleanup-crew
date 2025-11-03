@@ -84,7 +84,10 @@ fn main() {
             endcredits::EndCreditPlugin,
             enemy::EnemyPlugin,
             table::TablePlugin,
-            fluiddynamics::FluidSimPlugin,
+            window::WindowPlugin,
+            procgen::ProcGen,
+            menu::MenuPlugin,
+            bullet::BulletPlugin,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Menu), log_state_change)
