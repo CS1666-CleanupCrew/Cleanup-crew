@@ -121,65 +121,65 @@ struct GridPos {
 }
 
 /// Spawn a tiny text label on every non-wall/space tile with its current pressure.
-// pub fn spawn_pressure_labels(
-//     mut commands: Commands,
-//     assets: Res<AssetServer>,
-//     air: Res<AirGrid>,
-//     level: Res<LevelRes>,
-// ) {
-//     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
-//     let map_rows = level.level.len() as f32;
-//     let map_px_w = map_cols * TILE_SIZE;
-//     let map_px_h = map_rows * TILE_SIZE;
-//     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
-//     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
+pub fn spawn_pressure_labels(
+    mut commands: Commands,
+    assets: Res<AssetServer>,
+    air: Res<AirGrid>,
+    level: Res<LevelRes>,
+) {
+    let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
+    let map_rows = level.level.len() as f32;
+    let map_px_w = map_cols * TILE_SIZE;
+    let map_px_h = map_rows * TILE_SIZE;
+    let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
+    let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
 
-//     let font: Handle<Font> = assets.load(
-//         "fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf"
-//     );
+    let font: Handle<Font> = assets.load(
+        "fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf"
+    );
 
-//     for y in 0..air.h {
-//         for x in 0..air.w {
-//             // Only place labels on authored floor cells
-//             let ch = level.level[y].as_bytes()[x] as char;
-//             if ch != '#' {
-//                 continue;
-//             } // only floor tiles
+    for y in 0..air.h {
+        for x in 0..air.w {
+            // Only place labels on authored floor cells
+            let ch = level.level[y].as_bytes()[x] as char;
+            if ch != '#' {
+                continue;
+            } // only floor tiles
 
-//             // keep the rest the same
-//             let world_x = x0 + x as f32 * TILE_SIZE;
-//             let world_y = y0 + (map_rows - 1.0 - y as f32) * TILE_SIZE;
+            // keep the rest the same
+            let world_x = x0 + x as f32 * TILE_SIZE;
+            let world_y = y0 + (map_rows - 1.0 - y as f32) * TILE_SIZE;
 
-//             commands.spawn((
-//                 Text2d::new(format!("{:.1}", air.get(x, y))),
-//                 TextFont {
-//                     font: font.clone(),
-//                     font_size: 12.0,
-//                     ..default()
-//                 },
-//                 TextColor(pressure_to_color(air.get(x, y))),
-//                 Transform::from_xyz(world_x, world_y, Z_ENTITIES + 10.0),
-//                 PressureLabel,
-//                 GridPos { x, y },
-//             ));
-//         }
-//     }
-// }
+            commands.spawn((
+                Text2d::new(format!("{:.1}", air.get(x, y))),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(pressure_to_color(air.get(x, y))),
+                Transform::from_xyz(world_x, world_y, Z_ENTITIES + 10.0),
+                PressureLabel,
+                GridPos { x, y },
+            ));
+        }
+    }
+}
 
-// /// Update labels if AirGrid changes (if reseeded or tweak params)
-// pub fn update_pressure_labels(
-//     air: Res<AirGrid>,
-//     mut q: Query<(&GridPos, &mut Text, &mut TextColor), With<PressureLabel>>,
-// ) {
-//     if !air.is_changed() {
-//         return;
-//     }
-//     for (pos, mut text, mut color) in &mut q {
-//         let p = air.get(pos.x, pos.y);
-//         *text = Text::new(format!("{:.1}", p));
-//         color.0 = pressure_to_color(p);
-//     }
-// }
+/// Update labels if AirGrid changes (if reseeded or tweak params)
+pub fn update_pressure_labels(
+    air: Res<AirGrid>,
+    mut q: Query<(&GridPos, &mut Text, &mut TextColor), With<PressureLabel>>,
+) {
+    if !air.is_changed() {
+        return;
+    }
+    for (pos, mut text, mut color) in &mut q {
+        let p = air.get(pos.x, pos.y);
+        *text = Text::new(format!("{:.1}", p));
+        color.0 = pressure_to_color(p);
+    }
+}
 
 fn pressure_to_color(p: f32) -> Color {
     let t = (p / 5.0).clamp(0.0, 1.0);
