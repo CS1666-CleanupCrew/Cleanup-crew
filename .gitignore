@@ -12,3 +12,5 @@
 .DS_Store
 .idea/
 .vscode/
+
+assets/rooms/level.txt

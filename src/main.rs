@@ -1,16 +1,22 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
+use crate::air::{init_air_grid, spawn_pressure_labels};
 
 pub mod collidable;
 pub mod endcredits;
 pub mod enemy;
 pub mod player;
 pub mod table;
+pub mod window;
 pub mod map;
 pub mod procgen;
-#[path = "fluid_simulation.rs"]
-pub mod fluiddynamics;
+pub mod air;
+pub mod noise;
+pub mod menu;
+pub mod room;
+pub mod bullet;
+
 
 const TITLE: &str = "Cleanup Crew";
 const WIN_W: f32 = 1280.;
@@ -48,6 +54,7 @@ struct DamageCooldown(Timer);
 #[derive(States, Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum GameState {
     #[default]
+    Menu,
     Loading,
     Playing,
     EndCredits,
@@ -80,9 +87,13 @@ fn main() {
             fluiddynamics::FluidSimPlugin,
         ))
         .add_systems(Startup, setup_camera)
+        .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
+        .add_systems(OnEnter(GameState::Playing), init_air_grid)
+        .add_systems(OnEnter(GameState::Playing), spawn_pressure_labels.after(init_air_grid))
+
         .add_systems(Startup, setup_ui_health)
         .add_systems(
             Update,
@@ -138,7 +149,7 @@ fn damage_on_collision(
 ) {
     cooldown.0.tick(time.delta());
 
-    if let Ok((mut health, p_tf)) = player_q.get_single_mut() {
+    if let Ok((mut health, p_tf)) = player_q.single_mut() {
         if !cooldown.0.finished() { return; }
 
         let player_half = Vec2::splat(TILE_SIZE * 0.5);

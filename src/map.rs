@@ -1,14 +1,21 @@
+use bevy::log::Level;
 use bevy::prelude::*;
-use rand::prelude::*;
+
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
 use crate::procgen::generate_tables_from_grid;
 
 use crate::collidable::{Collidable, Collider};
+use crate::enemy::Enemy;
 use crate::player;
+use crate::procgen::generate_tables_from_grid;
+use crate::room::*; // RoomRes, track_rooms
 use crate::table;
-use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
+use crate::window;
+use crate::{
+    BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_ENTITIES, Z_FLOOR,
+};
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -22,39 +29,59 @@ struct ParallaxCell {
     iy: i32,
 }
 
-#[derive(Component)]
-struct FloorTile;
-
-#[derive(Component)]
-struct Wall;
-
 #[derive(Resource)]
-struct TileRes {
+pub struct TileRes {
     floor: Handle<Image>,
     wall: Handle<Image>,
     glass: Handle<Image>,
     table: Handle<Image>,
+    closed_door: Handle<Image>,
+    open_door: Handle<Image>,
 }
+
 #[derive(Resource)]
 pub struct BackgroundRes(pub Handle<Image>);
 
 #[derive(Resource)]
-pub struct RoomRes {
-    pub room1: Vec<String>,
-    pub room2: Vec<String>,
+pub struct LevelRes {
+    pub level: Vec<String>,
+}
+
+#[derive(Resource, Default)]
+pub struct EnemySpawnPoints(pub Vec<Vec3>);
+
+#[derive(Component)]
+pub struct Door {
+    pub is_open: bool,
+    pub pos: Vec2,
+}
+
+#[derive(Resource, Copy, Clone)]
+pub struct MapGridMeta {
+    pub x0: f32,
+    pub y0: f32,
+    pub cols: usize,
+    pub rows: usize,
 }
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Loading), load_map)
-            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map).after(crate::fluiddynamics::setup_fluid_grid))
+        app
+            .add_systems(OnEnter(GameState::Loading), load_map)
+            .add_systems(
+                OnEnter(GameState::Loading),
+                setup_tilemap
+                    .after(load_map)
+                    .after(crate::fluiddynamics::setup_fluid_grid),
+            )
             .add_systems(
                 OnEnter(GameState::Loading),
                 playing_state.after(setup_tilemap),
             )
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, parallax_scroll);
+            .add_systems(Update, parallax_scroll)
+            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -64,6 +91,7 @@ impl Plugin for MapPlugin {
 //  '.' = empty
 //  'T' = table (floor renders underneath)
 //  'W' = wall (floor renders underneath + collidable wall sprite)
+//   'G' = glass window
 // Minimum of 40 cols (1280/32), 23 rows (720/32 = 22.5))
 
 fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
@@ -71,15 +99,16 @@ fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
 }
 
 fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let mut rooms = RoomRes {
-        room1: Vec::new(),
-        room2: Vec::new(),
+    let mut level = LevelRes {
+        level: Vec::new(),
     };
     let tiles = TileRes {
         floor: asset_server.load("map/floortile.png"),
         wall: asset_server.load("map/walls.png"),
         glass: asset_server.load("map/window.png"),
         table: asset_server.load("map/table.png"),
+        closed_door: asset_server.load("map/closed_door.png"),
+        open_door: asset_server.load("map/open_door.png"),
     };
     let space_tex = BackgroundRes(asset_server.load("map/space.png"));
 
@@ -92,9 +121,9 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     for line_result in reader.lines() {
         let line = line_result.unwrap();
-        rooms.room1.push(line);
+        level.level.push(line);
     }
-    commands.insert_resource(rooms);
+    commands.insert_resource(level);
 }
 
 pub fn setup_tilemap(
@@ -109,21 +138,34 @@ pub fn setup_tilemap(
     let table_tex: Handle<Image> = asset_server.load("map/table.png");
     let glass_tex: Handle<Image> = asset_server.load("map/window.png");
 
-    let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
-    let map_rows = rooms.room1.len() as f32;
+
+    let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
+    let map_rows = level.level.len() as f32;
 
     let map_px_w = map_cols * TILE_SIZE;
     let map_px_h = map_rows * TILE_SIZE;
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
+    
+        commands.insert_resource(MapGridMeta {
+    x0,
+    y0,
+    cols: map_cols as usize,
+    rows: map_rows as usize,
+});
 
     let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
     let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
 
-    for iy in -1..(ny + 1) {
-        for ix in -1..(nx + 1) {
+
+    let mut spawns = EnemySpawnPoints::default();
+
+
+    let pad: i32 = 3;
+    for iy in -pad..(ny + 1) {
+        for ix in -pad..(nx + 1) {
             let cx = (ix as f32) * BG_WORLD;
             let cy = (iy as f32) * BG_WORLD;
 
@@ -204,6 +246,43 @@ pub fn setup_tilemap(
                         sprite,
                         Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
                         Name::new("Glass"),
+                        Transform {
+                            translation: Vec3::new(x, y, Z_FLOOR + 2.0),
+                            scale: Vec3::new(0.5, 1.0, 1.0),
+                            ..Default::default()
+                        },
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Table"),
+                        table::Table,
+                        table::Health(50.0),
+                        table::TableState::Intact,
+                    ));
+                }
+
+                ('D', _) => {
+                    let mut sprite = Sprite::from_image(closed_door_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                    sprite,
+                    Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                    // Collidable,
+                    // Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                    Name::new("Door"),
+                    Door { is_open: false, pos: Vec2::new(x, y)},
+                    ));
+                }
+
+                // Spawn walls
+                ('W', _) => {
+                    let mut sprite = Sprite::from_image(wall_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Wall"),
                     ));
                     
                     let breach_pos = crate::fluiddynamics::world_to_grid(
@@ -213,6 +292,28 @@ pub fn setup_tilemap(
                     );
                     breach_positions.push(breach_pos);
                 }
+
+                ('G', _) => {
+                    let mut sprite = Sprite::from_image(glass_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Glass"),
+                        window::Window,
+                        window::Health(50.0),
+                        window::GlassState::Intact,
+                    ));
+                }
+
+
+                // Spawn enemies
+                ('E', _) => {
+                    spawns.0.push(Vec3::new(x, y, Z_ENTITIES));
+                }
+
                 _ => {}
             }
         }
@@ -225,11 +326,35 @@ pub fn setup_tilemap(
 }
 }
 
+// fn open_doors_when_clear(
+//         enemies: Query<Entity, With<Enemy>>,
+//         mut doors: Query<(Entity, &mut Sprite, &mut Door)>,
+//         tiles: Res<TileRes>,
+//         mut commands: Commands,
+//     ) {
+//         // If any enemies exist, do nothing
+//         if !enemies.is_empty() {
+//             return;
+//         }
+
+//         // Open any closed doors if no enemies
+//         for (entity, mut sprite, mut door) in &mut doors {
+//             if !door.is_open {
+//                 sprite.image = tiles.open_door.clone();
+//                 door.is_open = true;
+
+//                 // Remove collision
+//                 commands.entity(entity).remove::<Collidable>();
+//                 commands.entity(entity).remove::<Collider>();
+//             }
+//         }
+//     }
+
 fn parallax_scroll(
     cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
     mut bg_q: Query<(&ParallaxBg, &ParallaxCell, &mut Transform), With<ParallaxBg>>,
 ) {
-    let Ok(cam_tf) = cam_q.get_single() else {
+    let Ok(cam_tf) = cam_q.single() else {
         return;
     };
     let cam = cam_tf.translation;
@@ -259,15 +384,15 @@ fn follow_player(
     //finds all entities that are able to transform and are made of the player component
     player_query: Query<&Transform, (With<player::Player>, Without<MainCamera>)>,
     mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<player::Player>)>,
-    rooms: Res<RoomRes>,
+    level: Res<LevelRes>,
 ) {
     //players current position.
-    if let Ok(player_transform) = player_query.get_single() {
+    if let Ok(player_transform) = player_query.single() {
         //This will error out if we would like to have several cameras, this makes the camera mutable
-        if let Ok(mut camera_transform) = camera_query.get_single_mut() {
+        if let Ok(mut camera_transform) = camera_query.single_mut() {
             //level bounds  calculation given 40x23
-            let map_cols = rooms.room1.first().map(|r| r.len()).unwrap_or(0) as f32;
-            let map_rows = rooms.room1.len() as f32;
+            let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
+            let map_rows = level.level.len() as f32;
             let level_width = map_cols * TILE_SIZE;
             let level_height = map_rows * TILE_SIZE;
 
