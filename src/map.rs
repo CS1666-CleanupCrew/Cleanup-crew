@@ -66,11 +66,12 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Loading), load_map)
-            // keep the fluid grid setup before we build the tilemap
-            .add_systems(
-                OnEnter(GameState::Loading),
-                setup_tilemap.after(load_map).after(crate::fluiddynamics::setup_fluid_grid),
-            )
+            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map).after(crate::fluiddynamics::setup_fluid_grid))
+        app
+
+            .add_systems(OnEnter(GameState::Loading), load_map.after(build_full_level))
+            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map))
+            .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
             .add_systems(
                 OnEnter(GameState::Loading),
                 playing_state.after(setup_tilemap),
@@ -180,7 +181,12 @@ pub fn setup_tilemap(
         }
     }
 
-    // generate some extra tables on floor positions
+    let generated_tables = generate_tables_from_grid(&rooms.room1, 25, None);
+
+    let mut breach_positions = Vec::new();
+
+    for (row_i, row) in rooms.room1.iter().enumerate() {
+    // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
 
     // positions we’ll mark as breaches in the fluid grid (e.g., windows)
@@ -204,12 +210,49 @@ pub fn setup_tilemap(
             }
 
             match (ch, is_generated_table) {
-                // tables (authored or generated)
-                ('T', _) | ('#', true) => {
-                    let mut sprite = Sprite::from_image(table_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+                    ('T', _) | ('#', true) => {
+                        let mut sprite = Sprite::from_image(table_tex.clone());
+                        sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+                        let table_entity = commands.spawn((
+                            sprite,
+                            Transform {
+                                translation: Vec3::new(x, y, Z_FLOOR + 2.0),
+                                scale: Vec3::new(0.6, 0.6, 1.0),
+                                ..Default::default()
+                            },
+                            Collidable,
+                            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                            Damage { amount: 10.0 },
+                            Name::new("Table"),
+                            table::Table,
+                            table::Health(50.0),
+                            table::TableState::Intact,
+                            crate::fluiddynamics::PulledByFluid { mass: 30.0 },
+                            crate::enemy::Velocity::new(),
+                        )).id();
+                        
+                        info!("Spawned table at world pos ({}, {}) with PulledByFluid component", x, y);
+                    }
+
+                ('W', _) => {
+                    let mut sprite = Sprite::from_image(wall_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
                         sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Collidable,
+                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                        Name::new("Wall"),
+                    ));
+                }
+
+                ('G', _) => {
+                    let mut sprite = Sprite::from_image(glass_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Name::new("Glass"),
                         Transform {
                             translation: Vec3::new(x, y, Z_FLOOR + 2.0),
                             scale: Vec3::new(0.6, 0.6, 1.0),
@@ -251,6 +294,13 @@ pub fn setup_tilemap(
                         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
                         Name::new("Wall"),
                     ));
+                    
+                    let breach_pos = crate::fluiddynamics::world_to_grid(
+                        Vec2::new(x, y),
+                        crate::fluiddynamics::GRID_WIDTH,
+                        crate::fluiddynamics::GRID_HEIGHT,
+                    );
+                    breach_positions.push(breach_pos);
                 }
 
                 // glass window (solid + breach point for fluid)
@@ -287,7 +337,11 @@ pub fn setup_tilemap(
         }
     }
 
-    // share enemy spawn points
+    if let Ok(mut grid) = fluid_query.single_mut() {
+    for (bx, by) in breach_positions {
+        grid.add_breach(bx, by);
+    }
+}
     commands.insert_resource(spawns);
 
     // push any recorded breach positions into the fluid grid
