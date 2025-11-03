@@ -47,11 +47,13 @@ impl Leaf {
     }
 
     fn split<R: Rng>(&mut self, rng: &mut R, min_leaf_size: usize, max_split_attempt: usize) -> bool {
+        // has it been split
         if self.left.is_some() || self.right.is_some() { return false; }
         let w = self.rect.w;
         let h = self.rect.h;
         if w <= min_leaf_size * 2 && h <= min_leaf_size * 2 { return false; }
 
+        // try to split it 5 times
         for _ in 0..max_split_attempt {
             let split_dir = rng.random_range(1..=2);
             if split_dir == 1 && h > min_leaf_size * 2 {
