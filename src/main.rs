@@ -1,7 +1,7 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
-use crate::air::{init_air_grid, spawn_pressure_labels};
+use crate::air::{init_air_grid};
 
 pub mod collidable;
 pub mod endcredits;
@@ -16,6 +16,8 @@ pub mod noise;
 pub mod menu;
 pub mod room;
 pub mod bullet;
+#[path = "fluid_simulation.rs"]
+pub mod fluiddynamics;
 
 
 const TITLE: &str = "Cleanup Crew";
@@ -84,6 +86,8 @@ fn main() {
             endcredits::EndCreditPlugin,
             enemy::EnemyPlugin,
             table::TablePlugin,
+            procgen::ProcGen,
+            menu::MenuPlugin,
             fluiddynamics::FluidSimPlugin,
         ))
         .add_systems(Startup, setup_camera)
@@ -92,7 +96,7 @@ fn main() {
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
         .add_systems(OnEnter(GameState::Playing), init_air_grid)
-        .add_systems(OnEnter(GameState::Playing), spawn_pressure_labels.after(init_air_grid))
+        //.add_systems(OnEnter(GameState::Playing), spawn_pressure_labels.after(init_air_grid))
 
         .add_systems(Startup, setup_ui_health)
         .add_systems(
