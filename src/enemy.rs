@@ -116,7 +116,11 @@ pub fn spawn_enemy_at(
         Velocity::new(),
         Health::new(50.0),
         AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
-        EnemyFrames { handles: enemy_res.frames.clone(), index: 0 },
+        EnemyFrames {
+            handles: enemy_res.frames.clone(),
+            index: 0,
+        },
+        crate::fluiddynamics::PulledByFluid { mass: 50.0 },
     ));
     if active { e.insert(ActiveEnemy); }
 }
@@ -282,10 +286,6 @@ fn collide_enemies_with_enemies(
         }
     }
 }
-
-
-
-
 
 
 
