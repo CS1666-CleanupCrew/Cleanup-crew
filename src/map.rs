@@ -54,6 +54,14 @@ pub struct Door {
     pub pos: Vec2,
 }
 
+#[derive(Resource, Copy, Clone)]
+pub struct MapGridMeta {
+    pub x0: f32,
+    pub y0: f32,
+    pub cols: usize,
+    pub rows: usize,
+}
+
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
@@ -137,11 +145,19 @@ pub fn setup_tilemap(
     let map_px_h = map_rows * TILE_SIZE;
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
+    
+        commands.insert_resource(MapGridMeta {
+    x0,
+    y0,
+    cols: map_cols as usize,
+    rows: map_rows as usize,
+});
 
     let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
     let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
+
 
     let mut spawns = EnemySpawnPoints::default();
 
