@@ -1,9 +1,11 @@
+
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
+use std::fs;
 
 //Division of the room in small grids for the airflow measurement there
-const GRID_WIDTH: usize = 128;
-const GRID_HEIGHT: usize = 96;
+pub const GRID_WIDTH: usize = 79;
+pub const GRID_HEIGHT: usize = 39;
 
 //responsible for the thickness of the air
 const RELAXATION_TIME: f32 = 0.55;
@@ -81,6 +83,31 @@ impl FluidGrid {
             distribution: vec![[0.0; 9]; size],
             obstacles: vec![false; size],
             breaches: Vec::new(),
+        }
+    }
+
+    pub fn set_obstacles_from_map(&mut self, map_content: &str) {
+        self.obstacles = vec![false; self.width * self.height];
+
+        // loop for y coordinate
+        for (y, line) in map_content.lines().enumerate() {
+            // stops if the map file is differnt from grid height
+            if y >= self.height {
+                break;
+            }
+            
+            // loop for x coordinate
+            for (x, char) in line.chars().enumerate() {
+                // stop if map file is wider than grid width
+                if x >= self.width {
+                    break;
+                }
+
+                let idx = self.get_index(x, y);
+                if char == 'W' {
+                    self.obstacles[idx] = true; // adds wall to obstacles
+                }
+            }
         }
     }
 
@@ -179,14 +206,24 @@ impl FluidGrid {
 }
 
 //this method will be called from the map generation
-fn setup_fluid_grid(mut commands: Commands) {
+pub fn setup_fluid_grid(mut commands: Commands) {
     let mut grid = FluidGrid::new(GRID_WIDTH, GRID_HEIGHT);
     grid.initialize_with_perlin(42);
     
+    //this part for loading the walls from map file
+    let map_path = "assets/rooms/level.txt";
+    match fs::read_to_string(map_path) {
+        Ok(map_content) => {
+            grid.set_obstacles_from_map(&map_content);
+        }
+        Err(e) => {
+            error!("Failed to read map file");
+        }
+    }
   
    
-    //grid.add_breach(10, 48); 
-    //grid.add_breach(118, 48); 
+      grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
+     
     
     commands.spawn((grid, Name::new("FluidGrid")));
     info!("Fluid simulation with breach aaaaaaaahhhhhh");
@@ -284,8 +321,10 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
         grid.distribution = new_dist;
     }
 }
+
 fn apply_breach_forces(mut query: Query<&mut FluidGrid>) 
 {
+
     for mut grid in &mut query 
     {
         //loop through each breach position
@@ -321,80 +360,74 @@ fn apply_breach_forces(mut query: Query<&mut FluidGrid>)
             }
         }
     }
+    
 }
 
 //apply suction forces to objects, pulling them toward breaches
 fn pull_objects_toward_breaches(
     grid_query: Query<&FluidGrid>,
-    mut objects: Query<(&Transform, &mut Velocity, &PulledByFluid), Without<crate::player::Player>>,
-) 
+    mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
+)
 {
-    //get the fluid grid, exit if it doesn't exist
     let Ok(grid) = grid_query.get_single() else 
     {
         return;
     };
-    //no breaches means no pulling force
+    
     if grid.breaches.is_empty() 
     {
         return;
     }
     
-    //conversion between world coordinates and grid coordinates
-    let cell_size = 8.0;
+    // Use TILE_SIZE instead of hard-coded 8.0
+    let cell_size = crate::TILE_SIZE; // 32.0
     let grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
     let grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
-    //loop through all objects that can be pulled by fluid
+    
+    //info!("Grid: {}×{}, cell_size: {}, origin: ({}, {})", 
+      //    grid.width, grid.height, cell_size, grid_origin_x, grid_origin_y);
+    
     for (transform, mut velocity, pulled) in &mut objects 
     {
         let world_pos = transform.translation.truncate();
-        //convert world position to grid coordinates
+        
         let grid_x = ((world_pos.x - grid_origin_x) / cell_size) as usize;
         let grid_y = ((world_pos.y - grid_origin_y) / cell_size) as usize;
         
-        //skip objects outside the grid
         if grid_x >= grid.width || grid_y >= grid.height 
         {
+            info!("SKIPPING object at world ({:.0}, {:.0}) - grid pos ({}, {}) out of bounds (grid is {}×{})!", 
+                  world_pos.x, world_pos.y, grid_x, grid_y, grid.width, grid.height);
             continue;
         }
         
-        //get fluid state at object's position
-        let (density, fluid_vx, fluid_vy) = grid.compute_macroscopic(grid_x, grid_y);
-        //accumulate forces from all breaches
         let mut total_force = Vec2::ZERO;
-        //calculate pull force from each breach
+        
         for &(bx, by) in &grid.breaches 
         {
-            //convert breach grid position to world position
             let breach_world_x = grid_origin_x + (bx as f32 * cell_size);
             let breach_world_y = grid_origin_y + (by as f32 * cell_size);
             let breach_pos = Vec2::new(breach_world_x, breach_world_y);
-            //vector from object to breach
+            
             let to_breach = breach_pos - world_pos;
             let distance = to_breach.length();
             
-            //only apply force if not too close to breach
-            if distance > 1.0 
+        if distance > 1.0 
             {
-                //inverse square law for suction force (like gravity)
-                let force_magnitude = 5000.0 / (distance * distance);
-                //low air density means stronger vacuum pull
-                let vacuum_multiplier = (1.0 - density).max(0.0) * 2.0;
-                total_force += to_breach.normalize() * force_magnitude * vacuum_multiplier;
+                
+                let force_magnitude = 5000.0; 
+                total_force += to_breach.normalize() * force_magnitude;
             }
         }
         
-        //heavier objects resist more (F = ma, so a = F/m)
         let acceleration = total_force / pulled.mass;
-        //add influence from fluid flow itself
-        let fluid_force = Vec2::new(fluid_vx, fluid_vy) * 100.0;
-        //apply acceleration assuming 60fps
-        velocity.0 += (acceleration + fluid_force) * 0.016;
-        //prevent objects from flying too fast
-        let max_velocity = 300.0;
-        if velocity.0.length() > max_velocity 
+        velocity.velocity += acceleration * 0.016;
+        
+       
+        let max_velocity = 200.0;
+        if velocity.velocity.length() > max_velocity 
         {
-            velocity.0 = velocity.0.normalize() * max_velocity;
+           velocity.velocity = velocity.velocity.normalize() * max_velocity;
         }
     }
 }
@@ -412,4 +445,3 @@ pub fn world_to_grid(world_pos: Vec2, grid_width: usize, grid_height: usize) -> 
     
     (grid_x, grid_y)
 }
-
