@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-// use bevy::log::Level; // (unused)
 
 use std::fs::File;
 use std::io::BufReader;
@@ -13,7 +12,7 @@ use crate::table;
 use crate::window;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
 use crate::procgen::{RoomRes, build_full_level, ProcgenSet};
-// use crate::room::*; // (already imported above)
+
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -29,12 +28,12 @@ struct ParallaxCell {
 
 #[derive(Resource)]
 pub struct TileRes {
-    floor: Handle<Image>,
-    wall: Handle<Image>,
-    glass: Handle<Image>,
-    table: Handle<Image>,
+    pub floor: Handle<Image>,
+    pub wall: Handle<Image>,
+    pub glass: Handle<Image>,
+    pub table: Handle<Image>,
     pub closed_door: Handle<Image>,
-    open_door: Handle<Image>,
+    pub open_door: Handle<Image>,
 }
 
 #[derive(Resource)]
