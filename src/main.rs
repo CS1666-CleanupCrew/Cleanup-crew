@@ -44,6 +44,9 @@ struct HealthDisplay;
 #[derive(Component)]
 struct Damage { amount: f32, }
 
+#[derive(Component)]
+struct GameOverScreen;
+
 #[derive(Resource)]
 struct DamageCooldown(Timer);
 
@@ -63,6 +66,7 @@ enum GameState {
     Menu,
     Loading,
     Playing,
+    GameOver,
     EndCredits,
 }
 
@@ -111,6 +115,8 @@ fn main() {
                 .run_if(|flag: Res<ShowAirLabels>| flag.0),
         )
 
+        .add_systems(OnEnter(GameState::GameOver), setup_game_over_screen)
+
         .add_systems(Startup, setup_ui_health)
         .add_systems(
             Update,
@@ -118,10 +124,49 @@ fn main() {
         )
         .add_systems(
             Update,
-            damage_on_collision.run_if(in_state(GameState::Playing)),
+            (
+                damage_on_collision,
+                check_game_over,
+            )
+                .run_if(in_state(GameState::Playing)),
         )
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
         .run();
+}
+
+// Check if player health is < 0
+fn check_game_over(
+    mut next_state: ResMut<NextState<GameState>>,
+    player_q: Query<&Health, With<Player>>,
+) {
+    if let Ok(health) = player_q.get_single() {
+        if health.0 <= 0.0 {
+            info!("Player health reached 0 — transitioning to GameOver!");
+            next_state.set(GameState::GameOver);
+        }
+    }
+}
+
+// Display game over screen
+fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let texture: Handle<Image> = asset_server.load("game_over.png");
+
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        ImageNode {
+            image: texture,
+            ..default()
+        },
+        ZIndex(20),
+        GameOverScreen,
+    ));
 }
 
 fn setup_camera(mut commands: Commands) {
