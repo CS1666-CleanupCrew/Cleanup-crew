@@ -3,7 +3,7 @@ use crate::{GameState, TILE_SIZE};
 use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, SeedableRng, random, random_range};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fs::File;
@@ -255,7 +255,7 @@ pub fn build_full_level(rooms: Res<RoomRes>, mut room_vec: ResMut<RoomVec>) {
     const MAP_H: usize = 400 + 20;
     const MIN_LEAF_SIZE: usize = 100;
     const MIN_ROOM_SIZE: usize = 40;
-    const SEED: u64 = 122;
+    let seed: u64 = random_range(0..=10000000);
 
     // full map of '.'
     let mut map: Vec<Vec<char>> = vec![vec!['.'; MAP_W]; MAP_H];
@@ -266,7 +266,7 @@ pub fn build_full_level(rooms: Res<RoomRes>, mut room_vec: ResMut<RoomVec>) {
         &rooms,
         MIN_LEAF_SIZE,
         MIN_ROOM_SIZE,
-        SEED,
+        seed,
         &mut room_vec,
     );
     info!("Finished BSP generation.");
