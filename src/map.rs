@@ -130,6 +130,8 @@ pub fn setup_tilemap(
     space_tex: Res<BackgroundRes>,
     mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     level: Res<LevelRes>,
+    mut enemies: ResMut<EnemyPosition>,
+    rooms: Res<RoomVec>,
 ) {
     let floor_tex: Handle<Image>  = asset_server.load("map/floortile.png");
     let wall_tex: Handle<Image>   = asset_server.load("map/walls.png");
@@ -183,6 +185,10 @@ pub fn setup_tilemap(
         }
     }
 
+    // lets you pick the number of tables and an optional seed
+    let generated_tables = generate_tables_from_grid(&level.level, 25, None);
+    generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
+
     // positions we’ll mark as breaches in the fluid grid 
     let mut breach_positions = Vec::new();
 
@@ -201,8 +207,11 @@ pub fn setup_tilemap(
                 ));
             }
 
-            match ch {
-                'T' => {
+            let is_generated_table = generated_tables.contains(&(col_i, row_i));
+            let is_generated_enemy = enemies.0.contains(&(col_i,row_i));
+
+            match (ch, is_generated_table, is_generated_enemy)  {
+                ('T', _, false) | (_, true, false) => {
                     let mut sprite = Sprite::from_image(table_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
                     commands.spawn((
@@ -221,7 +230,7 @@ pub fn setup_tilemap(
                     ));
                 }
 
-                'W' => {
+                ('W', _, _) => {
                     let mut sprite = Sprite::from_image(wall_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
@@ -233,7 +242,7 @@ pub fn setup_tilemap(
                     ));
                 }
 
-                'G' => {
+                ('G', _, _) => {
                     let mut sprite = Sprite::from_image(glass_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
@@ -256,7 +265,7 @@ pub fn setup_tilemap(
                     breach_positions.push((bx, by));
                 }
 
-                'D' => {
+                ('D', _, _) => {
                     let mut sprite = Sprite::from_image(closed_door_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
@@ -267,7 +276,7 @@ pub fn setup_tilemap(
                     ));
                 }
 
-                'E' => {
+                ('E', _, _) | (_, _, true) => {
                     spawns.0.push(Vec3::new(x, y, Z_ENTITIES));
                 }
 
