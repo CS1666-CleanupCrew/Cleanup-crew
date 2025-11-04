@@ -60,6 +60,7 @@ enum GameState {
     Menu,
     Loading,
     Playing,
+    GameOver,
     EndCredits,
 }
 
@@ -102,6 +103,8 @@ fn main() {
         .add_systems(OnEnter(GameState::Playing), init_air_grid)
         .add_systems(OnEnter(GameState::Playing), spawn_pressure_labels.after(init_air_grid))
 
+        .add_systems(OnEnter(GameState::GameOver), setup_game_over_screen)
+
         .add_systems(Startup, setup_ui_health)
         .add_systems(
             Update,
@@ -109,10 +112,58 @@ fn main() {
         )
         .add_systems(
             Update,
-            damage_on_collision.run_if(in_state(GameState::Playing)),
+            (
+                damage_on_collision,
+                check_game_over, // 🆕 now runs during gameplay
+            )
+                .run_if(in_state(GameState::Playing)),
         )
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
         .run();
+}
+
+/// 🆕 Checks if the player's health <= 0 and transitions to GameOver
+fn check_game_over(
+    mut next_state: ResMut<NextState<GameState>>,
+    player_q: Query<&Health, With<Player>>,
+) {
+    if let Ok(health) = player_q.get_single() {
+        if health.0 <= 0.0 {
+            info!("Player health reached 0 — transitioning to GameOver!");
+            next_state.set(GameState::GameOver);
+        }
+    }
+}
+
+/// 🆕 Component for the Game Over screen
+#[derive(Component)]
+struct GameOverScreen;
+
+/// 🆕 Displays Game Over image when entering GameOver state
+fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // 👇 Just change this file path to your desired image
+    let image_path = "game_over.png";
+
+    let texture: Handle<Image> = asset_server.load(image_path);
+
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        ImageNode {
+            image: texture,
+            ..default()
+        },
+        ZIndex(20),
+        GameOverScreen,
+    ));
+
+    info!("✅ GameOver screen loaded with image: {}", image_path);
 }
 
 fn setup_camera(mut commands: Commands) {
