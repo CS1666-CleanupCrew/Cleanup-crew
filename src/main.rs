@@ -44,6 +44,9 @@ struct HealthDisplay;
 #[derive(Component)]
 struct Damage { amount: f32, }
 
+#[derive(Component)]
+struct GameOverScreen;
+
 #[derive(Resource)]
 struct DamageCooldown(Timer);
 
@@ -123,7 +126,7 @@ fn main() {
             Update,
             (
                 damage_on_collision,
-                check_game_over, // 🆕 now runs during gameplay
+                check_game_over,
             )
                 .run_if(in_state(GameState::Playing)),
         )
@@ -131,7 +134,7 @@ fn main() {
         .run();
 }
 
-/// 🆕 Checks if the player's health <= 0 and transitions to GameOver
+// Check if player health is < 0
 fn check_game_over(
     mut next_state: ResMut<NextState<GameState>>,
     player_q: Query<&Health, With<Player>>,
@@ -144,16 +147,9 @@ fn check_game_over(
     }
 }
 
-/// 🆕 Component for the Game Over screen
-#[derive(Component)]
-struct GameOverScreen;
-
-/// 🆕 Displays Game Over image when entering GameOver state
+// Display game over screen
 fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // 👇 Just change this file path to your desired image
-    let image_path = "game_over.png";
-
-    let texture: Handle<Image> = asset_server.load(image_path);
+    let texture: Handle<Image> = asset_server.load("game_over.png");
 
     commands.spawn((
         Node {
@@ -171,8 +167,6 @@ fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>
         ZIndex(20),
         GameOverScreen,
     ));
-
-    info!("✅ GameOver screen loaded with image: {}", image_path);
 }
 
 fn setup_camera(mut commands: Commands) {
