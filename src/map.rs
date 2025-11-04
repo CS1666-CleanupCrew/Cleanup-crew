@@ -1,19 +1,19 @@
-use bevy::log::Level;
 use bevy::prelude::*;
+// use bevy::log::Level; // (unused)
 
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
-use crate::procgen::generate_tables_from_grid;
 
 use crate::collidable::{Collidable, Collider};
 use crate::player;
-use crate::enemy::Enemy;
+use crate::procgen::generate_tables_from_grid;
+use crate::room::*; // RoomRes, track_rooms
 use crate::table;
 use crate::window;
 use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
-use crate::procgen::{load_rooms, build_full_level};
-use crate::room::*;
+use crate::procgen::{RoomRes, build_full_level, ProcgenSet};
+// use crate::room::*; // (already imported above)
 
 #[derive(Component)]
 struct ParallaxBg {
@@ -66,18 +66,21 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app
-
-            .add_systems(OnEnter(GameState::Loading), load_map.after(build_full_level))
-            .add_systems(OnEnter(GameState::Loading), setup_tilemap.after(load_map).after(build_full_level))
-            .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
+            // load_map should run after the full level (which itself runs after load_rooms)
             .add_systems(
                 OnEnter(GameState::Loading),
-                playing_state.after(setup_tilemap),
+                load_map.after(ProcgenSet::BuildFullLevel),
             )
+            // build tilemap after both build_full_level and load_map
+            .add_systems(
+                OnEnter(GameState::Loading),
+                setup_tilemap.after(ProcgenSet::BuildFullLevel).after(load_map),
+            )
+            .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
+            .add_systems(OnEnter(GameState::Loading), playing_state.after(assign_doors))
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, parallax_scroll)
-            //.add_systems(Update, open_doors_when_clear.run_if(in_state(GameState::Playing)))
-            ;
+            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -124,43 +127,42 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 pub fn setup_tilemap(
     mut commands: Commands, 
+    asset_server: Res<AssetServer>,
+    space_tex: Res<BackgroundRes>,
+    mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     level: Res<LevelRes>,
-    tiles: Res<TileRes>,
-    space_tex:Res<BackgroundRes>,
-    mut enemies:ResMut<EnemyPosition>,
-    rooms: Res<RoomVec>,
 ) {
-    let floor_tex: Handle<Image> = tiles.floor.clone();
-    let wall_tex: Handle<Image>  = tiles.wall.clone();
-    let table_tex: Handle<Image> = tiles.table.clone();
-    let glass_tex: Handle<Image> = tiles.glass.clone();
-    let closed_door_tex: Handle<Image> = tiles.closed_door.clone();
-    let open_door_tex: Handle<Image> = tiles.open_door.clone();
+    let floor_tex: Handle<Image>  = asset_server.load("map/floortile.png");
+    let wall_tex: Handle<Image>   = asset_server.load("map/walls.png");
+    let table_tex: Handle<Image>  = asset_server.load("map/table.png");
+    let glass_tex: Handle<Image>  = asset_server.load("map/window.png");
+    let closed_door_tex: Handle<Image> = asset_server.load("map/closed_door.png");
 
-
+    // Map dimensions are taken from the generated level we actually spawn
     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = level.level.len() as f32;
+
+    info!("Spawning level: {} cols × {} rows", map_cols as usize, map_rows as usize);
 
     let map_px_w = map_cols * TILE_SIZE;
     let map_px_h = map_rows * TILE_SIZE;
     let x0 = -map_px_w * 0.5 + TILE_SIZE * 0.5;
     let y0 = -map_px_h * 0.5 + TILE_SIZE * 0.5;
     
-        commands.insert_resource(MapGridMeta {
-    x0,
-    y0,
-    cols: map_cols as usize,
-    rows: map_rows as usize,
-});
+    commands.insert_resource(MapGridMeta {
+        x0,
+        y0,
+        cols: map_cols as usize,
+        rows: map_rows as usize,
+    });
 
+    // Parallax background tiling
     let cover_w = map_px_w.max(WIN_W) + BG_WORLD;
     let cover_h = map_px_h.max(WIN_H) + BG_WORLD;
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
 
-
     let mut spawns = EnemySpawnPoints::default();
-
 
     let pad: i32 = 3;
     for iy in -pad..(ny + 1) {
@@ -173,7 +175,7 @@ pub fn setup_tilemap(
 
             commands.spawn((
                 bg,
-                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)), // behind floor
+                Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
                 Visibility::default(),
                 ParallaxBg { factor: 0.9, tile: BG_WORLD },
                 ParallaxCell { ix, iy },
@@ -182,21 +184,17 @@ pub fn setup_tilemap(
         }
     }
 
-    // lets you pick the number of tables and an optional seed
-    let generated_tables = generate_tables_from_grid(&level.level, 25, None);
-    generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
+    // positions we’ll mark as breaches in the fluid grid 
+    let mut breach_positions = Vec::new();
 
-    // Loop through the room grid
+    // tile placement from the generated full map
     for (row_i, row) in level.level.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
             let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE;
 
-            let is_generated_table = generated_tables.contains(&(col_i, row_i));
-            let is_generated_enemy = enemies.0.contains(&(col_i,row_i));
-
-            // Always draw a floor tile under walls/tables/spawns
-            if ch == '#' || ch == 'T' || ch == 'W' || ch == 'E' || is_generated_table || is_generated_enemy{
+            // always draw floor under solid/interactive tiles & enemy spawns
+            if matches!(ch, '#' | 'T' | 'W' | 'G' | 'E') {
                 commands.spawn((
                     Sprite::from_image(floor_tex.clone()),
                     Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
@@ -204,9 +202,8 @@ pub fn setup_tilemap(
                 ));
             }
 
-            match (ch, is_generated_table, is_generated_enemy) {
-                // Spawn either authored ('T') or generated tables
-                ('T', _, _) | ('#', true, false) => {
+            match ch {
+                'T' => {
                     let mut sprite = Sprite::from_image(table_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
                     commands.spawn((
@@ -225,50 +222,53 @@ pub fn setup_tilemap(
                     ));
                 }
 
-                ('D', _, _) => {
-                    let mut sprite = Sprite::from_image(open_door_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
-                    commands.spawn((
-                    sprite,
-                    Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
-                    // Collidable,
-                    // Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                    Name::new("Door"),
-                    Door { is_open: false, pos: Vec2::new(x, y)},
-                    ));
-                }
-
-                // Spawn walls
-                ('W', _, _) => {
+                'W' => {
                     let mut sprite = Sprite::from_image(wall_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
                         sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
                         Collidable,
                         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
                         Name::new("Wall"),
                     ));
                 }
 
-                ('G', _, _)=> {
+                'G' => {
                     let mut sprite = Sprite::from_image(glass_tex.clone());
                     sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
                     commands.spawn((
                         sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 3.0)),
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Name::new("Glass"),
                         Collidable,
                         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Name::new("Glass"),
                         window::Window,
                         window::Health(50.0),
                         window::GlassState::Intact,
                     ));
+
+                    // mark this tile as a breach for the fluid sim
+                    let (bx, by) = crate::fluiddynamics::world_to_grid(
+                        Vec2::new(x, y),
+                        crate::fluiddynamics::GRID_WIDTH,
+                        crate::fluiddynamics::GRID_HEIGHT,
+                    );
+                    breach_positions.push((bx, by));
                 }
 
+                'D' => {
+                    let mut sprite = Sprite::from_image(closed_door_tex.clone());
+                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+                    commands.spawn((
+                        sprite,
+                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
+                        Name::new("Door"),
+                        Door { is_open: false, pos: Vec2::new(x, y) },
+                    ));
+                }
 
-                // Spawn enemies
-                ('E', _, _) | ('#', _, true) => {
+                'E' => {
                     spawns.0.push(Vec3::new(x, y, Z_ENTITIES));
                 }
 
@@ -276,8 +276,18 @@ pub fn setup_tilemap(
             }
         }
     }
+
+    // Push any recorded breach positions into the fluid grid
+    if let Ok(mut grid) = fluid_query.get_single_mut() {
+        for &(bx, by) in &breach_positions {
+            grid.add_breach(bx, by);
+        }
+    }
+
+    info!("Spawned {} enemy spawn points", spawns.0.len());
     commands.insert_resource(spawns);
 }
+
 
 // fn open_doors_when_clear(
 //         enemies: Query<Entity, With<Enemy>>,

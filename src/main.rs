@@ -11,11 +11,14 @@ pub mod table;
 pub mod window;
 pub mod map;
 pub mod procgen;
+#[path = "fluid_simulation.rs"]
+pub mod fluiddynamics;
 pub mod air;
 pub mod noise;
 pub mod menu;
 pub mod room;
 pub mod bullet;
+
 
 
 const TITLE: &str = "Cleanup Crew";
@@ -79,13 +82,14 @@ fn main() {
         .init_state::<GameState>()
         //Calls the plugin
         .add_plugins((
+            procgen::ProcGen,
             map::MapPlugin,
             player::PlayerPlugin,
             endcredits::EndCreditPlugin,
             enemy::EnemyPlugin,
             table::TablePlugin,
+            fluiddynamics::FluidSimPlugin,
             window::WindowPlugin,
-            procgen::ProcGen,
             menu::MenuPlugin,
             bullet::BulletPlugin,
             room::RoomPlugin,
