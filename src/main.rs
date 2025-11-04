@@ -47,6 +47,9 @@ struct Damage { amount: f32, }
 #[derive(Resource)]
 struct DamageCooldown(Timer);
 
+#[derive(Resource, Default)]
+pub struct ShowAirLabels(pub bool);
+
 /**
  * States is for the different game states
  * PartialEq and Eq are for comparisons: Allows for == and !=
@@ -81,6 +84,7 @@ fn main() {
         //Initial GameState
         .init_state::<GameState>()
         //Calls the plugin
+        .init_resource::<ShowAirLabels>()
         .add_plugins((
             procgen::ProcGen,
             map::MapPlugin,
@@ -100,7 +104,12 @@ fn main() {
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
         .add_systems(OnEnter(GameState::Playing), init_air_grid)
-        .add_systems(OnEnter(GameState::Playing), spawn_pressure_labels.after(init_air_grid))
+        .add_systems(
+            OnEnter(GameState::Playing),
+            spawn_pressure_labels
+                .after(init_air_grid)
+                .run_if(|flag: Res<ShowAirLabels>| flag.0),
+        )
 
         .add_systems(Startup, setup_ui_health)
         .add_systems(
