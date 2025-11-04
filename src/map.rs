@@ -126,19 +126,13 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 pub fn setup_tilemap(
     mut commands: Commands, 
-    asset_server: Res<AssetServer>,
+    tiles: Res<TileRes>,
     space_tex: Res<BackgroundRes>,
     mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     level: Res<LevelRes>,
     mut enemies: ResMut<EnemyPosition>,
     rooms: Res<RoomVec>,
 ) {
-    let floor_tex: Handle<Image>  = asset_server.load("map/floortile.png");
-    let wall_tex: Handle<Image>   = asset_server.load("map/walls.png");
-    let table_tex: Handle<Image>  = asset_server.load("map/table.png");
-    let glass_tex: Handle<Image>  = asset_server.load("map/window.png");
-    let closed_door_tex: Handle<Image> = asset_server.load("map/closed_door.png");
-
     // Map dimensions are taken from the generated level we actually spawn
     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = level.level.len() as f32;
@@ -166,6 +160,9 @@ pub fn setup_tilemap(
     let mut spawns = EnemySpawnPoints::default();
 
     let pad: i32 = 3;
+    
+    // Batch spawn background tiles for better performance
+    let mut bg_batch = Vec::new();
     for iy in -pad..(ny + 1) {
         for ix in -pad..(nx + 1) {
             let cx = (ix as f32) * BG_WORLD;
@@ -174,7 +171,7 @@ pub fn setup_tilemap(
             let mut bg = Sprite::from_image(space_tex.0.clone());
             bg.custom_size = Some(Vec2::splat(BG_WORLD));
 
-            commands.spawn((
+            bg_batch.push((
                 bg,
                 Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
                 Visibility::default(),
@@ -184,78 +181,49 @@ pub fn setup_tilemap(
             ));
         }
     }
+    commands.spawn_batch(bg_batch);
 
     // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
     generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
 
-    // positions we’ll mark as breaches in the fluid grid 
+    // positions we'll mark as breaches in the fluid grid 
     let mut breach_positions = Vec::new();
 
+    // Pre-collect positions by tile type for batch spawning
+    let mut floor_positions = Vec::new();
+    let mut wall_positions = Vec::new();
+    let mut table_positions = Vec::new();
+    let mut glass_positions = Vec::new();
+    let mut door_positions = Vec::new();
+
+    // First pass: collect all positions based on tile type
     // tile placement from the generated full map
     for (row_i, row) in level.level.iter().enumerate() {
         for (col_i, ch) in row.chars().enumerate() {
             let x = x0 + col_i as f32 * TILE_SIZE;
             let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE;
 
-            // always draw floor under solid/interactive tiles & enemy spawns
-            if matches!(ch, '#' | 'T' | 'W' | 'G' | 'E') {
-                commands.spawn((
-                    Sprite::from_image(floor_tex.clone()),
-                    Transform::from_translation(Vec3::new(x, y, Z_FLOOR)),
-                    Name::new("Floor"),
-                ));
-            }
-
             let is_generated_table = generated_tables.contains(&(col_i, row_i));
             let is_generated_enemy = enemies.0.contains(&(col_i,row_i));
 
+            // always draw floor under solid/interactive tiles & enemy spawns
+            if matches!(ch, '#' | 'T' | 'W' | 'G' | 'E') || is_generated_table || is_generated_enemy {
+                floor_positions.push(Vec3::new(x, y, Z_FLOOR));
+            }
+
             match (ch, is_generated_table, is_generated_enemy)  {
                 ('T', _, false) | (_, true, false) => {
-                    let mut sprite = Sprite::from_image(table_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
-                    commands.spawn((
-                        sprite,
-                        Transform {
-                            translation: Vec3::new(x, y, Z_FLOOR + 2.0),
-                            scale: Vec3::new(0.5, 1.0, 1.0),
-                            ..Default::default()
-                        },
-                        Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Name::new("Table"),
-                        table::Table,
-                        table::Health(50.0),
-                        table::TableState::Intact,
-                    ));
+                    table_positions.push(Vec3::new(x, y, Z_FLOOR + 2.0));
                 }
 
                 ('W', _, _) => {
-                    let mut sprite = Sprite::from_image(wall_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
-                    commands.spawn((
-                        sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
-                        Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        Name::new("Wall"),
-                    ));
+                    wall_positions.push(Vec3::new(x, y, Z_FLOOR + 1.0));
                 }
 
                 ('G', _, _) => {
-                    let mut sprite = Sprite::from_image(glass_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
-                    commands.spawn((
-                        sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
-                        Name::new("Glass"),
-                        Collidable,
-                        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                        window::Window,
-                        window::Health(50.0),
-                        window::GlassState::Intact,
-                    ));
-
+                    glass_positions.push(Vec3::new(x, y, Z_FLOOR + 1.0));
+                    
                     // mark this tile as a breach for the fluid sim
                     let (bx, by) = crate::fluiddynamics::world_to_grid(
                         Vec2::new(x, y),
@@ -266,14 +234,7 @@ pub fn setup_tilemap(
                 }
 
                 ('D', _, _) => {
-                    let mut sprite = Sprite::from_image(closed_door_tex.clone());
-                    sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
-                    commands.spawn((
-                        sprite,
-                        Transform::from_translation(Vec3::new(x, y, Z_FLOOR + 1.0)),
-                        Name::new("Door"),
-                        Door { is_open: false, pos: Vec2::new(x, y) },
-                    ));
+                    door_positions.push(Vec2::new(x, y));
                 }
 
                 ('E', _, _) | (_, _, true) => {
@@ -284,6 +245,81 @@ pub fn setup_tilemap(
             }
         }
     }
+
+    // Batch spawn floors - reuse texture handles
+    let floor_batch: Vec<_> = floor_positions.iter().map(|&pos| {
+        (
+            Sprite::from_image(tiles.floor.clone()),
+            Transform::from_translation(pos),
+            Name::new("Floor"),
+        )
+    }).collect();
+    commands.spawn_batch(floor_batch);
+
+    // Batch spawn walls
+    let wall_batch: Vec<_> = wall_positions.iter().map(|&pos| {
+        let mut sprite = Sprite::from_image(tiles.wall.clone());
+        sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+        (
+            sprite,
+            Transform::from_translation(pos),
+            Collidable,
+            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+            Name::new("Wall"),
+        )
+    }).collect();
+    commands.spawn_batch(wall_batch);
+
+    // Batch spawn tables
+    let table_batch: Vec<_> = table_positions.iter().map(|&pos| {
+        let mut sprite = Sprite::from_image(tiles.table.clone());
+        sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+        (
+            sprite,
+            Transform {
+                translation: pos,
+                scale: Vec3::new(0.5, 1.0, 1.0),
+                ..Default::default()
+            },
+            Collidable,
+            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+            Name::new("Table"),
+            table::Table,
+            table::Health(50.0),
+            table::TableState::Intact,
+        )
+    }).collect();
+    commands.spawn_batch(table_batch);
+
+    // Batch spawn glass windows
+    let glass_batch: Vec<_> = glass_positions.iter().map(|&pos| {
+        let mut sprite = Sprite::from_image(tiles.glass.clone());
+        sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+        (
+            sprite,
+            Transform::from_translation(pos),
+            Name::new("Glass"),
+            Collidable,
+            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+            window::Window,
+            window::Health(50.0),
+            window::GlassState::Intact,
+        )
+    }).collect();
+    commands.spawn_batch(glass_batch);
+
+    // Batch spawn doors
+    let door_batch: Vec<_> = door_positions.iter().map(|&pos| {
+        let mut sprite = Sprite::from_image(tiles.closed_door.clone());
+        sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
+        (
+            sprite,
+            Transform::from_translation(Vec3::new(pos.x, pos.y, Z_FLOOR + 1.0)),
+            Name::new("Door"),
+            Door { is_open: false, pos },
+        )
+    }).collect();
+    commands.spawn_batch(door_batch);
 
     // Push any recorded breach positions into the fluid grid
     if let Ok(mut grid) = fluid_query.get_single_mut() {
