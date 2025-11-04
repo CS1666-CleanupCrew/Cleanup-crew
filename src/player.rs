@@ -166,9 +166,13 @@ fn spawn_player(
 
     let (gx, gy) = spawn_grid.unwrap_or((0, 0));
 
+
     // Grid → world (note the same vertical flip you use in setup_tilemap)
-    let world_x = grid.x0 + gx as f32 * TILE_SIZE;
-    let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE;
+    let x_player_spawn_offset = TILE_SIZE * 2.0;
+    let y_player_spawn_offset = -TILE_SIZE * 2.0;
+
+    let world_x = grid.x0 + gx as f32 * TILE_SIZE + x_player_spawn_offset;
+    let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE + y_player_spawn_offset;
 
     commands.spawn((
         Sprite::from_atlas_image(
