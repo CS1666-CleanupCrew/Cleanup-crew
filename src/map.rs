@@ -33,7 +33,7 @@ pub struct TileRes {
     wall: Handle<Image>,
     glass: Handle<Image>,
     table: Handle<Image>,
-    closed_door: Handle<Image>,
+    pub closed_door: Handle<Image>,
     open_door: Handle<Image>,
 }
 
