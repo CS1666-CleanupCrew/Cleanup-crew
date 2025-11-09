@@ -185,7 +185,7 @@ pub fn setup_tilemap(
 
     // lets you pick the number of tables and an optional seed
     let generated_tables = generate_tables_from_grid(&level.level, 25, None);
-    generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
+    //generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
 
     // positions we'll mark as breaches in the fluid grid 
     let mut breach_positions = Vec::new();
@@ -205,7 +205,7 @@ pub fn setup_tilemap(
             let y = y0 + (map_rows - 1.0 - row_i as f32) * TILE_SIZE;
 
             let is_generated_table = generated_tables.contains(&(col_i, row_i));
-            let is_generated_enemy = enemies.0.contains(&(col_i,row_i));
+            let is_generated_enemy = false;//enemies.0.contains(&(col_i,row_i));
 
             // always draw floor under solid/interactive tiles & enemy spawns
             if matches!(ch, '#' | 'T' | 'W' | 'G' | 'E') || is_generated_table || is_generated_enemy {
@@ -237,9 +237,9 @@ pub fn setup_tilemap(
                     door_positions.push(Vec2::new(x, y));
                 }
 
-                ('E', _, _) | (_, _, true) => {
-                    spawns.0.push(Vec3::new(x, y, Z_ENTITIES));
-                }
+                // ('E', _, _) | (_, _, true) => {
+                //     spawns.0.push(Vec3::new(x, y, Z_ENTITIES));
+                // }
 
                 _ => {}
             }
