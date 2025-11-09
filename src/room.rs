@@ -31,8 +31,8 @@ pub struct Room{
     numofenemies: usize,
     top_left_corner: Vec2,
     bot_right_corner: Vec2,
-    tile_top_left_corner: Vec2,
-    tile_bot_right_corner: Vec2,
+    pub tile_top_left_corner: Vec2,
+    pub tile_bot_right_corner: Vec2,
     layout: Vec<String>,
 }
 
