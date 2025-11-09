@@ -98,6 +98,7 @@ fn check_enemy_health(
 ) {
     for (entity, health) in enemy_query.iter() {
         if health.0 <= 0.0 {
+            
             commands.entity(entity).despawn();
         }
     }

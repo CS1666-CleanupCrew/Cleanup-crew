@@ -9,7 +9,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::Door;
 use crate::map::TileRes;
-use crate::player::Player;
+use crate::player::{NumOfCleared, Player};
 use crate::enemy::{EnemyRes, spawn_enemy_at};
 
 #[derive(Resource)]
@@ -28,7 +28,7 @@ pub struct RoomVec(pub Vec<Room>);
 pub struct Room{
     cleared: bool,
     pub doors:Vec<Entity>,
-    pub enemies:Vec<Entity>,
+    numofenemies: usize,
     top_left_corner: Vec2,
     bot_right_corner: Vec2,
     tile_top_left_corner: Vec2,
@@ -41,7 +41,7 @@ impl Room{
         Self{
             cleared: false,
             doors:Vec::new(),
-            enemies:Vec::new(),
+            numofenemies: 0,
             top_left_corner: tlc.clone(),
             bot_right_corner: brc.clone(),
             tile_top_left_corner: tile_tlc.clone(),
@@ -67,6 +67,7 @@ impl Plugin for RoomPlugin {
             .add_systems(OnEnter(GameState::Loading), setup)
             .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)))
             .add_systems(Update, entered_room.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, playing_room.run_if(in_state(GameState::Playing)))
             ;
     }
 }
@@ -136,11 +137,12 @@ pub fn track_rooms(
 }
 
 pub fn entered_room(
-    rooms:  Res<RoomVec>,
+    mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
     mut commands: Commands,
     tiles: Res<TileRes>,
     enemy_res: Res<EnemyRes>,
+    play_query: Single<&NumOfCleared, With<Player>>,
 ){
     match *lvlstate
     {
@@ -151,12 +153,14 @@ pub fn entered_room(
                 commands.entity(*door).insert(Collidable);
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
 
-                let image = tiles.closed_door.clone();
-                commands.entity(*door).entry::<Sprite>().and_modify(|mut sprite|{
-                    sprite.image = image;
-                });
+                commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
+
+                // let image = tiles.closed_door.clone();
+                // commands.entity(*door).entry::<Sprite>().and_modify(|mut sprite|{
+                //     sprite.image = image;
+                // });
             }
-            generate_enemies_in_room(15, None, & rooms, index, commands, & enemy_res);
+            generate_enemies_in_room(15, None, &mut rooms, index, commands, & enemy_res, & play_query);
             *lvlstate = LevelState::InRoom(index);
         }
         _ => {
@@ -169,12 +173,26 @@ pub fn entered_room(
 pub fn playing_room(
     rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
+    mut commands: Commands,
+    tiles: Res<TileRes>,
+    mut player: Single<&mut NumOfCleared, With<Player>>
 ){
     match *lvlstate
     {
         LevelState::InRoom(index) =>
         {
-            
+            //println!("Num of Enemies: {}", rooms.0[index].numofenemies);
+            if rooms.0[index].numofenemies == 0{
+                for door in rooms.0[index].doors.iter(){
+
+                    commands.entity(*door).remove::<Collidable>();
+                    commands.entity(*door).remove::<Collider>();
+
+                    commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
+                }
+                player.0 += 1;
+                *lvlstate = LevelState::NotRoom;
+            }
         }
         _ => {
 
@@ -186,19 +204,25 @@ pub fn playing_room(
 pub fn generate_enemies_in_room(
     num_of_enemies: usize,
     seed: Option<u64>,
-    rooms: & RoomVec,
+    rooms: &mut RoomVec,
     index: usize,
     mut commands: Commands,
     enemy_res: & EnemyRes,
+    play_query: &NumOfCleared,
 ){  
+    let rooms_cleared = play_query.0;
+
     let mut floors: Vec<(f32, f32)> = Vec::new();
-    
-    let room = & rooms.0[index];
 
-    let top = room.tile_top_left_corner.y as usize - 1;
-    let bot = room.tile_bot_right_corner.y as usize + 1;
+    let room = &mut rooms.0[index];
 
-    for (y, row) in room.layout.iter().enumerate().skip(1)
+    let scaled_num_enemies = 5*rooms_cleared + num_of_enemies;
+
+    room.numofenemies = scaled_num_enemies;
+
+    let top =  (room.tile_top_left_corner.y - room.tile_bot_right_corner.y) as usize - 1;
+
+    for (y, row) in room.layout[1..top].iter().enumerate()
     {
         let pos_y = room.bot_right_corner.y + (y as f32 * 32.0);
 
@@ -215,7 +239,6 @@ pub fn generate_enemies_in_room(
         }
     }
 
-    // Shuffle and pick up to max_enemies positions
     if let Some(s) = seed 
     {
         let mut seeded = StdRng::seed_from_u64(s);
@@ -227,7 +250,7 @@ pub fn generate_enemies_in_room(
         floors.shuffle(&mut trng);
     }
 
-    for i in floors.into_iter().take(num_of_enemies){
+    for i in floors.into_iter().take(scaled_num_enemies){
         spawn_enemy_at(&mut commands, &enemy_res, Vec3::new(i.0 as f32, i.1 as f32, Z_ENTITIES), true); // active now
     }
         

@@ -13,7 +13,10 @@ const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
 
 
 #[derive(Component)]
-pub struct Player;                          
+pub struct Player;           
+
+#[derive(Component)]
+pub struct NumOfCleared(pub usize);  
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Velocity(Vec2);
@@ -191,6 +194,7 @@ fn spawn_player(
         Collidable,
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
+        NumOfCleared(0),
     ));
 }
 
