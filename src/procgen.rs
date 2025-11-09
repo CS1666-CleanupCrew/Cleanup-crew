@@ -262,7 +262,7 @@ pub fn build_full_level(rooms: Res<RoomRes>, mut room_vec: ResMut<RoomVec>) {
     const MAP_H: usize = 400 + 20;
     const MIN_LEAF_SIZE: usize = 100;
     const MIN_ROOM_SIZE: usize = 40;
-    let seed: u64 = random_range(0..=10000000);
+    let seed: u64 = 140;//random_range(0..=10000000);
 
     // full map of '.'
     let mut map: Vec<Vec<char>> = vec![vec!['.'; MAP_W]; MAP_H];
@@ -559,7 +559,7 @@ pub fn write_room(
     let tile_top_xy = Vec2::new(top_left_x as f32, top_left_y as f32);
     let tile_bot_xy = Vec2::new((top_left_x as f32+room.width), (top_left_y as f32-room.height));
 
-    create_room(top_left_xy, bot_right_xy, tile_top_xy, tile_bot_xy, room_vec);
+    create_room(top_left_xy, bot_right_xy, tile_top_xy, tile_bot_xy, room_vec, room.layout.clone());
 
     for (row_idx, row_str) in room.layout.iter().enumerate() {
         let y = top_left_y + row_idx;
