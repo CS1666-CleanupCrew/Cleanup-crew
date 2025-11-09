@@ -113,7 +113,7 @@ impl Leaf {
         false
     }
 
-    fn create_room<R: Rng>(&mut self, rng: &mut R, min_room_size: usize) {
+    fn create_random_room<R: Rng>(&mut self, rng: &mut R, min_room_size: usize) {
         // rooms dont take up full rectangle of space in leaf
         let max_w = self.rect.w - 2;
         let max_h = self.rect.h - 2;
@@ -280,6 +280,8 @@ pub fn build_full_level(rooms: Res<RoomRes>, mut room_vec: ResMut<RoomVec>) {
 
     generate_walls(&mut map);
     info!("Finished wall generation.");
+    place_doors(&mut map, &room_vec);
+    info!("Finished placing doors.");
 
     let f = File::create("assets/rooms/level.txt").expect("Couldn't create output file");
     let mut writer = BufWriter::new(f);
@@ -322,7 +324,7 @@ fn bsp_generate_level(
 
     // place rooms inside each terminal leaf
     for terminal in terminals.iter() {
-        let leaf = terminal.borrow();
+        let mut leaf = terminal.borrow_mut();
         if let Some(room_rect) = &leaf.room {
             let choice = rng.random_range(1..=12);
             if choice <= 6 {
@@ -338,30 +340,32 @@ fn bsp_generate_level(
                 };
                 let top_left_x = room_rect.x + (room_rect.w.saturating_sub(preset_room.layout[0].len())) / 2;
                 let top_left_y = room_rect.y + (room_rect.h.saturating_sub(preset_room.layout.len())) / 2;
-                
                 write_room(map, preset_room, top_left_x, top_left_y, room_vec);
+                leaf.room = Some(Rect { x: top_left_x, y: top_left_y, w: preset_room.layout[0].len(), h: preset_room.layout.len() });
             } else {
-                // random sized rectangle room
-                let max_w = room_rect.w - 2;
-                let max_h = room_rect.h - 2;
+                // create a random rectangle inside leaf
+                let room_w = rng.random_range(min_room_size..=leaf.rect.w - 2);
+                let room_h = rng.random_range(min_room_size..=leaf.rect.h - 2);
+                let room_x = rng.random_range(leaf.rect.x..=leaf.rect.x + leaf.rect.w - room_w);
+                let room_y = rng.random_range(leaf.rect.y..=leaf.rect.y + leaf.rect.h - room_h);
 
-                if max_w < min_room_size || max_h < min_room_size {
-                    info!("Issue with room sizing");
-                    continue;
+                // create a "RoomLayout" for this random room
+                let mut random_layout = vec![String::new(); room_h];
+                for y in 0..room_h {
+                    random_layout[y] = "#".repeat(room_w);
                 }
-                let temp_w_hi = max_w.min(min_room_size + 20);
-                let temp_h_hi = max_h.min(min_room_size + 20);
-                let temp_w = rng.random_range(min_room_size..=temp_w_hi);
-                let temp_h = rng.random_range(min_room_size..=temp_h_hi);
-                let temp_x = rng.random_range(room_rect.x..=room_rect.x + max_w - temp_w);
-                let temp_y = rng.random_range(room_rect.y..=room_rect.y + max_h - temp_h);
-                
-                // write the random room into the map
-                for y in temp_y..(temp_y + temp_h) {
-                    for x in temp_x..(temp_x + temp_w) {
-                        map[y][x] = '#';
-                    }
-                }
+                let random_room = RoomLayout {
+                    layout: random_layout,
+                    width: room_w as f32,
+                    height: room_h as f32,
+                };
+
+                // write the random room into the map using the same function as presets
+                write_room(map, &random_room, room_x, room_y, room_vec);
+
+                // update the leaf's room rect (needed for hallway connections)
+                leaf.room = Some(Rect { x: room_x, y: room_y, w: room_w, h: room_h });
+
             }
         }
     }
@@ -405,7 +409,7 @@ fn split_leaf_recursive<R: Rng>(
             );
         }
     } else {
-        leaf_mut.create_room(rng, min_room_size);
+        leaf_mut.create_random_room(rng, min_room_size);
         terminals.push(Rc::clone(leaf));
     }
 }
@@ -557,7 +561,7 @@ pub fn write_room(
     let top_left_xy = Vec2::new(actual_top_left_x, actual_top_left_y);
 
     let tile_top_xy = Vec2::new(top_left_x as f32, top_left_y as f32);
-    let tile_bot_xy = Vec2::new((top_left_x as f32+room.width), (top_left_y as f32-room.height));
+    let tile_bot_xy = Vec2::new((top_left_x as f32+room.width), (top_left_y as f32+room.height));
 
     create_room(top_left_xy, bot_right_xy, tile_top_xy, tile_bot_xy, room_vec, room.layout.clone());
 
@@ -650,5 +654,37 @@ pub fn generate_walls(map: &mut Vec<Vec<char>>) {
     // apply all walls at once
     for (x, y) in walls_to_add {
         map[y][x] = 'W';
+    }
+}
+
+pub fn place_doors(map: &mut Vec<Vec<char>>, room_vec: &RoomVec) {
+    let height = map.len();
+    let width = map[0].len();
+
+    for room in &room_vec.0 {
+        let x1 = room.tile_top_left_corner.x as usize;
+        let y1 = room.tile_top_left_corner.y as usize;
+        let x2 = room.tile_bot_right_corner.x as usize;
+        let y2 = room.tile_bot_right_corner.y as usize;
+
+        // Top & bottom edges
+        for x in x1..=x2 {
+            if y1 < height && x < width && map[y1][x] == '#' {
+                map[y1][x] = 'D';
+            }
+            if y2 < height && x < width && map[y2][x] == '#' {
+                map[y2][x] = 'D';
+            }
+        }
+
+        // Left & right edges
+        for y in y1+1..y2 { // skip corners
+            if y < height && x1 < width && map[y][x1] == '#' {
+                map[y][x1] = 'D';
+            }
+            if y < height && x2 < width && map[y][x2] == '#' {
+                map[y][x2] = 'D';
+            }
+        }
     }
 }
