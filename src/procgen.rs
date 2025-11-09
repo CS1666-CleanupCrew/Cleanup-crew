@@ -3,7 +3,7 @@ use crate::{GameState, TILE_SIZE};
 use bevy::prelude::*;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng, random, random_range};
+use rand::{Rng, SeedableRng, random_range};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fs::File;
@@ -56,26 +56,29 @@ impl Leaf {
         }))
     }
 
+    // returns true if split occured
     fn split<R: Rng>(
         &mut self,
         rng: &mut R,
         min_leaf_size: usize,
         max_split_attempt: usize,
     ) -> bool {
-        // has it been split
+        // return if it's already been split
         if self.left.is_some() || self.right.is_some() {
             return false;
         }
+
+        // return if it's too small to split
         let w = self.rect.w;
         let h = self.rect.h;
         if w <= min_leaf_size * 2 && h <= min_leaf_size * 2 {
             return false;
         }
 
-        // try to split it 5 times
+        // try to split it 'max_split_attemt' times
         for _ in 0..max_split_attempt {
-            let split_dir = rng.random_range(1..=2);
-            if split_dir == 1 && h > min_leaf_size * 2 {
+            let split_dir = rng.random_range(0..=1);
+            if split_dir == 0 && h > min_leaf_size * 2 {
                 let split = rng.random_range(min_leaf_size..=(h - min_leaf_size));
                 self.left = Some(Leaf::new(Rect {
                     x: self.rect.x,
@@ -90,7 +93,7 @@ impl Leaf {
                     h: h - split,
                 }));
                 return true;
-            } else if split_dir == 2 && w > min_leaf_size * 2 {
+            } else if split_dir == 1 && w > min_leaf_size * 2 {
                 let split = rng.random_range(min_leaf_size..=(w - min_leaf_size));
                 self.left = Some(Leaf::new(Rect {
                     x: self.rect.x,
@@ -111,12 +114,16 @@ impl Leaf {
     }
 
     fn create_room<R: Rng>(&mut self, rng: &mut R, min_room_size: usize) {
-        let max_w = self.rect.w.saturating_sub(2);
-        let max_h = self.rect.h.saturating_sub(2);
+        // rooms dont take up full rectangle of space in leaf
+        let max_w = self.rect.w - 2;
+        let max_h = self.rect.h - 2;
+
+        // this should never occur due to splitting logic
         if max_w < min_room_size || max_h < min_room_size {
             self.room = None;
             return;
         }
+
         let room_w = rng.random_range(min_room_size..=max_w);
         let room_h = rng.random_range(min_room_size..=max_h);
         let room_x = rng.random_range(self.rect.x..=self.rect.x + self.rect.w - room_w);
@@ -318,9 +325,8 @@ fn bsp_generate_level(
         let leaf = terminal.borrow();
         if let Some(room_rect) = &leaf.room {
             let choice = rng.random_range(1..=12);
-
             if choice <= 6 {
-                // preset room
+                // preset room from set of 6
                 let preset_room: &RoomLayout = match choice {
                     1 => rooms.room(1),
                     2 => rooms.room(2),
@@ -330,29 +336,27 @@ fn bsp_generate_level(
                     6 => rooms.room(6),
                     _ => unreachable!(),
                 };
-
-                let top_left_x =
-                    room_rect.x + (room_rect.w.saturating_sub(preset_room.layout[0].len())) / 2;
-                let top_left_y =
-                    room_rect.y + (room_rect.h.saturating_sub(preset_room.layout.len())) / 2;
-
+                let top_left_x = room_rect.x + (room_rect.w.saturating_sub(preset_room.layout[0].len())) / 2;
+                let top_left_y = room_rect.y + (room_rect.h.saturating_sub(preset_room.layout.len())) / 2;
+                
                 write_room(map, preset_room, top_left_x, top_left_y, room_vec);
             } else {
-                // Random room
-// Random room (bounded by the leaf’s room_rect)
-let max_w = room_rect.w;               // how wide the leaf-placed room can be
-let max_h = room_rect.h;
+                // random sized rectangle room
+                let max_w = room_rect.w - 2;
+                let max_h = room_rect.h - 2;
 
-// If the leaf is too small to hold a room, skip it safely
-if max_w < min_room_size || max_h < min_room_size {
-    continue;
-}
-let temp_w_hi = max_w.min(min_room_size + 20);
-let temp_h_hi = max_h.min(min_room_size + 20);
-let temp_w = rng.random_range(min_room_size..=temp_w_hi);
-let temp_h = rng.random_range(min_room_size..=temp_h_hi);
-let temp_x = rng.random_range(room_rect.x..=room_rect.x + max_w - temp_w);
-let temp_y = rng.random_range(room_rect.y..=room_rect.y + max_h - temp_h);
+                if max_w < min_room_size || max_h < min_room_size {
+                    info!("Issue with room sizing");
+                    continue;
+                }
+                let temp_w_hi = max_w.min(min_room_size + 20);
+                let temp_h_hi = max_h.min(min_room_size + 20);
+                let temp_w = rng.random_range(min_room_size..=temp_w_hi);
+                let temp_h = rng.random_range(min_room_size..=temp_h_hi);
+                let temp_x = rng.random_range(room_rect.x..=room_rect.x + max_w - temp_w);
+                let temp_y = rng.random_range(room_rect.y..=room_rect.y + max_h - temp_h);
+                
+                // write the random room into the map
                 for y in temp_y..(temp_y + temp_h) {
                     for x in temp_x..(temp_x + temp_w) {
                         map[y][x] = '#';
@@ -376,8 +380,10 @@ fn split_leaf_recursive<R: Rng>(
 ) {
     let mut leaf_mut = leaf.borrow_mut();
     if leaf_mut.split(rng, min_leaf_size, max_split_attempts) {
-        drop(leaf_mut); // release borrow before recursing
+        // release borrow before recursing
+        drop(leaf_mut);
         if let Some(left) = &leaf.borrow().left {
+            // split left leaf
             split_leaf_recursive(
                 left,
                 rng,
@@ -388,6 +394,7 @@ fn split_leaf_recursive<R: Rng>(
             );
         }
         if let Some(right) = &leaf.borrow().right {
+            // split right leaf
             split_leaf_recursive(
                 right,
                 rng,
@@ -403,11 +410,18 @@ fn split_leaf_recursive<R: Rng>(
     }
 }
 
-fn connect_terminals(terminals: &[LeafRef], map: &mut Vec<Vec<char>>) {
-    let mut rooms: Vec<Rect> = terminals
-        .iter()
-        .filter_map(|leaf| leaf.borrow().room.clone())
-        .collect();
+fn connect_terminals(
+    terminals: &[LeafRef],
+    map: &mut Vec<Vec<char>>,
+) {
+    let mut rooms: Vec<Rect> = Vec::new();
+
+    for leaf in terminals {
+        if let Some(room) = leaf.borrow().room.clone() {
+            rooms.push(room);
+        }
+    }
+
     rooms.sort_by_key(|r| r.center());
 
     for i in 0..rooms.len().saturating_sub(1) {
@@ -479,7 +493,11 @@ fn connect_terminals(terminals: &[LeafRef], map: &mut Vec<Vec<char>>) {
 //     None
 // }
 
-fn draw_hallway(start: &Rect, end: &Rect, map: &mut Vec<Vec<char>>) {
+fn draw_hallway(
+    start: &Rect,
+    end: &Rect,
+    map: &mut Vec<Vec<char>>
+) {
     let (x1, y1) = start.center();
     let (x2, y2) = end.center();
     let thickness = 5;
@@ -487,36 +505,34 @@ fn draw_hallway(start: &Rect, end: &Rect, map: &mut Vec<Vec<char>>) {
 
     let (x1, y1, x2, y2) = (x1 as isize, y1 as isize, x2 as isize, y2 as isize);
 
-    let mut draw_rect = |x: isize, y: isize| {
-        if x >= 0 && y >= 0 && y < map.len() as isize && x < map[0].len() as isize {
-            map[y as usize][x as usize] = '#';
+    // draw a filled rectangle from (x_min,y_min) to (x_max,y_max)
+    let mut draw_rect = |x_min: isize, y_min: isize, x_max: isize, y_max: isize| {
+        for y in y_min..=y_max {
+            for x in x_min..=x_max {
+                if y >= 0 && x >= 0 &&
+                   y < map.len() as isize &&
+                   x < map[0].len() as isize {
+                    map[y as usize][x as usize] = '#';
+                }
+            }
         }
     };
 
     if rand::random() {
-        // horizontal then vertical
-        for x in x1.min(x2)..=x1.max(x2) {
-            for dy in -half..=half {
-                draw_rect(x, y1 + dy);
-            }
-        }
-        for y in y1.min(y2)..=y1.max(y2) {
-            for dx in -half..=half {
-                draw_rect(x2 + dx, y);
-            }
-        }
+        // horizontal first
+        draw_rect(x1.min(x2), y1 - half, x1.max(x2), y1 + half);
+        draw_rect(x2 - half, y1.min(y2), x2 + half, y1.max(y2));
+
+        // fill corner
+        draw_rect(x2 - half, y1 - half, x2 + half, y1 + half);
+
     } else {
-        // vertical then horizontal
-        for y in y1.min(y2)..=y1.max(y2) {
-            for dx in -half..=half {
-                draw_rect(x1 + dx, y);
-            }
-        }
-        for x in x1.min(x2)..=x1.max(x2) {
-            for dy in -half..=half {
-                draw_rect(x, y2 + dy);
-            }
-        }
+        // vertical first
+        draw_rect(x1 - half, y1.min(y2), x1 + half, y1.max(y2));
+        draw_rect(x1.min(x2), y2 - half, x1.max(x2), y2 + half);
+
+        // fill corner
+        draw_rect(x1 - half, y2 - half, x1 + half, y2 + half);
     }
 }
 
@@ -604,18 +620,11 @@ pub fn generate_tables_from_grid(
 pub fn generate_walls(map: &mut Vec<Vec<char>>) {
     let rows = map.len();
     let cols = map[0].len();
-
     let neighbor_offsets: [(isize, isize); 8] = [
-        (-1, -1),
-        (0, -1),
-        (1, -1),
-        (-1, 0),
-        (1, 0),
-        (-1, 1),
-        (0, 1),
-        (1, 1),
+        (-1, -1),   (0, -1),    (1, -1),
+        (-1, 0),                (1, 0),
+        (-1, 1),    (0, 1),     (1, 1),
     ];
-
     let mut walls_to_add = Vec::new();
 
     for y in 0..rows {
@@ -623,7 +632,6 @@ pub fn generate_walls(map: &mut Vec<Vec<char>>) {
             if map[y][x] != '.' {
                 continue;
             }
-
             for (dx, dy) in neighbor_offsets.iter() {
                 let nx = x as isize + dx;
                 let ny = y as isize + dy;
