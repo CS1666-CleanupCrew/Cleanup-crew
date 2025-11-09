@@ -181,7 +181,7 @@ pub fn playing_room(
     {
         LevelState::InRoom(index) =>
         {
-            println!("Num of Enemies: {}", rooms.0[index].numofenemies);
+            //println!("Num of Enemies: {}", rooms.0[index].numofenemies);
             if rooms.0[index].numofenemies == 0{
                 for door in rooms.0[index].doors.iter(){
 
@@ -220,7 +220,9 @@ pub fn generate_enemies_in_room(
 
     room.numofenemies = scaled_num_enemies;
 
-    for (y, row) in room.layout[1..room.tile_top_left_corner.y as usize-1].iter().enumerate()
+    let top =  (room.tile_top_left_corner.y - room.tile_bot_right_corner.y) as usize - 1;
+
+    for (y, row) in room.layout[1..top].iter().enumerate()
     {
         let pos_y = room.bot_right_corner.y + (y as f32 * 32.0);
 
