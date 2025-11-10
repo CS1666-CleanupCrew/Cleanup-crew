@@ -118,7 +118,10 @@ pub fn track_rooms(
 ){
     match *lvlstate
     {
-        LevelState::EnteredRoom(index) =>
+        LevelState::EnteredRoom(_) =>
+        {
+        }
+        LevelState::InRoom(_)=>
         {
         }
         _ =>
@@ -128,6 +131,7 @@ pub fn track_rooms(
             for (index, room )in rooms.0.iter_mut().enumerate(){
 
                 if room.within_bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) && !room.cleared{
+                    println!("Entered Room");
                     *lvlstate = LevelState::EnteredRoom(index);
                 }
             }
@@ -161,6 +165,7 @@ pub fn entered_room(
                 // });
             }
             generate_enemies_in_room(15, None, &mut rooms, index, commands, & enemy_res, & play_query);
+            println!("Generated Enemies. Moving to InRoom State");
             *lvlstate = LevelState::InRoom(index);
         }
         _ => {
@@ -210,6 +215,7 @@ pub fn generate_enemies_in_room(
     enemy_res: & EnemyRes,
     play_query: &NumOfCleared,
 ){  
+    println!("Room is {}", index);
     let rooms_cleared = play_query.0;
 
     let mut floors: Vec<(f32, f32)> = Vec::new();
@@ -220,25 +226,22 @@ pub fn generate_enemies_in_room(
 
     room.numofenemies = scaled_num_enemies;
 
-    let top =  (room.tile_top_left_corner.y - room.tile_bot_right_corner.y) as usize - 1;
+    let top =  (room.tile_top_left_corner.y - room.tile_bot_right_corner.y).abs() as usize - 1;
 
     for (y, row) in room.layout[1..top].iter().enumerate()
     {
         let pos_y = room.bot_right_corner.y + (y as f32 * 32.0);
-
         for (x, ch) in row.chars().enumerate()
         {
             let pos_x = room.bot_right_corner.x + (x as f32 * 32.0);
-            if x > room.tile_top_left_corner.x as usize && x < room.tile_bot_right_corner.x as usize
-            {
                 if ch == '#' 
                 {
                         floors.push((pos_x, pos_y));
                 }
-            }
         }
     }
-
+    println!("All tiles located");
+    println!("# of Floors: {}", floors.len());
     if let Some(s) = seed 
     {
         let mut seeded = StdRng::seed_from_u64(s);
@@ -251,6 +254,7 @@ pub fn generate_enemies_in_room(
     }
 
     for i in floors.into_iter().take(scaled_num_enemies){
+        println!("Spawning enemy at: {}, {}",i.0, i.1);
         spawn_enemy_at(&mut commands, &enemy_res, Vec3::new(i.0 as f32, i.1 as f32, Z_ENTITIES), true); // active now
     }
         
