@@ -355,7 +355,6 @@ fn move_player(
 
 
 //what a lot of games use for collision detection I found
-#[inline]
 pub fn aabb_overlap(
     ax: f32, ay: f32, a_half: Vec2,
     bx: f32, by: f32, b_half: Vec2
