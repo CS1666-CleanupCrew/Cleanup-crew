@@ -39,6 +39,29 @@ pub enum ProcgenSet {
 
 type LeafRef = Rc<RefCell<Leaf>>;
 
+#[derive(Resource)]
+pub struct WindowConfig {
+    // Fraction of eligible wall tiles to convert to windows (0.0–1.0)
+    pub density: f32,
+    // Hard minimum number of windows per room (if enough spots exist)
+    pub min_per_room: usize,
+    // Hard maximum number of windows per room
+    pub max_per_room: usize,
+    // distance around doors where we *won’t* place windows
+    pub avoid_doors_radius: usize,
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            density: 0.80,// 80% of eligible wall segments so we can tune how many windows appear
+            min_per_room: 10,
+            max_per_room: 5000,
+            avoid_doors_radius: 2,
+        }
+    }
+}
+
 struct Leaf {
     rect: Rect,
     left: Option<LeafRef>,
@@ -213,6 +236,12 @@ impl Plugin for ProcGen {
                     .in_set(ProcgenSet::BuildFullLevel)
                     .after(ProcgenSet::LoadRooms),
             );
+            app.insert_resource(WindowConfig {
+                density: 0.25,
+                min_per_room: 10,
+                max_per_room: 5000,
+                avoid_doors_radius: 0,
+        });
     }
 }
 
@@ -256,7 +285,11 @@ pub fn load_rooms(mut commands: Commands) {
     commands.insert_resource(rooms);
 }
 
-pub fn build_full_level(rooms: Res<RoomRes>, mut room_vec: ResMut<RoomVec>) {
+pub fn build_full_level(
+    rooms: Res<RoomRes>,
+    mut room_vec: ResMut<RoomVec>,
+    window_cfg: Res<WindowConfig>,
+) {
     // +40 and +20 are padding
     const MAP_W: usize = 400 + 40;
     const MAP_H: usize = 400 + 20;
@@ -280,8 +313,20 @@ pub fn build_full_level(rooms: Res<RoomRes>, mut room_vec: ResMut<RoomVec>) {
 
     generate_walls(&mut map);
     info!("Finished wall generation.");
+
+    let mut rng = StdRng::seed_from_u64(seed);
+    place_windows(&mut map, &room_vec, &window_cfg, &mut rng);
+    info!("Finished placing windows.");
+
     place_doors(&mut map, &room_vec);
     info!("Finished placing doors.");
+
+    let window_count = map.iter()
+    .flat_map(|row| row.iter())
+    .filter(|&&c| c == 'G')
+    .count();
+    info!("Placed {} windows in this level.", window_count);
+
 
     let f = File::create("assets/rooms/level.txt").expect("Couldn't create output file");
     let mut writer = BufWriter::new(f);
@@ -691,3 +736,101 @@ pub fn place_doors(map: &mut Vec<Vec<char>>, room_vec: &RoomVec) {
         }
     }
 }
+
+pub fn place_windows<R: Rng>(
+    map: &mut Vec<Vec<char>>,
+    _room_vec: &RoomVec, // kept for signature compatibility, but unused now
+    cfg: &WindowConfig,
+    rng: &mut R,
+) {
+    let rows = map.len();
+    if rows == 0 {
+        return;
+    }
+    let cols = map[0].len();
+
+    let mut candidates: Vec<(usize, usize)> = Vec::new();
+
+    // Any hull wall: 'W' with at least one '#' neighbor and at least one '.' neighbor
+    for y in 0..rows {
+        for x in 0..cols {
+            if map[y][x] != 'W' {
+                continue;
+            }
+
+            let mut has_floor = false;
+            let mut has_empty = false;
+
+            // 4 connected neighbors (up, down, left, right)
+            for (dx, dy) in [(1isize, 0isize), (-1, 0), (0, 1), (0, -1)] {
+                let nx = x as isize + dx;
+                let ny = y as isize + dy;
+                if nx < 0 || ny < 0 || nx >= cols as isize || ny >= rows as isize {
+                    continue;
+                }
+
+                match map[ny as usize][nx as usize] {
+                    '#' => has_floor = true,
+                    '.' => has_empty = true,
+                    _ => {}
+                }
+            }
+
+            if has_floor && has_empty {
+                candidates.push((x, y));
+            }
+        }
+    }
+
+        // Filter out candidates too close to doors
+    if cfg.avoid_doors_radius > 0 {
+        // collect all doors
+        let mut doors: Vec<(isize, isize)> = Vec::new();
+        for y in 0..rows {
+            for x in 0..cols {
+                if map[y][x] == 'D' {
+                    doors.push((x as isize, y as isize));
+                }
+            }
+        }
+
+        candidates.retain(|&(cx, cy)| {
+            doors.iter().all(|&(dx, dy)| {
+                let dist = (cx as isize - dx).abs() + (cy as isize - dy).abs();
+                (dist as usize) > cfg.avoid_doors_radius
+            })
+        });
+    }
+
+    if candidates.is_empty() {
+        info!("No candidate wall tiles for windows");
+        return;
+    }
+
+    candidates.shuffle(rng);
+
+    // Decide how many windows globally (we reuse the same fields)
+    let total = candidates.len();
+    let mut desired = ((total as f32) * cfg.density).round() as usize;
+    if desired < cfg.min_per_room {
+        desired = cfg.min_per_room;
+    }
+    if desired > cfg.max_per_room {
+        desired = cfg.max_per_room;
+    }
+    desired = desired.min(total);
+
+    info!(
+        "Global windows: {} candidate hull walls, placing {} windows",
+        total, desired
+    );
+
+    for &(x, y) in candidates.iter().take(desired) {
+        if map[y][x] == 'W' {
+            map[y][x] = 'G';
+        }
+    }
+}
+
+
+
