@@ -114,7 +114,7 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(space_tex);
 
     //Change this path for a different map
-    let f = File::open("assets/rooms/level.txt").expect("file don't exist");
+    let f = File::open("assets/rooms/window_room.txt").expect("file don't exist");
     let reader = BufReader::new(f);
 
     for line_result in reader.lines() {
@@ -225,12 +225,12 @@ pub fn setup_tilemap(
                     glass_positions.push(Vec3::new(x, y, Z_FLOOR + 1.0));
                     
                     // mark this tile as a breach for the fluid sim
-                    let (bx, by) = crate::fluiddynamics::world_to_grid(
-                        Vec2::new(x, y),
-                        crate::fluiddynamics::GRID_WIDTH,
-                        crate::fluiddynamics::GRID_HEIGHT,
-                    );
-                    breach_positions.push((bx, by));
+                    // let (bx, by) = crate::fluiddynamics::world_to_grid(
+                    //     Vec2::new(x, y),
+                    //     crate::fluiddynamics::GRID_WIDTH,
+                    //     crate::fluiddynamics::GRID_HEIGHT,
+                    // );
+                    // breach_positions.push((bx, by));
                 }
 
                 ('D', _, _) => {
