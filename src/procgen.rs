@@ -548,11 +548,14 @@ pub fn write_room(
     top_left_y: usize,
     room_vec: &mut RoomVec,
 ) {
+    let map_center_x = (map[0].len() / 2) as f32;
+    let map_center_y = (map.len() / 2) as f32;
+
     let map_height = map.len();
     let map_width = if map_height > 0 { map[0].len() } else { 0 };
 
-    let actual_top_left_x = (top_left_x as f32 - 250.0) * TILE_SIZE;
-    let actual_top_left_y = -(top_left_y as f32 - 250.0) * TILE_SIZE;
+    let actual_top_left_x = (top_left_x as f32 - map_center_x) * TILE_SIZE;
+    let actual_top_left_y = -(top_left_y as f32 - map_center_y) * TILE_SIZE;
 
     let actual_bot_right_x = actual_top_left_x + (room.width * TILE_SIZE);
     let actual_bot_right_y = actual_top_left_y - (room.height * TILE_SIZE);
@@ -561,7 +564,7 @@ pub fn write_room(
     let top_left_xy = Vec2::new(actual_top_left_x, actual_top_left_y);
 
     let tile_top_xy = Vec2::new(top_left_x as f32, top_left_y as f32);
-    let tile_bot_xy = Vec2::new((top_left_x as f32+room.width), (top_left_y as f32+room.height));
+    let tile_bot_xy = Vec2::new(top_left_x as f32+room.width-1.0, top_left_y as f32+room.height-1.0);
 
     create_room(top_left_xy, bot_right_xy, tile_top_xy, tile_bot_xy, room_vec, room.layout.clone());
 
