@@ -28,7 +28,7 @@ pub struct RoomVec(pub Vec<Room>);
 pub struct Room{
     cleared: bool,
     pub doors:Vec<Entity>,
-    numofenemies: usize,
+    pub numofenemies: usize,
     top_left_corner: Vec2,
     bot_right_corner: Vec2,
     pub tile_top_left_corner: Vec2,
@@ -55,7 +55,7 @@ impl Room{
     }
 
     pub fn within_bounds_check(&self, pos:Vec2) -> bool{
-        self.top_left_corner.x < pos.x.floor() && self.top_left_corner.y > pos.y.floor() && self.bot_right_corner.x > pos.x.floor() && self.bot_right_corner.y < pos.y.floor()
+        self.top_left_corner.x+32.0 < pos.x.floor() && self.top_left_corner.y-64.0 > pos.y.floor() && self.bot_right_corner.x-32.0 > pos.x.floor() && self.bot_right_corner.y+32.0 < pos.y.floor()
     }
 }
 
@@ -165,7 +165,7 @@ pub fn entered_room(
                 // });
             }
             generate_enemies_in_room(15, None, &mut rooms, index, commands, & enemy_res, & play_query);
-            println!("Generated Enemies. Moving to InRoom State");
+            //println!("Generated Enemies. Moving to InRoom State");
             *lvlstate = LevelState::InRoom(index);
         }
         _ => {
@@ -176,7 +176,7 @@ pub fn entered_room(
 }
 
 pub fn playing_room(
-    rooms:  ResMut<RoomVec>,
+    mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
     mut commands: Commands,
     tiles: Res<TileRes>,
@@ -188,6 +188,7 @@ pub fn playing_room(
         {
             //println!("Num of Enemies: {}", rooms.0[index].numofenemies);
             if rooms.0[index].numofenemies == 0{
+                println!("All enemies defeated");
                 for door in rooms.0[index].doors.iter(){
 
                     commands.entity(*door).remove::<Collidable>();
@@ -195,6 +196,7 @@ pub fn playing_room(
 
                     commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
                 }
+                rooms.0[index].cleared = true;
                 player.0 += 1;
                 *lvlstate = LevelState::NotRoom;
             }
@@ -215,7 +217,7 @@ pub fn generate_enemies_in_room(
     enemy_res: & EnemyRes,
     play_query: &NumOfCleared,
 ){  
-    println!("Room is {}", index);
+    //println!("Room is {}", index);
     let rooms_cleared = play_query.0;
 
     let mut floors: Vec<(f32, f32)> = Vec::new();
@@ -226,22 +228,24 @@ pub fn generate_enemies_in_room(
 
     room.numofenemies = scaled_num_enemies;
 
-    let top =  (room.tile_top_left_corner.y - room.tile_bot_right_corner.y).abs() as usize - 1;
+    let top =  (room.tile_bot_right_corner.y - room.tile_top_left_corner.y) as usize - 2;
 
-    for (y, row) in room.layout[1..top].iter().enumerate()
+    for (y, row) in room.layout[2..top].iter().enumerate()
     {
-        let pos_y = room.bot_right_corner.y + (y as f32 * 32.0);
+        let pos_y = room.top_left_corner.y - ((y+2) as f32 * 32.0);
         for (x, ch) in row.chars().enumerate()
         {
-            let pos_x = room.bot_right_corner.x + (x as f32 * 32.0);
+            if x != 1 && x < row.len()-2{
+                let pos_x = room.top_left_corner.x + (x as f32 * 32.0);
                 if ch == '#' 
                 {
                         floors.push((pos_x, pos_y));
                 }
+            }
         }
     }
-    println!("All tiles located");
-    println!("# of Floors: {}", floors.len());
+    // println!("All tiles located");
+    // println!("# of Floors: {}", floors.len());
     if let Some(s) = seed 
     {
         let mut seeded = StdRng::seed_from_u64(s);
@@ -254,7 +258,7 @@ pub fn generate_enemies_in_room(
     }
 
     for i in floors.into_iter().take(scaled_num_enemies){
-        println!("Spawning enemy at: {}, {}",i.0, i.1);
+        //println!("Spawning enemy at: {}, {}",i.0, i.1);
         spawn_enemy_at(&mut commands, &enemy_res, Vec3::new(i.0 as f32, i.1 as f32, Z_ENTITIES), true); // active now
     }
         

@@ -1,3 +1,4 @@
+use bevy::log::Level;
 use bevy::prelude::*;
 use crate::player::Player;
 use crate::collidable::{Collidable, Collider};
@@ -8,6 +9,7 @@ pub const ENEMY_ACCEL: f32 = 1800.;
 
 use crate::map::EnemySpawnPoints;
 use crate::GameState;
+use crate::room::{LevelState, RoomVec};
 
 const ANIM_TIME: f32 = 0.2;
 
@@ -95,10 +97,14 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn check_enemy_health(
     mut commands: Commands,
     enemy_query: Query<(Entity, &Health), With<Enemy>>,
+    mut rooms:  ResMut<RoomVec>,
+    lvlstate: Res<LevelState>,
 ) {
     for (entity, health) in enemy_query.iter() {
         if health.0 <= 0.0 {
-            
+            if let LevelState::InRoom(index) = *lvlstate{
+                rooms.0[index].numofenemies -= 1;
+            }
             commands.entity(entity).despawn();
         }
     }
