@@ -564,7 +564,7 @@ pub fn write_room(
     let top_left_xy = Vec2::new(actual_top_left_x, actual_top_left_y);
 
     let tile_top_xy = Vec2::new(top_left_x as f32, top_left_y as f32);
-    let tile_bot_xy = Vec2::new((top_left_x as f32+room.width), (top_left_y as f32+room.height));
+    let tile_bot_xy = Vec2::new(top_left_x as f32+room.width-1.0, top_left_y as f32+room.height-1.0);
 
     create_room(top_left_xy, bot_right_xy, tile_top_xy, tile_bot_xy, room_vec, room.layout.clone());
 
