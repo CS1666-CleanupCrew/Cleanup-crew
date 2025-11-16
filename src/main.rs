@@ -18,6 +18,7 @@ pub mod noise;
 pub mod menu;
 pub mod room;
 pub mod bullet;
+pub mod broom;
 
 
 
@@ -101,6 +102,8 @@ fn main() {
             menu::MenuPlugin,
             bullet::BulletPlugin,
             room::RoomPlugin,
+            broom::BroomPlugin,
+
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Menu), log_state_change)

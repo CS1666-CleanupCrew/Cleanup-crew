@@ -3,6 +3,7 @@ use bevy::{prelude::*};
 use crate::collidable::{Collidable, Collider};
 use crate::table;
 use crate::window;
+use crate::broom::Broom;
 use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
@@ -208,7 +209,7 @@ fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     player: Single<(&mut Transform, &mut Velocity, &mut Facing), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>)>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>)>,
     commands: Commands,
     bullet_animate: Res<BulletRes>,
     mut shoot_timer: ResMut<ShootTimer>,
