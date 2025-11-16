@@ -222,7 +222,7 @@ pub fn setup_fluid_grid(mut commands: Commands) {
     }
   
     // a simple default breach so you see suction effects
-    grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
+    // grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
      
     commands.spawn((grid, Name::new("FluidGrid")));
     info!("Fluid simulation initialized");
