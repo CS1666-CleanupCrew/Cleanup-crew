@@ -19,6 +19,7 @@ pub mod menu;
 pub mod room;
 pub mod bullet;
 pub mod broom;
+pub mod reward;
 
 
 
@@ -103,6 +104,7 @@ fn main() {
             bullet::BulletPlugin,
             room::RoomPlugin,
             broom::BroomPlugin,
+            reward::RewardPlugin,
 
         ))
         .add_systems(Startup, setup_camera)

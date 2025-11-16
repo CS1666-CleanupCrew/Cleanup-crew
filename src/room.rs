@@ -130,7 +130,7 @@ pub fn track_rooms(
         
             for (index, room )in rooms.0.iter_mut().enumerate(){
 
-                if room.within_bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) && !room.cleared{
+                if !room.cleared && room.within_bounds_check(Vec2::new(pos.translation.x, pos.translation.y)){
                     println!("Entered Room");
                     *lvlstate = LevelState::EnteredRoom(index);
                 }
@@ -200,6 +200,7 @@ pub fn playing_room(
                 player.0 += 1;
                 *lvlstate = LevelState::NotRoom;
             }
+
         }
         _ => {
 
@@ -261,7 +262,7 @@ pub fn generate_enemies_in_room(
         //println!("Spawning enemy at: {}, {}",i.0, i.1);
         spawn_enemy_at(&mut commands, &enemy_res, Vec3::new(i.0 as f32, i.1 as f32, Z_ENTITIES), true); // active now
     }
-        
+    
 }
 
 pub fn generate_enemies_from_grid(

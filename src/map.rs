@@ -310,7 +310,7 @@ pub fn setup_tilemap(
 
     // Batch spawn doors
     let door_batch: Vec<_> = door_positions.iter().map(|&pos| {
-        let mut sprite = Sprite::from_image(tiles.closed_door.clone());
+        let mut sprite = Sprite::from_image(tiles.open_door.clone());
         sprite.custom_size = Some(Vec2::splat(TILE_SIZE));
         (
             sprite,

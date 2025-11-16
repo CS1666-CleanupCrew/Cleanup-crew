@@ -1,4 +1,3 @@
-use bevy::log::Level;
 use bevy::prelude::*;
 use crate::player::Player;
 use crate::collidable::{Collidable, Collider};
