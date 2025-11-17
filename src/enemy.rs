@@ -9,6 +9,7 @@ pub const ENEMY_ACCEL: f32 = 1800.;
 use crate::map::EnemySpawnPoints;
 use crate::GameState;
 use crate::room::{LevelState, RoomVec};
+use crate::table;
 
 const ANIM_TIME: f32 = 0.2;
 
@@ -68,7 +69,10 @@ impl Plugin for EnemyPlugin {
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, (move_enemy, collide_enemies_with_enemies.after(move_enemy)).run_if(in_state(GameState::Playing)))
             .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, animate_enemy_hit);
+            .add_systems(Update, animate_enemy_hit)
+            .add_systems(Update, table_hits_enemy);
+
+        
     }
 }
 
@@ -293,6 +297,43 @@ fn collide_enemies_with_enemies(
     }
 }
 
+fn table_hits_enemy(
+    time: Res<Time>,
+    mut enemy_query: Query<(&Transform, &mut Health), With<Enemy>>,
+    table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
+) {
+    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+
+    for (enemy_tf, mut health) in &mut enemy_query {
+        
+        let enemy_pos = enemy_tf.translation.truncate();
+
+        for (table_tf, table_col, vel_opt) in &table_query {
+            let table_pos = table_tf.translation.truncate();
+
+            // Small hitbox expansion
+            let extra = Vec2::new(5.0, 5.0);
+            let table_half = table_col.half_extents + extra;
+
+            if crate::player::aabb_overlap(
+                enemy_pos.x,
+                enemy_pos.y,
+                enemy_half,
+                table_pos.x,
+                table_pos.y,
+                table_half,
+            ) {
+                let speed = vel_opt.map(|v| v.velocity.length()).unwrap_or(0.0);
+
+                let threshold = 5.0;
+                if speed > threshold {
+                    let dmg = speed * 0.02;
+                    health.0 -= dmg;
 
 
+                }
+            }
+        }
+    }
 
+}
