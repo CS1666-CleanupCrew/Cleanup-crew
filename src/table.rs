@@ -26,12 +26,15 @@ struct TableGraphics {
 pub struct TablePlugin;
 use crate::enemy::Velocity;
 
+use crate::fluiddynamics::PulledByFluid;
+
+
 impl Plugin for TablePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, load_table_graphics)
             .add_systems(
                 Update,
-                (check_for_broken_tables, animate_broken_tables, apply_table_velocity, collide_tables_with_tables.after(apply_table_velocity)),
+                (ensure_tables_have_pull_components, check_for_broken_tables, animate_broken_tables, apply_table_velocity, collide_tables_with_tables.after(apply_table_velocity)),
             );
     }
 }
@@ -41,6 +44,24 @@ fn load_table_graphics(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(TableGraphics {
         broken: broken_handle,
     });
+}
+
+fn ensure_tables_have_pull_components(
+    mut commands: Commands,
+    query_missing_pull: Query<Entity, (With<Table>, Without<PulledByFluid>)>,
+    query_missing_vel: Query<Entity, (With<Table>, Without<Velocity>)>,
+) {
+    const INTACT_TABLE_MASS: f32 = 120.0;
+
+    for entity in query_missing_pull.iter() {
+        commands
+            .entity(entity)
+            .insert(PulledByFluid { mass: INTACT_TABLE_MASS });
+    }
+
+    for entity in query_missing_vel.iter() {
+        commands.entity(entity).insert(Velocity::new());
+    }
 }
 
 fn check_for_broken_tables(

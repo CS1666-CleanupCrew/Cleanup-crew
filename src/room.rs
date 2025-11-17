@@ -164,7 +164,7 @@ pub fn entered_room(
                 //     sprite.image = image;
                 // });
             }
-            generate_enemies_in_room(15, None, &mut rooms, index, commands, & enemy_res, & play_query);
+            generate_enemies_in_room(1, None, &mut rooms, index, commands, & enemy_res, & play_query);
             //println!("Generated Enemies. Moving to InRoom State");
             *lvlstate = LevelState::InRoom(index);
         }
@@ -197,6 +197,9 @@ pub fn playing_room(
                     commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
                 }
                 rooms.0[index].cleared = true;
+
+                rooms.0.remove(index); //Not sure if we'll need a room after its cleared
+
                 player.0 += 1;
                 *lvlstate = LevelState::NotRoom;
             }
@@ -225,7 +228,7 @@ pub fn generate_enemies_in_room(
 
     let room = &mut rooms.0[index];
 
-    let scaled_num_enemies = 5*rooms_cleared + num_of_enemies;
+    let scaled_num_enemies = 1*rooms_cleared + num_of_enemies;
 
     room.numofenemies = scaled_num_enemies;
 
