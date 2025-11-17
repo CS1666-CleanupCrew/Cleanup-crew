@@ -2,6 +2,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
 use crate::air::{init_air_grid, spawn_pressure_labels};
+use crate::room::RoomVec;
 
 pub mod collidable;
 pub mod endcredits;
@@ -70,6 +71,7 @@ enum GameState {
     Playing,
     GameOver,
     EndCredits,
+    Win,
 }
 
 fn main() {
@@ -121,6 +123,8 @@ fn main() {
         )
 
         .add_systems(OnEnter(GameState::GameOver), setup_game_over_screen)
+        .add_systems(OnEnter(GameState::Win), load_win)
+
 
         .add_systems(Startup, setup_ui_health)
         .add_systems(
@@ -132,11 +136,46 @@ fn main() {
             (
                 damage_on_collision,
                 check_game_over,
+                check_win,
             )
                 .run_if(in_state(GameState::Playing)),
         )
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
         .run();
+}
+
+fn check_win(
+    mut next_state: ResMut<NextState<GameState>>,
+    rooms: Res<RoomVec>,
+){
+    if rooms.0.len() == 0{
+        info!("All Rooms Cleared");
+        next_state.set(GameState::Win);
+    }
+}
+
+fn load_win(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>
+){
+    let texture: Handle<Image> = asset_server.load("win.png");
+
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        ImageNode {
+            image: texture,
+            ..default()
+        },
+        ZIndex(20),
+        GameOverScreen,
+    ));
 }
 
 // Check if player health is < 0
