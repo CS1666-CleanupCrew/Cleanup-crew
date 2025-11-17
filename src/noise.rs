@@ -1,5 +1,8 @@
 use noise::{NoiseFn, Perlin};
 
+const PRESSURE_MIN: f32 = 2.0;
+const PRESSURE_MAX: f32 = 5.0;
+
 pub struct PerlinField {
     perlin: Perlin,
     pub scale: f64, // base frequency
@@ -39,8 +42,9 @@ impl PerlinField {
             freq *= self.lacunarity.max(1.0);
         }
 
-        let val = if norm > 0.0 { sum / norm } else { 0.0 }; // [-1,1]
-        ((val + 1.0) * 0.5) * 5.0                           // [0,5]
-    }
+    let val = if norm > 0.0 { sum / norm } else { 0.0 }; // [-1,1]
+    let base01 = (val + 1.0) * 0.5;                      // [0,1]
+    PRESSURE_MIN + base01 * (PRESSURE_MAX - PRESSURE_MIN)
+}
 }
 
