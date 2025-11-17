@@ -141,10 +141,10 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
 
 fn load_ranged_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     let frames: Vec<Handle<Image>> = vec![
-        asset_server.load("ranger_mob_animation_1.png"),
-        asset_server.load("ranger_mob_animation_1.5.png"),
-        asset_server.load("ranger_mob_animation_2.png"),
-        asset_server.load("ranger_mob_animation_3.png"),
+        asset_server.load("ranger/ranger_mob_animation_1.png"),
+        asset_server.load("ranger/ranger_mob_animation_1.5.png"),
+        asset_server.load("ranger/ranger_mob_animation_2.png"),
+        asset_server.load("ranger/ranger_mob_animation_3.png"),
     ];
 
     commands.insert_resource(RangedEnemyRes { frames });
