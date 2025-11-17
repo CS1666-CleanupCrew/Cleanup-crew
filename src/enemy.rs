@@ -331,10 +331,9 @@ fn table_hits_enemy(
                     health.0 -= dmg;
 
 
-                    info!("ENEMY hit by TABLE at {:?}, speed={:.1}, dmg={:.2}, HP now {:.1}", 
-                          table_pos, speed, dmg, health.0);
                 }
             }
         }
     }
+
 }
