@@ -470,11 +470,3 @@ fn ranged_enemy_ai(
         }
     }
 }
-
-
-
-
-
-
-
-
