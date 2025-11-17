@@ -105,6 +105,8 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
             .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, table_hits_player.run_if(in_state(GameState::Playing)))
+
             ;
     }
 }
@@ -650,3 +652,62 @@ fn bullet_hits_window(
         }
     }
 }
+
+fn table_hits_player(
+    time: Res<Time>,
+    mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer), With<Player>>,
+    // Query the *enemy* Velocity type that your tables actually use.
+    table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
+) {
+    let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
+
+    for (player_tf, mut health, mut dmg_timer) in &mut player_query {
+        dmg_timer.0.tick(time.delta());
+        let player_pos = player_tf.translation.truncate();
+
+        // cannot damage again until timer finished
+        if !dmg_timer.0.finished() {
+            continue;
+        }
+
+        for (table_tf, table_col, vel_opt) in &table_query {
+            let table_pos = table_tf.translation.truncate();
+
+            // expand table hitbox for damage (tweak these values)
+            let extra = Vec2::new(5.0, 5.0); // much smaller than 200
+            let table_half = table_col.half_extents + extra;
+
+            if aabb_overlap(
+                player_pos.x,
+                player_pos.y,
+                player_half,
+                table_pos.x,
+                table_pos.y,
+                table_half,
+            ) {
+                // Get speed from crate::enemy::Velocity (which stores Vec2 in `.velocity`)
+                let speed = vel_opt.map(|v| v.velocity.length()).unwrap_or(0.0);
+
+                // Only damage the player if the table is actually moving fast enough
+                let threshold = 5.0;
+                if speed > threshold {
+                    // Damage scales with speed
+                    let dmg = speed * 0.02;
+                    health.0 -= dmg;
+                    dmg_timer.0.reset();
+
+                    // info!(
+                    //     "Player hit by TABLE at {:?}, speed={:.2}, damage={:.2}, player health now {:.2}",
+                    //     table_pos, speed, dmg, health.0
+                    // );
+                } else {
+                    // debug!(
+                    //     "Table overlap but speed {:.2} <= {:.2}, no damage (table_pos={:?})",
+                    //     speed, threshold, table_pos
+                    // );
+                }
+            }
+        }
+    }
+}
+
