@@ -656,7 +656,6 @@ fn bullet_hits_window(
 fn table_hits_player(
     time: Res<Time>,
     mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer), With<Player>>,
-    // Query the *enemy* Velocity type that your tables actually use.
     table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
 ) {
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
