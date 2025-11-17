@@ -53,10 +53,11 @@ fn load_window_graphics(mut commands: Commands, asset_server: Res<AssetServer>) 
 
 fn check_for_broken_windows(
     mut commands: Commands,
-    mut query: Query<(Entity, &Health, &mut Sprite, &mut GlassState), With<Window>>,
+    mut query: Query<(Entity, &Health, &mut Sprite, &mut GlassState, &Transform), With<Window>>,
+    mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     window_graphics: Res<WindowGraphics>,
 ) {
-    for (entity, health, mut sprite, mut state) in query.iter_mut() {
+    for (entity, health, mut sprite, mut state, transform) in query.iter_mut() {
         if health.0 <= 0.0 && *state == GlassState::Intact {
             *state = GlassState::Broken;
 
@@ -68,6 +69,24 @@ fn check_for_broken_windows(
                 });
 
             sprite.image = window_graphics.broken[0].clone();
+
+            let mut breach_positions = Vec::new();
+
+            // mark this tile as a breach for the fluid sim
+            let world_pos = transform.translation.truncate();
+            let (bx, by) = crate::fluiddynamics::world_to_grid(
+                world_pos,
+                crate::fluiddynamics::GRID_WIDTH,
+                crate::fluiddynamics::GRID_HEIGHT,
+            );
+            breach_positions.push((bx, by));
+
+            // Push any recorded breach positions into the fluid grid
+            if let Ok(mut grid) = fluid_query.get_single_mut() {
+                for &(bx, by) in &breach_positions {
+                    grid.add_breach(bx, by);
+                }
+            }
 
             commands
                 .entity(entity)

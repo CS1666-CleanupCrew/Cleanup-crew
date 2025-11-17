@@ -222,7 +222,7 @@ pub fn setup_fluid_grid(mut commands: Commands) {
     }
   
     // a simple default breach so you see suction effects
-    grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
+    // grid.add_breach(GRID_WIDTH / 2, GRID_HEIGHT / 2);
      
     commands.spawn((grid, Name::new("FluidGrid")));
     info!("Fluid simulation initialized");
@@ -437,4 +437,62 @@ pub fn world_to_grid(world_pos: Vec2, grid_width: usize, grid_height: usize) -> 
     let grid_y = ((world_pos.y - grid_origin_y) / cell_size).max(0.0).min((grid_height - 1) as f32) as usize;
     
     (grid_x, grid_y)
+}
+
+
+pub fn sync_air_to_fluid(
+    air_grid_q: Query<&crate::air::AirGrid>,
+    mut fluid_grid_q: Query<&mut FluidGrid>,
+) {
+    let Ok(air_grid) = air_grid_q.single() else {
+        return;
+    };
+    
+    let Ok(mut fluid_grid) = fluid_grid_q.single_mut() else {
+        return;
+    };
+
+    if air_grid.w != fluid_grid.width || air_grid.h != fluid_grid.height {
+        warn!("Grid size mismatch!");
+        return;
+    }
+
+    info!("Syncing Perlin air pressure to LBM fluid distribution...");
+
+    for y in 0..fluid_grid.height {
+        for x in 0..fluid_grid.width {
+            let idx = fluid_grid.get_index(x, y);
+            
+            if fluid_grid.obstacles[idx] {
+                continue;
+            }
+
+            let air_pressure = air_grid.get(x, y);
+            let density = air_pressure * 0.4;
+            
+            
+            let mut vx = 0.0;
+            let mut vy = 0.0;
+            
+          
+            if x > 0 && x < fluid_grid.width - 1 {
+                let p_left = air_grid.get(x - 1, y);
+                let p_right = air_grid.get(x + 1, y);
+                vx = (p_right - p_left) * 0.01; 
+            }
+            
+            if y > 0 && y < fluid_grid.height - 1 {
+                let p_down = air_grid.get(x, y - 1);
+                let p_up = air_grid.get(x, y + 1);
+                vy = (p_up - p_down) * 0.01; 
+            }
+
+            for i in 0..9 {
+                fluid_grid.distribution[idx][i] = 
+                    fluid_grid.compute_equilibrium(density, vx, vy, i);
+            }
+        }
+    }
+
+    
 }

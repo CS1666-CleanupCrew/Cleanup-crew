@@ -24,7 +24,7 @@ impl Default for AirParams {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Component)]
 pub struct AirGrid {
     pub w: usize,
     pub h: usize,
@@ -106,7 +106,7 @@ pub fn init_air_grid(
         }
     }
 
-    commands.insert_resource(grid);
+    commands.spawn(grid);
     info!("AirGrid initialized: {}x{} tiles", w, h);
 }
 
@@ -124,9 +124,12 @@ struct GridPos {
 pub fn spawn_pressure_labels(
     mut commands: Commands,
     assets: Res<AssetServer>,
-    air: Res<AirGrid>,
+    air: Query<&AirGrid>,
     level: Res<LevelRes>,
 ) {
+    let Ok(air) = air.single() else {
+        return;
+    };
     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = level.level.len() as f32;
     let map_px_w = map_cols * TILE_SIZE;
@@ -168,12 +171,12 @@ pub fn spawn_pressure_labels(
 
 /// Update labels if AirGrid changes (if reseeded or tweak params)
 pub fn update_pressure_labels(
-    air: Res<AirGrid>,
+    air: Query<&AirGrid, Changed<AirGrid>>,
     mut q: Query<(&GridPos, &mut Text, &mut TextColor), With<PressureLabel>>,
 ) {
-    if !air.is_changed() {
+    let Ok(air) = air.single() else {
         return;
-    }
+    };
     for (pos, mut text, mut color) in &mut q {
         let p = air.get(pos.x, pos.y);
         *text = Text::new(format!("{:.1}", p));
