@@ -4,6 +4,7 @@ use crate::table;
 use crate::window;
 use crate::Player;
 use crate::{GameState, TILE_SIZE};
+use crate::enemy::RangedEnemyShootEvent;
 
 
 
@@ -27,6 +28,7 @@ impl Plugin for BulletPlugin {
     fn build(&self, app:&mut App) {
         app.add_systems(Startup, load_bullet)
             .add_systems(Update, shoot_bullet_on_click)
+            .add_systems(Update,spawn_bullets_from_ranged.run_if(in_state(GameState::Playing)),)
             .add_systems(Update, move_bullets.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_bullet.after(move_bullets).run_if(in_state(GameState::Playing)),)
@@ -114,6 +116,47 @@ pub fn shoot_bullet_on_click(
         Collider { half_extents: Vec2::splat(5.0) },
     ));
 }
+
+fn spawn_bullets_from_ranged(
+    mut commands: Commands,
+    mut shoot_events: EventReader<RangedEnemyShootEvent>,
+    bullet_animate: Res<BulletRes>,
+) {
+    for ev in shoot_events.read() {
+        let dir_vec = ev.direction.normalize_or_zero();
+        if dir_vec == Vec2::ZERO {
+            continue;
+        }
+
+        // Small offset so the bullet starts in front of the enemy
+        let shoot_offset = 16.0;
+        let origin_2d = ev.origin.truncate();
+        let spawn_pos = origin_2d + dir_vec * shoot_offset;
+
+        commands.spawn((
+            Sprite::from_atlas_image(
+                bullet_animate.0.clone(),
+                TextureAtlas {
+                    layout: bullet_animate.1.clone(),
+                    index: 0,
+                },
+            ),
+            Transform {
+                translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
+                scale: Vec3::splat(0.25),
+                ..Default::default()
+            },
+            // Use the speed coming from the enemy AI
+            Velocity(dir_vec * ev.speed),
+            Bullet,
+            Collider { half_extents: Vec2::splat(5.0) },
+            // give enemy bullets animation, too
+            AnimationTimer(Timer::from_seconds(0.05, TimerMode::Repeating)),
+            AnimationFrameCount(3),
+        ));
+    }
+}
+
 
 
 
