@@ -1,7 +1,7 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
-use crate::air::{init_air_grid, spawn_pressure_labels};
+use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels};
 use crate::room::RoomVec;
 use crate::map::MapGridMeta;
 
@@ -146,9 +146,9 @@ fn main() {
                 damage_on_collision,
                 check_game_over,
                 check_win,
+                damage_on_collision,
             )
                 .run_if(in_state(GameState::Playing)),
-            damage_on_collision.run_if(in_state(GameState::Playing)),
         )
         .add_systems(
             Update,
