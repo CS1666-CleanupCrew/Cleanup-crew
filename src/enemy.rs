@@ -126,7 +126,7 @@ pub fn spawn_enemy_at(
             handles: enemy_res.frames.clone(),
             index: 0,
         },
-        crate::fluiddynamics::PulledByFluid { mass: 50.0 },
+        crate::fluiddynamics::PulledByFluid { mass: 10.0 },
     ));
     if active { e.insert(ActiveEnemy); }
 }
@@ -188,28 +188,45 @@ pub fn animate_enemy_hit(
 fn move_enemy(
     time: Res<Time>,
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut enemy_query: Query<(&mut Transform, &mut Velocity), (With<Enemy>, With<ActiveEnemy>)>,
+    mut enemy_query: Query<(&mut Transform, &mut Velocity, Option<&crate::fluiddynamics::PulledByFluid>), (With<Enemy>, With<ActiveEnemy>)>,
     wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>, Without<Player>)>,
+    grid_query: Query<&crate::fluiddynamics::FluidGrid>,
 ) {
+    // check if any breaches have been made\
+    // it only starts up if a breach has been made otherwise it acts nromal
+    let grid_has_breach = if let Ok(grid) = grid_query.get_single() {
+        !grid.breaches.is_empty()
+    } else {
+        false
+    };
+
     if let Ok(player_transform) = player_query.single() {
         let deltat = time.delta_secs();
         let accel = ENEMY_ACCEL * deltat;
 
-        // Iterate over each enemy
-        for (mut enemy_transform, mut enemy_velocity) in &mut enemy_query {
-            // calculate the direction from the enemy to the player
+        // reduces the amount that the enemies chase the player making the physics more apparent
+        for (mut enemy_transform, mut enemy_velocity, pulled_opt) in &mut enemy_query {
+            let mut effective_accel = accel;
+            
+            if grid_has_breach {
+                // make this value smaller for a stronger pull
+                // you can also change the pull value in fluiddynamics or the mass up above
+                effective_accel *= 0.15;
+            }
+
             let dir_to_player = (player_transform.translation - enemy_transform.translation)
                                 .truncate()
                                 .normalize_or_zero();
 
-            // using players acceleration to change enemy velocity
-            **enemy_velocity = if dir_to_player.length() > 0. {
-                (**enemy_velocity + (dir_to_player * accel)).clamp_length_max(ENEMY_SPEED)
-            } else if enemy_velocity.length() > accel {
-                **enemy_velocity + (enemy_velocity.normalize_or_zero() * -accel)
+            if dir_to_player.length() > 0.0 {
+                **enemy_velocity = (**enemy_velocity + dir_to_player * effective_accel)
+                    .clamp_length_max(ENEMY_SPEED);
+            } else if enemy_velocity.length() > effective_accel {
+                let vel = **enemy_velocity;
+                **enemy_velocity += vel.normalize_or_zero() * -effective_accel;
             } else {
-                Vec2::ZERO
-            };
+                **enemy_velocity = Vec2::ZERO;
+            }
 
             let change = **enemy_velocity * deltat;
             let mut pos = enemy_transform.translation;
