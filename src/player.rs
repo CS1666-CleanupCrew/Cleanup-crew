@@ -8,6 +8,7 @@ use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WI
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
 use crate::map::{LevelRes, MapGridMeta};
+use crate::fluiddynamics::PulledByFluid;
 
 const BULLET_SPD: f32 = 700.;
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
@@ -98,6 +99,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
             .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, apply_breach_force_to_player.after(move_player).run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_bullet.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
@@ -198,6 +200,7 @@ fn spawn_player(
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
         NumOfCleared(0),
+        PulledByFluid{mass: 50.0}
     ));
 }
 
@@ -215,7 +218,12 @@ fn move_player(
     commands: Commands,
     bullet_animate: Res<BulletRes>,
     mut shoot_timer: ResMut<ShootTimer>,
+    grid_query: Query<&crate::fluiddynamics::FluidGrid>,
 ) {
+
+    let Ok(grid) = grid_query.get_single() else {
+    return;
+    };
     let (mut transform, mut velocity, mut facing) = player.into_inner();
 
     let mut dir: Vec2 = Vec2::ZERO;
@@ -281,6 +289,12 @@ fn move_player(
 
     **velocity = if dir.length() > 0. {
         (**velocity + (dir.normalize_or_zero() * accel)).clamp_length_max(PLAYER_SPEED)
+    // allows the player to be moved if the breaches are open
+    // the drag helps stop the player so it doesn't feel like they are on ice
+    } else if !grid.breaches.is_empty() {
+        let drag = 0.80;
+        **velocity * drag
+    
     } else if velocity.length() > accel {
         **velocity + (velocity.normalize_or_zero() * -accel)
     } else {
@@ -710,3 +724,61 @@ fn table_hits_player(
     }
 }
 
+fn apply_breach_force_to_player(
+    time: Res<Time>,
+    grid_query: Query<&crate::fluiddynamics::FluidGrid>,
+    mut player_query: Query<(&Transform, &mut Velocity, &PulledByFluid), With<Player>>,
+) {
+    let Ok(grid) = grid_query.get_single() else {
+        return;
+    };
+    
+    if grid.breaches.is_empty() {
+        return;
+    }
+    
+    let cell_size = crate::TILE_SIZE;
+    let grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
+    let grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
+    
+    for (transform, mut velocity, pulled) in &mut player_query {
+        let world_pos = transform.translation.truncate();
+        
+        let grid_x = ((world_pos.x - grid_origin_x) / cell_size) as usize;
+        let grid_y = ((world_pos.y - grid_origin_y) / cell_size) as usize;
+        
+        if grid_x >= grid.width || grid_y >= grid.height {
+            continue;
+        }
+        
+        // checks the macroscopic variables (velocity and pressure) at player loc
+        let (rho, fluid_vx, fluid_vy) = grid.compute_macroscopic(grid_x, grid_y);
+        
+        let normal_density = 1.0;
+        let pressure_diff = normal_density - rho;
+        
+        // the threshold you have to get over for the vaccuum forces to actually affect the player
+        let pressure_threshold = 0.15;
+        
+        
+        let scaled_pressure_diff = (pressure_diff - pressure_threshold).max(0.0);
+        
+        let fluid_velocity = Vec2::new(fluid_vx, fluid_vy);
+
+        
+        // the strength of the forces that you can tweak to get more visible results
+        let pressure_force_strength = 100000.0;
+        let velocity_force_strength = 60000.0;
+        
+        let pressure_force = fluid_velocity.normalize_or_zero()  * scaled_pressure_diff  * pressure_force_strength;
+        let velocity_force = fluid_velocity * velocity_force_strength;
+        
+        let total_force = pressure_force + velocity_force;
+        
+        let acceleration = total_force / pulled.mass;
+        let deltat = time.delta_secs();
+        velocity.0 += acceleration * deltat;
+        
+        
+    }
+}    

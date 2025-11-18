@@ -176,7 +176,7 @@ impl FluidGrid {
         WEIGHTS[i] * density * (1.0 + 3.0 * cu + 4.5 * cu * cu - 1.5 * u_sq)
     }
 
-    fn compute_macroscopic(&self, x: usize, y: usize) -> (f32, f32, f32) {
+    pub fn compute_macroscopic(&self, x: usize, y: usize) -> (f32, f32, f32) {
         let idx = self.get_index(x, y);
         
         //these are the accumulators for the velocity. they sum up all the 9 directions
