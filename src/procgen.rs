@@ -397,16 +397,23 @@ fn bsp_generate_level(
                 // create a "RoomLayout" for this random room
                 let mut random_layout = vec![String::new(); room_h];
                 for y in 0..room_h {
-                    random_layout[y] = "#".repeat(room_w);
+                    if y == 0 || y == room_h-1{
+                        random_layout[y] = ".".repeat(room_w);
+                    }
+                    else{
+                        random_layout[y] = "#".repeat(room_w);
+                        random_layout[y].insert(0, '.');
+                        random_layout[y].push_str( ".");
+                    }
                 }
                 let random_room = RoomLayout {
                     layout: random_layout,
-                    width: room_w as f32,
+                    width: room_w as f32 + 2.0,
                     height: room_h as f32,
                 };
 
                 // write the random room into the map using the same function as presets
-                write_room(map, &random_room, room_x, room_y, room_vec);
+                write_room(map, &random_room, room_x-1, room_y-1, room_vec);
 
                 // update the leaf's room rect (needed for hallway connections)
                 leaf.room = Some(Rect { x: room_x, y: room_y, w: room_w, h: room_h });
