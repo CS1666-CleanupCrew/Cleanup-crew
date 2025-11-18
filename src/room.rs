@@ -180,7 +180,8 @@ pub fn playing_room(
     mut lvlstate: ResMut<LevelState>,
     mut commands: Commands,
     tiles: Res<TileRes>,
-    mut player: Single<&mut NumOfCleared, With<Player>>
+    mut player: Single<&mut NumOfCleared, With<Player>>,
+    heart_res: Res<crate::heart::HeartRes>
 ){
     match *lvlstate
     {
@@ -189,6 +190,13 @@ pub fn playing_room(
             //println!("Num of Enemies: {}", rooms.0[index].numofenemies);
             if rooms.0[index].numofenemies == 0{
                 println!("All enemies defeated");
+
+                // Calculate room center and spawn heart
+                let center_x = (rooms.0[index].top_left_corner.x + rooms.0[index].bot_right_corner.x) / 2.0;
+                let center_y = (rooms.0[index].top_left_corner.y + rooms.0[index].bot_right_corner.y) / 2.0;
+                let room_center = Vec2::new(center_x, center_y);
+                crate::heart::spawn_heart(&mut commands, &heart_res, room_center);
+
                 for door in rooms.0[index].doors.iter(){
 
                     commands.entity(*door).remove::<Collidable>();

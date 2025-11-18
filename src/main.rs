@@ -22,6 +22,7 @@ pub mod room;
 pub mod bullet;
 pub mod broom;
 pub mod reward;
+pub mod heart;
 
 
 
@@ -115,7 +116,7 @@ fn main() {
             room::RoomPlugin,
             broom::BroomPlugin,
             reward::RewardPlugin,
-
+            heart::HeartPlugin,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Menu), log_state_change)
