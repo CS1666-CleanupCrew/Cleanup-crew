@@ -14,6 +14,16 @@ use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_
 use crate::procgen::{RoomRes, build_full_level, ProcgenSet};
 
 
+#[derive(Resource, Debug, Clone)]
+pub struct LevelToLoad(pub String);
+
+impl Default for LevelToLoad {
+    fn default() -> Self {
+        Self("assets/rooms/level.txt".to_string())
+    }
+}
+
+
 #[derive(Component)]
 struct ParallaxBg {
     factor: f32, // 0.0 = static, 1.0 = locks to camera
@@ -65,6 +75,7 @@ pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app
+            .init_resource::<LevelToLoad>()
             // load_map should run after the full level (which itself runs after load_rooms)
             .add_systems(
                 OnEnter(GameState::Loading),
@@ -96,7 +107,8 @@ fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
     next_state.set(GameState::Playing);
 }
 
-fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn load_map(mut commands: Commands, asset_server: Res<AssetServer>,
+    mut level_to_load: ResMut<LevelToLoad>,) {
     let mut level = LevelRes {
         level: Vec::new(),
     };
@@ -114,7 +126,8 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(space_tex);
 
     //Change this path for a different map
-    let f = File::open("assets/rooms/level.txt").expect("file don't exist");
+    info!("Loading map: {}", level_to_load.0); // *** ADD INFO ***
+    let f = File::open(level_to_load.0.clone()).expect("file don't exist"); // *** MODIFY THIS LINE ***
     let reader = BufReader::new(f);
 
     for line_result in reader.lines() {

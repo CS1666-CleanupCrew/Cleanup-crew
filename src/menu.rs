@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{GameState, ShowAirLabels};
+use crate::map::LevelToLoad;
 
 pub struct MenuPlugin;
 
@@ -21,6 +22,7 @@ struct MenuUI;
 #[derive(Component)]
 enum MenuButton {
     Play,
+    PlayTestRoom,
     Credits,
     ToggleAirLabels,
 }
@@ -97,6 +99,29 @@ fn setup_menu(
                         MenuButton::Play,
                         ImageNode::new(assets.load("menu/Title_Play.png")),
                     ));
+
+                    // Test Room Button (Text-based)
+                    col.spawn((
+                        Button,
+                        MenuButton::PlayTestRoom,
+                        Node {
+                            width: Val::Px(420.0),
+                            height: Val::Px(60.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::all(Val::Px(8.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.7)),
+                        BorderColor(Color::srgba(1.0, 1.0, 1.0, 0.4)),
+                        BorderRadius::all(Val::Px(6.0)),
+                    ))
+                    .with_children(|b| {
+                        b.spawn((
+                            Text::new("Test Room"),
+                            TextFont { font_size: 28.0, ..default() },
+                        ));
+                    });
 
                     // Credits
                     col.spawn((
@@ -177,6 +202,7 @@ fn handle_buttons(
     mut show_labels: ResMut<ShowAirLabels>,
     children_q: Query<&Children>,
     mut texts: Query<&mut Text, With<AirToggleText>>,
+    mut level_to_load: ResMut<LevelToLoad>,
 ) {
     for (interaction, which, button_entity) in &mut interactions {
         if *interaction != Interaction::Pressed {
@@ -185,6 +211,10 @@ fn handle_buttons(
 
         match which {
             MenuButton::Play => {
+                next_state.set(GameState::Loading);
+            }
+            MenuButton::PlayTestRoom => {
+                level_to_load.0 = "assets/rooms/window_room.txt".to_string();
                 next_state.set(GameState::Loading);
             }
             MenuButton::Credits => {
