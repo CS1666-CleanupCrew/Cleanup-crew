@@ -114,7 +114,7 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(space_tex);
 
     //Change this path for a different map
-    let f = File::open("assets/rooms/window_room.txt").expect("file don't exist");
+    let f = File::open("assets/rooms/level.txt").expect("file don't exist");
     let reader = BufReader::new(f);
 
     for line_result in reader.lines() {

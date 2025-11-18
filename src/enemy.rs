@@ -60,21 +60,64 @@ impl Velocity {
     }
 }
 
+#[derive(Component)]
+pub struct RangedEnemy;
+
+// Simple AI for a ranged enemy keeps some distance and periodically shoots
+#[derive(Component)]
+pub struct RangedEnemyAI {
+    // Max distance at which it can shoot
+    pub range: f32,
+    // Time between shots
+    pub fire_cooldown: Timer,
+    // Speed to give projectiles when it shoots
+    pub projectile_speed: f32,
+}
+
+#[derive(Component)]
+pub struct RangedEnemyFrames {
+    pub handles: Vec<Handle<Image>>,
+    pub index: usize,
+}
+
+#[derive(Component, Deref, DerefMut)]
+pub struct RangedAnimationTimer(pub Timer);
+
+// Animation frames for the ranged enemy
+#[derive(Resource)]
+pub struct RangedEnemyRes {
+    pub frames: Vec<Handle<Image>>,
+}
+
+// Event when a ranged enemy wants to shoot.
+#[derive(Event)]
+pub struct RangedEnemyShootEvent {
+    pub origin: Vec3,
+    pub direction: Vec2,
+    pub speed: f32,
+}
+
 pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(Startup, load_enemy)
+            // new ranged enemy loading
+            .add_systems(Startup, load_ranged_enemy)
+            // event the bullet system can listen to later
+            .add_event::<RangedEnemyShootEvent>()
             .add_systems(OnEnter(GameState::Playing), spawn_enemies_from_points)
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
             .add_systems(Update, (move_enemy, collide_enemies_with_enemies.after(move_enemy)).run_if(in_state(GameState::Playing)))
             .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_enemy_hit)
-            .add_systems(Update, table_hits_enemy);
+            .add_systems(Update, table_hits_enemy)
+            // ranged enemy logic
+            .add_systems(Update, (ranged_enemy_ai, animate_ranged_enemy).run_if(in_state(GameState::Playing)));
 
-        
     }
 }
+
 
 fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Load 3 separate frames
@@ -94,6 +137,17 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
         hit_frames,
     });
 
+}
+
+fn load_ranged_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let frames: Vec<Handle<Image>> = vec![
+        asset_server.load("ranger/ranger_mob_animation_1.png"),
+        asset_server.load("ranger/ranger_mob_animation_1.5.png"),
+        asset_server.load("ranger/ranger_mob_animation_2.png"),
+        asset_server.load("ranger/ranger_mob_animation_3.png"),
+    ];
+
+    commands.insert_resource(RangedEnemyRes { frames });
 }
 
 //if enemy's hp = 0, then despawn
@@ -165,6 +219,20 @@ fn animate_enemy(
         }
     }
 }
+
+fn animate_ranged_enemy(
+    time: Res<Time>,
+    mut query: Query<(&mut Sprite, &mut RangedAnimationTimer, &mut RangedEnemyFrames), With<RangedEnemy>>,
+) {
+    for (mut sprite, mut timer, mut frames) in &mut query {
+        timer.tick(time.delta());
+        if timer.just_finished() && !frames.handles.is_empty() {
+            frames.index = (frames.index + 1) % frames.handles.len();
+            sprite.image = frames.handles[frames.index].clone();
+        }
+    }
+}
+
 
 pub fn animate_enemy_hit(
     time: Res<Time>,
@@ -353,4 +421,52 @@ fn table_hits_enemy(
         }
     }
 
+}
+
+fn ranged_enemy_ai(
+    time: Res<Time>,
+    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI), With<RangedEnemy>>,
+    mut shoot_writer: EventWriter<RangedEnemyShootEvent>,
+) {
+    let Ok(player_tf) = player_query.get_single() else {
+        return;
+    };
+    let player_pos = player_tf.translation.truncate();
+    let dt = time.delta_secs();
+
+    for (enemy_tf, mut vel, mut ai) in &mut enemies {
+        ai.fire_cooldown.tick(time.delta());
+
+        let enemy_pos = enemy_tf.translation.truncate();
+        let diff = player_pos - enemy_pos;
+        let dist = diff.length();
+        if dist == 0.0 { continue; }
+
+        let dir = diff / dist;
+
+        // hover around some distance
+        let desired = ai.range * 0.75;
+        let delta = dist - desired;
+        let move_dir = if delta > 20.0 {
+            dir
+        } else if delta < -20.0 {
+            -dir
+        } else {
+            Vec2::ZERO
+        };
+
+        let accel = ENEMY_ACCEL * dt;
+        vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(ENEMY_SPEED);
+
+        // shoot if in range + cooldown finished
+        if ai.fire_cooldown.finished() && dist <= ai.range {
+            shoot_writer.write(RangedEnemyShootEvent {
+                origin: enemy_tf.translation,
+                direction: dir,
+                speed: ai.projectile_speed,
+            });
+            ai.fire_cooldown.reset();
+        }
+    }
 }
