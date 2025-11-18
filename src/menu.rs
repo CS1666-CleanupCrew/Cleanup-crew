@@ -8,8 +8,10 @@ impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(GameState::Menu), setup_menu)
+            .add_systems(OnEnter(GameState::Menu), start_menu_music)
             .add_systems(Update, handle_buttons.run_if(in_state(GameState::Menu)))
-            .add_systems(OnExit(GameState::Menu), cleanup_menu);
+            .add_systems(OnExit(GameState::Menu), cleanup_menu)
+            .add_systems(OnExit(GameState::Menu), stop_menu_music);
     }
 }
 
@@ -25,6 +27,9 @@ enum MenuButton {
 
 #[derive(Component)]
 struct AirToggleText;
+
+#[derive(Component)]
+struct MenuMusic;
 
 fn setup_menu(
     mut commands: Commands,
@@ -139,6 +144,31 @@ fn setup_menu(
                     });
                 });
         });
+}
+
+fn start_menu_music(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let music_handle = asset_server.load("audio/menu_music.ogg");
+    
+    commands.spawn((
+        AudioPlayer::new(music_handle),
+        PlaybackSettings::LOOP,
+        MenuMusic,
+    ));
+    
+    info!("Menu music started");
+}
+
+fn stop_menu_music(
+    mut commands: Commands,
+    music_query: Query<Entity, With<MenuMusic>>,
+) {
+    for entity in &music_query {
+        commands.entity(entity).despawn();
+        info!("Menu music stopped");
+    }
 }
 
 fn handle_buttons(
