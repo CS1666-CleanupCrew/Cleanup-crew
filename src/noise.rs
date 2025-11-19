@@ -1,6 +1,6 @@
 use noise::{NoiseFn, Perlin};
 
-const PRESSURE_MIN: f32 = 2.0;
+const PRESSURE_MIN: f32 = 1.5;
 const PRESSURE_MAX: f32 = 5.0;
 
 pub struct PerlinField {
