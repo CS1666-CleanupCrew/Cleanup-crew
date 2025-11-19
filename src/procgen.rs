@@ -291,11 +291,11 @@ pub fn build_full_level(
     window_cfg: Res<WindowConfig>,
 ) {
     // +40 and +20 are padding
-    const MAP_W: usize = 400 + 40;
-    const MAP_H: usize = 400 + 20;
-    const MIN_LEAF_SIZE: usize = 100;
-    const MIN_ROOM_SIZE: usize = 40;
-    let seed: u64 = 140;//random_range(0..=10000000);
+    const MAP_W: usize = 300 + 40;
+    const MAP_H: usize = 300 + 20;
+    const MIN_LEAF_SIZE: usize = 70;
+    const MIN_ROOM_SIZE: usize = 30;
+    let seed: u64 = random_range(0..=10000000); // 140;
 
     // full map of '.'
     let mut map: Vec<Vec<char>> = vec![vec!['.'; MAP_W]; MAP_H];
@@ -355,7 +355,7 @@ fn bsp_generate_level(
     let map_w = map[0].len() - 40;
     let map_h = map.len() - 20;
     let root = Leaf::new(Rect::new(20, 10, map_w, map_h));
-    let max_split_attempts = 5;
+    let max_split_attempts = 10;
 
     let mut terminals = Vec::new();
     split_leaf_recursive(
