@@ -14,6 +14,9 @@ pub enum GlassState {
 }
 
 #[derive(Component)]
+pub struct NeedsBreachTracking;
+
+#[derive(Component)]
 struct WindowAnimation {
     frame_index: usize,
     timer: Timer,
@@ -59,7 +62,10 @@ fn check_for_broken_windows(
 ) {
     for (entity, health, mut sprite, mut state, transform) in query.iter_mut() {
         if health.0 <= 0.0 && *state == GlassState::Intact {
+            info!("Window breaking at {:?}", transform.translation.truncate());
             *state = GlassState::Broken;
+
+            commands.entity(entity).insert(NeedsBreachTracking);
 
             commands
                 .entity(entity)
@@ -72,7 +78,6 @@ fn check_for_broken_windows(
 
             let mut breach_positions = Vec::new();
 
-            // mark this tile as a breach for the fluid sim
             let world_pos = transform.translation.truncate();
             let (bx, by) = crate::fluiddynamics::world_to_grid(
                 world_pos,
@@ -81,7 +86,6 @@ fn check_for_broken_windows(
             );
             breach_positions.push((bx, by));
 
-            // Push any recorded breach positions into the fluid grid
             if let Ok(mut grid) = fluid_query.get_single_mut() {
                 for &(bx, by) in &breach_positions {
                     grid.add_breach(bx, by);

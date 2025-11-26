@@ -141,7 +141,7 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut textu
     commands.insert_resource(player);
 
     //Change time for how fast the player can shoot
-    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Once)));
+    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Repeating)));
     
 }
 
@@ -175,7 +175,7 @@ fn spawn_player(
     let (gx, gy) = spawn_grid.unwrap_or((0, 0));
 
 
-    // Grid → world (note the same vertical flip you use in setup_tilemap)
+    // Grid â†’ world (note the same vertical flip you use in setup_tilemap)
     let x_player_spawn_offset = TILE_SIZE * 2.0;
     let y_player_spawn_offset = -TILE_SIZE * 2.0;
 
@@ -384,7 +384,7 @@ pub fn aabb_overlap(
 //-------------------------------------------------------------------------------------------------------------
 impl DamageTimer {
     pub fn new(seconds: f32) -> Self {
-        Self(Timer::from_seconds(seconds, TimerMode::Once))
+        Self(Timer::from_seconds(seconds, TimerMode::Repeating))
 }
 }
 
@@ -420,7 +420,7 @@ fn enemy_hits_player(
                     health.0 -= 15.0;
                     damage_timer.0.reset();
                     commands.entity(enemy_entity).insert(HitAnimation {
-                        timer: Timer::from_seconds(0.3, TimerMode::Once),
+                        timer: Timer::from_seconds(0.3, TimerMode::Repeating),
                     });
                 }
             }
@@ -781,4 +781,4 @@ fn apply_breach_force_to_player(
         
         
     }
-}    
+}
