@@ -345,7 +345,7 @@ pub fn update_room_air_pressure(
             continue;
         }
 
-        let base_escape_rate = 15.0;
+        let base_escape_rate = 2.5;
         let total_escape_rate = base_escape_rate * room.breaches.len() as f32;
         
         let old_pressure = room.air_pressure;
