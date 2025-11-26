@@ -59,6 +59,7 @@ fn check_for_broken_windows(
 ) {
     for (entity, health, mut sprite, mut state, transform) in query.iter_mut() {
         if health.0 <= 0.0 && *state == GlassState::Intact {
+            info!("Window breaking at {:?}", transform.translation.truncate());
             *state = GlassState::Broken;
 
             commands
