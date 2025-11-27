@@ -239,6 +239,6 @@ fn handle_buttons(
 
 fn cleanup_menu(mut commands: Commands, root_q: Query<Entity, With<MenuUI>>) {
     for e in &root_q {
-        commands.entity(e).despawn_recursive();
+        commands.entity(e).despawn();
     }
 }

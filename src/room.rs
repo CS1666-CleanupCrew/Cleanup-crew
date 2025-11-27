@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{SeedableRng};
 use rand::rngs::StdRng;
-use core::num;
+// use core::num;
 use std::collections::HashSet;
 
 use crate::collidable::{Collidable, Collider};
@@ -298,7 +298,7 @@ pub fn generate_enemies_for_all_rooms(
     enemy_hash: &mut EnemyPosition,
     grid: & Vec<String>
 ){  
-    for (i, room) in rooms.0.iter().enumerate()
+    for (_i, room) in rooms.0.iter().enumerate()
     {
         let mut floors: Vec<(usize, usize)> = Vec::new();
 
@@ -408,7 +408,7 @@ pub fn apply_breach_forces_to_entities(
         );
     }
 
-    if let Ok((transform, mut velocity, pulled_by_fluid)) = player.get_single_mut() {
+    if let Ok((transform, mut velocity, pulled_by_fluid)) = player.single_mut() {
         apply_breach_force_to_entity(
             &rooms,
             transform.translation.truncate(),
@@ -490,7 +490,7 @@ pub fn damage_player_from_low_pressure(
     rooms: Res<RoomVec>,
     mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer), With<crate::player::Player>>,
 ) {
-    let Ok((transform, mut health, mut damage_timer)) = player.get_single_mut() else {
+    let Ok((transform, mut health, mut damage_timer)) = player.single_mut() else {
         return;
     };
 
@@ -557,11 +557,11 @@ fn update_air_pressure_ui(
     player: Query<&Transform, With<Player>>,
     mut ui_query: Query<(&mut Text, &mut TextColor), With<AirPressureUI>>,
 ) {
-    let Ok(player_transform) = player.get_single() else {
+    let Ok(player_transform) = player.single() else {
         return;
     };
 
-    let Ok((mut text, mut color)) = ui_query.get_single_mut() else {
+    let Ok((mut text, mut color)) = ui_query.single_mut() else {
         return;
     };
 

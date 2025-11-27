@@ -112,10 +112,10 @@ pub fn init_air_grid(
 
 
 #[derive(Component)]
-struct PressureLabel;
+pub struct PressureLabel;
 
 #[derive(Component, Copy, Clone)]
-struct GridPos {
+pub struct GridPos {
     x: usize,
     y: usize,
 }

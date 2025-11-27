@@ -114,10 +114,8 @@ impl Plugin for EnemyPlugin {
             .add_systems(Update, table_hits_enemy)
             // ranged enemy logic
             .add_systems(Update, (ranged_enemy_ai, animate_ranged_enemy).run_if(in_state(GameState::Playing)));
-
     }
 }
-
 
 fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Load 3 separate frames
@@ -129,14 +127,13 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     ];
     
     let hit_frames: Vec<Handle<Image>> = vec![
-    asset_server.load("chaser/chaser_mob_bite1.png"),
-    asset_server.load("chaser/chaser_mob_bite2.png"),
+        asset_server.load("chaser/chaser_mob_bite1.png"),
+        asset_server.load("chaser/chaser_mob_bite2.png"),
     ];
     commands.insert_resource(EnemyRes{
         frames,
         hit_frames,
     });
-
 }
 
 fn load_ranged_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -194,7 +191,7 @@ fn spawn_enemies_from_points(
     enemy_res: Res<EnemyRes>,
     points: Res<EnemySpawnPoints>,
 ) {
-    for (i, &p) in points.0.iter().enumerate(){
+    for (_i, &p) in points.0.iter().enumerate() {
         spawn_enemy_at(&mut commands, &enemy_res, p, true); // active now
     }
 }
@@ -233,7 +230,6 @@ fn animate_ranged_enemy(
     }
 }
 
-
 pub fn animate_enemy_hit(
     time: Res<Time>,
     mut commands: Commands,
@@ -266,7 +262,7 @@ fn move_enemy(
 ) {
     // check if any breaches have been made\
     // it only starts up if a breach has been made otherwise it acts nromal
-    let grid_has_breach = if let Ok(grid) = grid_query.get_single() {
+    let grid_has_breach = if let Ok(grid) = grid_query.single() {
         !grid.breaches.is_empty()
     } else {
         false
@@ -277,7 +273,7 @@ fn move_enemy(
         let accel = ENEMY_ACCEL * deltat;
 
         // reduces the amount that the enemies chase the player making the physics more apparent
-        for (mut enemy_transform, mut enemy_velocity, pulled_opt) in &mut enemy_query {
+        for (mut enemy_transform, mut enemy_velocity, _pulled_opt) in &mut enemy_query {
             let mut effective_accel = accel;
             
             if grid_has_breach {
@@ -355,7 +351,7 @@ fn collide_enemies_with_enemies(
 
     // get all combinations of 2 enemies
     let mut combinations = enemy_query.iter_combinations_mut();
-    while let Some([(mut e1_transform), (mut e2_transform)]) =
+    while let Some([mut e1_transform, mut e2_transform]) =
         combinations.fetch_next()
     {
         let (p1, h1) = (e1_transform.translation.truncate(), enemy_half);
@@ -383,14 +379,13 @@ fn collide_enemies_with_enemies(
 }
 
 fn table_hits_enemy(
-    time: Res<Time>,
+    _time: Res<Time>,
     mut enemy_query: Query<(&Transform, &mut Health), With<Enemy>>,
     table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
 ) {
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
     for (enemy_tf, mut health) in &mut enemy_query {
-        
         let enemy_pos = enemy_tf.translation.truncate();
 
         for (table_tf, table_col, vel_opt) in &table_query {
@@ -414,13 +409,10 @@ fn table_hits_enemy(
                 if speed > threshold {
                     let dmg = speed * 0.02;
                     health.0 -= dmg;
-
-
                 }
             }
         }
     }
-
 }
 
 fn ranged_enemy_ai(
@@ -429,7 +421,7 @@ fn ranged_enemy_ai(
     mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI), With<RangedEnemy>>,
     mut shoot_writer: EventWriter<RangedEnemyShootEvent>,
 ) {
-    let Ok(player_tf) = player_query.get_single() else {
+    let Ok(player_tf) = player_query.single() else {
         return;
     };
     let player_pos = player_tf.translation.truncate();

@@ -10,8 +10,8 @@ use crate::procgen::generate_tables_from_grid;
 use crate::room::*; // RoomRes, track_rooms
 use crate::table;
 use crate::window;
-use crate::{BG_WORLD, Damage, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR, Z_ENTITIES};
-use crate::procgen::{RoomRes, build_full_level, ProcgenSet};
+use crate::{BG_WORLD, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
+use crate::procgen::{ProcgenSet};
 
 
 #[derive(Resource, Debug, Clone)]
@@ -26,7 +26,6 @@ impl Default for LevelToLoad {
 
 #[derive(Component)]
 struct ParallaxBg {
-    factor: f32, // 0.0 = static, 1.0 = locks to camera (no longer used for parallax)
     tile: f32,   // world-units per background tile
 }
 
@@ -114,7 +113,7 @@ fn playing_state(mut next_state: ResMut<NextState<GameState>>) {
 }
 
 fn load_map(mut commands: Commands, asset_server: Res<AssetServer>,
-    mut level_to_load: ResMut<LevelToLoad>,) {
+    level_to_load: ResMut<LevelToLoad>,) {
     let mut level = LevelRes {
         level: Vec::new(),
     };
@@ -149,8 +148,8 @@ pub fn setup_tilemap(
     space_tex: Res<BackgroundRes>,
     mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     level: Res<LevelRes>,
-    mut enemies: ResMut<EnemyPosition>,
-    rooms: Res<RoomVec>,
+    _enemies: ResMut<EnemyPosition>,
+    _rooms: Res<RoomVec>,
 ) {
     // Map dimensions are taken from the generated level we actually spawn
     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
@@ -176,7 +175,7 @@ pub fn setup_tilemap(
     let nx = (cover_w / BG_WORLD).ceil() as i32;
     let ny = (cover_h / BG_WORLD).ceil() as i32;
 
-    let mut spawns = EnemySpawnPoints::default();
+    let spawns = EnemySpawnPoints::default();
 
     let pad: i32 = 3;
     
@@ -194,7 +193,7 @@ pub fn setup_tilemap(
                 bg,
                 Transform::from_translation(Vec3::new(cx, cy, Z_FLOOR - 50.0)),
                 Visibility::default(),
-                ParallaxBg { factor: 0.9, tile: BG_WORLD },
+                ParallaxBg { tile: BG_WORLD },
                 ParallaxCell { ix, iy },
                 Name::new("SpaceBG"),
             ));
@@ -207,7 +206,7 @@ pub fn setup_tilemap(
     //generate_enemies_from_grid(&level.level, 15, None, &mut enemies, & rooms);
 
     // positions we'll mark as breaches in the fluid grid 
-    let mut breach_positions = Vec::new();
+    let breach_positions = Vec::new();
 
     // Pre-collect positions by tile type for batch spawning
     let mut floor_positions = Vec::new();
@@ -341,7 +340,7 @@ pub fn setup_tilemap(
     commands.spawn_batch(door_batch);
 
     // Push any recorded breach positions into the fluid grid
-    if let Ok(mut grid) = fluid_query.get_single_mut() {
+    if let Ok(mut grid) = fluid_query.single_mut() {
         for &(bx, by) in &breach_positions {
             grid.add_breach(bx, by);
         }
