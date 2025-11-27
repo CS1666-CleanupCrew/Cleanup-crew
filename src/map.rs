@@ -26,7 +26,7 @@ impl Default for LevelToLoad {
 
 #[derive(Component)]
 struct ParallaxBg {
-    factor: f32, // 0.0 = static, 1.0 = locks to camera
+    factor: f32, // 0.0 = static, 1.0 = locks to camera (no longer used for parallax)
     tile: f32,   // world-units per background tile
 }
 
@@ -71,11 +71,17 @@ pub struct MapGridMeta {
     pub rows: usize,
 }
 
+#[derive(Resource, Default)]
+pub struct BgScroll {
+    pub offset: f32,
+}
+
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
         app
             .init_resource::<LevelToLoad>()
+            .init_resource::<BgScroll>()
             // load_map should run after the full level (which itself runs after load_rooms)
             .add_systems(
                 OnEnter(GameState::Loading),
@@ -89,7 +95,7 @@ impl Plugin for MapPlugin {
             .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
             .add_systems(OnEnter(GameState::Loading), playing_state.after(assign_doors))
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, parallax_scroll)
+            .add_systems(Update, scroll_background)
             .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)));
     }
 }
@@ -126,8 +132,8 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>,
     commands.insert_resource(space_tex);
 
     //Change this path for a different map
-    info!("Loading map: {}", level_to_load.0); // *** ADD INFO ***
-    let f = File::open(level_to_load.0.clone()).expect("file don't exist"); // *** MODIFY THIS LINE ***
+    info!("Loading map: {}", level_to_load.0);
+    let f = File::open(level_to_load.0.clone()).expect("file don't exist");
     let reader = BufReader::new(f);
 
     for line_result in reader.lines() {
@@ -345,56 +351,32 @@ pub fn setup_tilemap(
     commands.insert_resource(spawns);
 }
 
-
-// fn open_doors_when_clear(
-//         enemies: Query<Entity, With<Enemy>>,
-//         mut doors: Query<(Entity, &mut Sprite, &mut Door)>,
-//         tiles: Res<TileRes>,
-//         mut commands: Commands,
-//     ) {
-//         // If any enemies exist, do nothing
-//         if !enemies.is_empty() {
-//             return;
-//         }
-
-//         // Open any closed doors if no enemies
-//         for (entity, mut sprite, mut door) in &mut doors {
-//             if !door.is_open {
-//                 sprite.image = tiles.open_door.clone();
-//                 door.is_open = true;
-
-//                 // Remove collision
-//                 commands.entity(entity).remove::<Collidable>();
-//                 commands.entity(entity).remove::<Collider>();
-//             }
-//         }
-//     }
-
-fn parallax_scroll(
-    cam_q: Query<&Transform, (With<MainCamera>, Without<ParallaxBg>)>,
+fn scroll_background(
+    time: Res<Time>,
+    mut scroll: ResMut<BgScroll>,
     mut bg_q: Query<(&ParallaxBg, &ParallaxCell, &mut Transform), With<ParallaxBg>>,
 ) {
-    let Ok(cam_tf) = cam_q.single() else {
-        return;
-    };
-    let cam = cam_tf.translation;
+    // World-units per second to move the background to the left
+    const BG_SCROLL_SPEED: f32 = 50.0;
+
+    // Advance global scroll offset
+    scroll.offset += BG_SCROLL_SPEED * time.delta_secs();
+
+    // Wrap helper into [0, tile)
+    let wrap = |v: f32, t: f32| ((v % t) + t) % t;
 
     for (bg, cell, mut tf) in &mut bg_q {
-        // continuous parallax offset
-        let off_x = -cam.x * (1.0 - bg.factor);
-        let off_y = -cam.y * (1.0 - bg.factor);
+        let tile = bg.tile;
 
-        // wrap offset into [0, tile)
-        let wrap = |v: f32, t: f32| ((v % t) + t) % t;
-        let ox = wrap(off_x, bg.tile);
-        let oy = wrap(off_y, bg.tile);
+        // Move everything left by scroll.offset and wrap so it tiles seamlessly
+        let ox = wrap(-scroll.offset, tile);
 
-        // base so the grid stays centered around origin
-        let base_x = (cell.ix as f32) * bg.tile;
-        let base_y = (cell.iy as f32) * bg.tile;
+        let base_x = (cell.ix as f32) * tile;
+        let base_y = (cell.iy as f32) * tile;
 
         tf.translation.x = base_x + ox;
-        tf.translation.y = base_y + oy;
+        tf.translation.y = base_y;
+        // z is unchanged (set when spawned)
     }
 }
 
