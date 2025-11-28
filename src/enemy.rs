@@ -189,13 +189,60 @@ pub fn spawn_enemy_at(
     if active { e.insert(ActiveEnemy); }
 }
 
+pub fn spawn_ranged_enemy_at(
+    commands: &mut Commands,
+    ranged_res: &RangedEnemyRes,
+    at: Vec3,
+    active: bool,
+) {
+    let mut e = commands.spawn((
+        Sprite::from_image(ranged_res.frames[0].clone()),
+        Transform { translation: at, ..Default::default() },
+
+        // still an Enemy so it uses generic systems (move_enemy, bullet_hits_enemy, etc.)
+        Enemy,
+        RangedEnemy,
+        Velocity::new(),
+        Health::new(40.0),
+
+        // animation for the ranger
+        RangedAnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
+        RangedEnemyFrames {
+            handles: ranged_res.frames.clone(),
+            index: 0,
+        },
+
+        // simple shooting AI
+        RangedEnemyAI {
+            range: 400.0, // how far it can shoot
+            fire_cooldown: Timer::from_seconds(1.5, TimerMode::Repeating),
+            projectile_speed: 600.0, // matches BULLET_SPEED, but can be anything
+        },
+
+        crate::fluiddynamics::PulledByFluid { mass: 10.0 },
+    ));
+
+    if active {
+        e.insert(ActiveEnemy);
+    }
+}
+
+
+
 fn spawn_enemies_from_points(
     mut commands: Commands,
     enemy_res: Res<EnemyRes>,
+    ranged_res: Res<RangedEnemyRes>,
     points: Res<EnemySpawnPoints>,
 ) {
-    for (i, &p) in points.0.iter().enumerate(){
-        spawn_enemy_at(&mut commands, &enemy_res, p, true); // active now
+    for (i, &p) in points.0.iter().enumerate() {
+        if i % 3 == 0 {
+            // every 3rd enemy is a ranger
+            spawn_ranged_enemy_at(&mut commands, &ranged_res, p, true);
+        } else {
+            // others are standard chasers
+            spawn_enemy_at(&mut commands, &enemy_res, p, true);
+        }
     }
 }
 
@@ -461,7 +508,10 @@ fn ranged_enemy_ai(
 
         // shoot if in range + cooldown finished
         if ai.fire_cooldown.finished() && dist <= ai.range {
-            shoot_writer.write(RangedEnemyShootEvent {
+            // For debugging: you can leave this log in for now
+            info!("Ranger at {:?} is shooting!", enemy_tf.translation);
+
+            shoot_writer.send(RangedEnemyShootEvent {
                 origin: enemy_tf.translation,
                 direction: dir,
                 speed: ai.projectile_speed,

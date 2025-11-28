@@ -117,21 +117,20 @@ pub fn shoot_bullet_on_click(
     ));
 }
 
-fn spawn_bullets_from_ranged(
+pub fn spawn_bullets_from_ranged(
     mut commands: Commands,
-    mut shoot_events: EventReader<RangedEnemyShootEvent>,
+    mut events: EventReader<RangedEnemyShootEvent>,
     bullet_animate: Res<BulletRes>,
 ) {
-    for ev in shoot_events.read() {
-        let dir_vec = ev.direction.normalize_or_zero();
-        if dir_vec == Vec2::ZERO {
+    for ev in events.read() {
+        let origin = ev.origin;
+        let dir = ev.direction.normalize_or_zero();
+        if dir == Vec2::ZERO {
             continue;
         }
 
-        // Small offset so the bullet starts in front of the enemy
-        let shoot_offset = 16.0;
-        let origin_2d = ev.origin.truncate();
-        let spawn_pos = origin_2d + dir_vec * shoot_offset;
+        // Small offset so the bullet isn't inside the ranger sprite
+        let spawn_pos = origin.truncate() + dir * 16.0;
 
         commands.spawn((
             Sprite::from_atlas_image(
@@ -146,13 +145,9 @@ fn spawn_bullets_from_ranged(
                 scale: Vec3::splat(0.25),
                 ..Default::default()
             },
-            // Use the speed coming from the enemy AI
-            Velocity(dir_vec * ev.speed),
+            Velocity(dir * ev.speed),            // bullet.rs's Velocity
             Bullet,
             Collider { half_extents: Vec2::splat(5.0) },
-            // give enemy bullets animation, too
-            AnimationTimer(Timer::from_seconds(0.05, TimerMode::Repeating)),
-            AnimationFrameCount(3),
         ));
     }
 }
