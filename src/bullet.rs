@@ -182,7 +182,7 @@ pub fn move_bullets(
 fn bullet_collision(
     mut commands: Commands,
     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<crate::enemy::Enemy>, Without<table::Table>,)>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Window>, Without<crate::enemy::Enemy>, Without<table::Table>,)>,
 ) {
     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
         let bx = bullet_transform.translation.x;
