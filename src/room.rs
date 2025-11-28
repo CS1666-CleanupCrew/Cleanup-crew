@@ -10,7 +10,7 @@ use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::Door;
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
-use crate::enemy::{EnemyRes, spawn_enemy_at};
+use crate::enemy::{EnemyRes, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
 
 #[derive(Resource)]
 pub struct EnemyPosition(pub HashSet<(usize, usize)>);
@@ -156,6 +156,7 @@ pub fn entered_room(
     mut commands: Commands,
     tiles: Res<TileRes>,
     enemy_res: Res<EnemyRes>,
+    ranged_res: Res<RangedEnemyRes>,
     play_query: Single<&NumOfCleared, With<Player>>,
 ){
     match *lvlstate
@@ -170,7 +171,8 @@ pub fn entered_room(
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
 
             }
-            generate_enemies_in_room(1, None, &mut rooms, index, commands, & enemy_res, & play_query);
+            generate_enemies_in_room(1, None, &mut rooms, index, commands, & enemy_res, & ranged_res, & play_query);
+            //println!("Generated Enemies. Moving to InRoom State");
             *lvlstate = LevelState::InRoom(index);
         }
         _ => {
@@ -229,9 +231,11 @@ pub fn generate_enemies_in_room(
     rooms: &mut RoomVec,
     index: usize,
     mut commands: Commands,
-    enemy_res: & EnemyRes,
+    enemy_res: &EnemyRes,
+    ranged_res: &RangedEnemyRes,
     play_query: &NumOfCleared,
-){  
+) {
+    //println!("Room is {}", index);
     let rooms_cleared = play_query.0;
 
     let mut floors: Vec<(f32, f32)> = Vec::new();
@@ -278,7 +282,10 @@ pub fn generate_enemies_in_room(
         }
     }
 
-    if let Some(s) = seed {
+    // println!("All tiles located");
+    // println!("# of Floors: {}", floors.len());
+    if let Some(s) = seed 
+    {
         let mut seeded = StdRng::seed_from_u64(s);
         floors.shuffle(&mut seeded);
     } else {
@@ -286,8 +293,15 @@ pub fn generate_enemies_in_room(
         floors.shuffle(&mut trng);
     }
 
-    for pos in floors.iter().take(scaled_num_enemies) {
-        spawn_enemy_at(&mut commands, enemy_res, Vec3::new(pos.0, pos.1, Z_ENTITIES), false);
+    for (idx, (x, y)) in floors.into_iter().take(scaled_num_enemies).enumerate() {
+        let pos = Vec3::new(x as f32, y as f32, Z_ENTITIES);
+
+        if idx % 4 == 0 {
+            // 1 in 4 are rangers
+            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true);
+        } else {
+            spawn_enemy_at(&mut commands, enemy_res, pos, true);
+        }
     }
 }
 
