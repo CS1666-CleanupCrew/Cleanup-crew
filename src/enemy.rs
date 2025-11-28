@@ -1,15 +1,17 @@
-use bevy::prelude::*;
-use crate::player::Player;
 use crate::collidable::{Collidable, Collider};
+use crate::player::Player;
+use bevy::prelude::*;
 
 pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
 pub const ENEMY_ACCEL: f32 = 1800.;
 
-use crate::map::EnemySpawnPoints;
 use crate::GameState;
+use crate::map::EnemySpawnPoints;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
+use std::time::Duration;
+
 
 const ANIM_TIME: f32 = 0.2;
 
@@ -76,8 +78,10 @@ pub struct RangedEnemyAI {
 
 #[derive(Component)]
 pub struct RangedEnemyFrames {
-    pub handles: Vec<Handle<Image>>,
+    pub right: Vec<Handle<Image>>,
+    pub left: Vec<Handle<Image>>,
     pub index: usize,
+    pub facing_left: bool,
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -86,7 +90,8 @@ pub struct RangedAnimationTimer(pub Timer);
 // Animation frames for the ranged enemy
 #[derive(Resource)]
 pub struct RangedEnemyRes {
-    pub frames: Vec<Handle<Image>>,
+    pub right_frames: Vec<Handle<Image>>,
+    pub left_frames: Vec<Handle<Image>>,
 }
 
 // Event when a ranged enemy wants to shoot.
@@ -100,24 +105,32 @@ pub struct RangedEnemyShootEvent {
 pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app
-            .add_systems(Startup, load_enemy)
-            // new ranged enemy loading
+        app.add_systems(Startup, load_enemy)
             .add_systems(Startup, load_ranged_enemy)
-            // event the bullet system can listen to later
             .add_event::<RangedEnemyShootEvent>()
             .add_systems(OnEnter(GameState::Playing), spawn_enemies_from_points)
             .add_systems(Update, animate_enemy.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, (move_enemy, collide_enemies_with_enemies.after(move_enemy)).run_if(in_state(GameState::Playing)))
-            .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
+            .add_systems(
+                Update,
+                (
+                    ranged_enemy_ai,
+                    move_enemy.after(ranged_enemy_ai),
+                    collide_enemies_with_enemies.after(move_enemy),
+                )
+                    .run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                check_enemy_health.run_if(in_state(GameState::Playing)),
+            )
             .add_systems(Update, animate_enemy_hit)
             .add_systems(Update, table_hits_enemy)
-            // ranged enemy logic
-            .add_systems(Update, (ranged_enemy_ai, animate_ranged_enemy).run_if(in_state(GameState::Playing)));
-
+            .add_systems(
+                Update,
+                animate_ranged_enemy.run_if(in_state(GameState::Playing)),
+            );
     }
 }
-
 
 fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Load 3 separate frames
@@ -127,39 +140,45 @@ fn load_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
         asset_server.load("chaser/chaser_mob_animation3.png"),
         asset_server.load("chaser/chaser_mob_animation2.png"),
     ];
-    
-    let hit_frames: Vec<Handle<Image>> = vec![
-    asset_server.load("chaser/chaser_mob_bite1.png"),
-    asset_server.load("chaser/chaser_mob_bite2.png"),
-    ];
-    commands.insert_resource(EnemyRes{
-        frames,
-        hit_frames,
-    });
 
+    let hit_frames: Vec<Handle<Image>> = vec![
+        asset_server.load("chaser/chaser_mob_bite1.png"),
+        asset_server.load("chaser/chaser_mob_bite2.png"),
+    ];
+    commands.insert_resource(EnemyRes { frames, hit_frames });
 }
 
 fn load_ranged_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let frames: Vec<Handle<Image>> = vec![
+    let right_frames: Vec<Handle<Image>> = vec![
         asset_server.load("ranger/ranger_mob_animation_1.png"),
-        asset_server.load("ranger/ranger_mob_animation_1.5.png"),
+        asset_server.load("ranger/ranger_mob_animation_1,5.png"),
         asset_server.load("ranger/ranger_mob_animation_2.png"),
         asset_server.load("ranger/ranger_mob_animation_3.png"),
     ];
 
-    commands.insert_resource(RangedEnemyRes { frames });
+    let left_frames: Vec<Handle<Image>> = vec![
+        asset_server.load("ranger/ranger_mob_animation_1_left.png"),
+        asset_server.load("ranger/ranger_mob_animation_1,5_left.png"),
+        asset_server.load("ranger/ranger_mob_animation_2_left.png"),
+        asset_server.load("ranger/ranger_mob_animation_3_left.png"),
+    ];
+
+    commands.insert_resource(RangedEnemyRes {
+        right_frames,
+        left_frames,
+    });
 }
 
 //if enemy's hp = 0, then despawn
 fn check_enemy_health(
     mut commands: Commands,
     enemy_query: Query<(Entity, &Health), With<Enemy>>,
-    mut rooms:  ResMut<RoomVec>,
+    mut rooms: ResMut<RoomVec>,
     lvlstate: Res<LevelState>,
 ) {
     for (entity, health) in enemy_query.iter() {
         if health.0 <= 0.0 {
-            if let LevelState::InRoom(index) = *lvlstate{
+            if let LevelState::InRoom(index) = *lvlstate {
                 rooms.0[index].numofenemies -= 1;
             }
             commands.entity(entity).despawn();
@@ -167,15 +186,13 @@ fn check_enemy_health(
     }
 }
 
-pub fn spawn_enemy_at(
-    commands: &mut Commands,
-    enemy_res: &EnemyRes,
-    at: Vec3,
-    active: bool,
-) {
+pub fn spawn_enemy_at(commands: &mut Commands, enemy_res: &EnemyRes, at: Vec3, active: bool) {
     let mut e = commands.spawn((
         Sprite::from_image(enemy_res.frames[0].clone()),
-        Transform { translation: at, ..Default::default() },
+        Transform {
+            translation: at,
+            ..Default::default()
+        },
         Enemy,
         Velocity::new(),
         Health::new(50.0),
@@ -186,7 +203,9 @@ pub fn spawn_enemy_at(
         },
         crate::fluiddynamics::PulledByFluid { mass: 10.0 },
     ));
-    if active { e.insert(ActiveEnemy); }
+    if active {
+        e.insert(ActiveEnemy);
+    }
 }
 
 pub fn spawn_ranged_enemy_at(
@@ -196,29 +215,28 @@ pub fn spawn_ranged_enemy_at(
     active: bool,
 ) {
     let mut e = commands.spawn((
-        Sprite::from_image(ranged_res.frames[0].clone()),
-        Transform { translation: at, ..Default::default() },
-
-        // still an Enemy so it uses generic systems (move_enemy, bullet_hits_enemy, etc.)
+        // start with facing right frame 0
+        Sprite::from_image(ranged_res.right_frames[0].clone()),
+        Transform {
+            translation: at,
+            ..Default::default()
+        },
         Enemy,
         RangedEnemy,
         Velocity::new(),
         Health::new(40.0),
-
-        // animation for the ranger
         RangedAnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         RangedEnemyFrames {
-            handles: ranged_res.frames.clone(),
+            right: ranged_res.right_frames.clone(),
+            left: ranged_res.left_frames.clone(),
             index: 0,
+            facing_left: false,
         },
-
-        // simple shooting AI
         RangedEnemyAI {
-            range: 400.0, // how far it can shoot
+            range: 400.0,
             fire_cooldown: Timer::from_seconds(1.5, TimerMode::Repeating),
-            projectile_speed: 600.0, // matches BULLET_SPEED, but can be anything
+            projectile_speed: 600.0,
         },
-
         crate::fluiddynamics::PulledByFluid { mass: 10.0 },
     ));
 
@@ -226,8 +244,6 @@ pub fn spawn_ranged_enemy_at(
         e.insert(ActiveEnemy);
     }
 }
-
-
 
 fn spawn_enemies_from_points(
     mut commands: Commands,
@@ -248,7 +264,15 @@ fn spawn_enemies_from_points(
 
 fn animate_enemy(
     time: Res<Time>,
-    mut query: Query<(&mut Sprite, &mut AnimationTimer, &mut EnemyFrames, &Velocity), (With<Enemy>, With<ActiveEnemy>)>,
+    mut query: Query<
+        (
+            &mut Sprite,
+            &mut AnimationTimer,
+            &mut EnemyFrames,
+            &Velocity,
+        ),
+        (With<Enemy>, With<ActiveEnemy>),
+    >,
 ) {
     for (mut sprite, mut timer, mut frames, velocity) in &mut query {
         timer.tick(time.delta());
@@ -269,17 +293,44 @@ fn animate_enemy(
 
 fn animate_ranged_enemy(
     time: Res<Time>,
-    mut query: Query<(&mut Sprite, &mut RangedAnimationTimer, &mut RangedEnemyFrames), With<RangedEnemy>>,
+    mut query: Query<
+        (
+            &mut Sprite,
+            &mut RangedAnimationTimer,
+            &mut RangedEnemyFrames,
+        ),
+        With<RangedEnemy>,
+    >,
 ) {
     for (mut sprite, mut timer, mut frames) in &mut query {
         timer.tick(time.delta());
-        if timer.just_finished() && !frames.handles.is_empty() {
-            frames.index = (frames.index + 1) % frames.handles.len();
-            sprite.image = frames.handles[frames.index].clone();
+
+        // Prepare the next frame image while only holding an immutable borrow of `frames`.
+        // This keeps the immutable borrow from overlapping with the later mutable borrow.
+        let mut new_image: Option<Handle<Image>> = None;
+        let new_index = {
+            let frame_list = if frames.facing_left {
+                &frames.left
+            } else {
+                &frames.right
+            };
+
+            if timer.just_finished() && !frame_list.is_empty() {
+                let idx = (frames.index + 1) % frame_list.len();
+                new_image = Some(frame_list[idx].clone());
+                idx
+            } else {
+                frames.index
+            }
+        };
+
+        // Immutable borrow ended; now it's safe to mutate `frames`.
+        if let Some(img) = new_image {
+            frames.index = new_index;
+            sprite.image = img;
         }
     }
 }
-
 
 pub fn animate_enemy_hit(
     time: Res<Time>,
@@ -300,19 +351,25 @@ pub fn animate_enemy_hit(
             commands.entity(entity).remove::<HitAnimation>();
             sprite.image = enemy_res.frames[0].clone();
         }
-    }    
+    }
 }
 
 // moves the enemy towards the player
 fn move_enemy(
     time: Res<Time>,
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut enemy_query: Query<(&mut Transform, &mut Velocity, Option<&crate::fluiddynamics::PulledByFluid>), (With<Enemy>, With<ActiveEnemy>)>,
+    mut enemy_query: Query<
+        (
+            &mut Transform,
+            &mut Velocity,
+            Option<&crate::fluiddynamics::PulledByFluid>,
+            Option<&RangedEnemy>,
+        ),
+        (With<Enemy>, With<ActiveEnemy>),
+    >,
     wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>, Without<Player>)>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
 ) {
-    // check if any breaches have been made\
-    // it only starts up if a breach has been made otherwise it acts nromal
     let grid_has_breach = if let Ok(grid) = grid_query.get_single() {
         !grid.breaches.is_empty()
     } else {
@@ -323,42 +380,51 @@ fn move_enemy(
         let deltat = time.delta_secs();
         let accel = ENEMY_ACCEL * deltat;
 
-        // reduces the amount that the enemies chase the player making the physics more apparent
-        for (mut enemy_transform, mut enemy_velocity, pulled_opt) in &mut enemy_query {
+        for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt) in &mut enemy_query {
             let mut effective_accel = accel;
-            
+
             if grid_has_breach {
-                // make this value smaller for a stronger pull
-                // you can also change the pull value in fluiddynamics or the mass up above
                 effective_accel *= 0.15;
             }
 
-            let dir_to_player = (player_transform.translation - enemy_transform.translation)
-                                .truncate()
-                                .normalize_or_zero();
+            // Steering:
+            // Chasers: compute velocity toward player.
+            // Rangers: skip steering, their velocity comes from ranged_enemy_ai.
+            if ranged_opt.is_none() {
+                let dir_to_player = (player_transform.translation - enemy_transform.translation)
+                    .truncate()
+                    .normalize_or_zero();
 
-            if dir_to_player.length() > 0.0 {
-                **enemy_velocity = (**enemy_velocity + dir_to_player * effective_accel)
-                    .clamp_length_max(ENEMY_SPEED);
-            } else if enemy_velocity.length() > effective_accel {
-                let vel = **enemy_velocity;
-                **enemy_velocity += vel.normalize_or_zero() * -effective_accel;
-            } else {
-                **enemy_velocity = Vec2::ZERO;
+                if dir_to_player.length() > 0.0 {
+                    **enemy_velocity = (**enemy_velocity + dir_to_player * effective_accel)
+                        .clamp_length_max(ENEMY_SPEED);
+                } else if enemy_velocity.length() > effective_accel {
+                    let vel = **enemy_velocity;
+                    **enemy_velocity += vel.normalize_or_zero() * -effective_accel;
+                } else {
+                    **enemy_velocity = Vec2::ZERO;
+                }
             }
 
             let change = **enemy_velocity * deltat;
             let mut pos = enemy_transform.translation;
             let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
-            // ---- X axis ----
+            // X axis
             if change.x != 0.0 {
                 let mut nx = pos.x + change.x;
                 let px = nx;
                 let py = pos.y;
                 for (wall_tf, wall_collider) in &wall_query {
                     let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
-                    if crate::player::aabb_overlap(px, py, enemy_half, wx, wy, wall_collider.half_extents) {
+                    if crate::player::aabb_overlap(
+                        px,
+                        py,
+                        enemy_half,
+                        wx,
+                        wy,
+                        wall_collider.half_extents,
+                    ) {
                         if change.x > 0.0 {
                             nx = wx - (enemy_half.x + wall_collider.half_extents.x);
                         } else {
@@ -370,14 +436,21 @@ fn move_enemy(
                 pos.x = nx;
             }
 
-            // ---- Y axis ----
+            // Y axis
             if change.y != 0.0 {
                 let mut ny = pos.y + change.y;
                 let px = pos.x;
                 let py = ny;
                 for (wall_tf, wall_collider) in &wall_query {
                     let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
-                    if crate::player::aabb_overlap(px, py, enemy_half, wx, wy, wall_collider.half_extents) {
+                    if crate::player::aabb_overlap(
+                        px,
+                        py,
+                        enemy_half,
+                        wx,
+                        wy,
+                        wall_collider.half_extents,
+                    ) {
                         if change.y > 0.0 {
                             ny = wy - (enemy_half.y + wall_collider.half_extents.y);
                         } else {
@@ -402,26 +475,23 @@ fn collide_enemies_with_enemies(
 
     // get all combinations of 2 enemies
     let mut combinations = enemy_query.iter_combinations_mut();
-    while let Some([(mut e1_transform), (mut e2_transform)]) =
-        combinations.fetch_next()
-    {
+    while let Some([(mut e1_transform), (mut e2_transform)]) = combinations.fetch_next() {
         let (p1, h1) = (e1_transform.translation.truncate(), enemy_half);
         let (p2, h2) = (e2_transform.translation.truncate(), enemy_half);
 
         // check if they overlap
         if crate::player::aabb_overlap(p1.x, p1.y, h1, p2.x, p2.y, h2) {
-
             let overlap_x = (h1.x + h2.x) - (p1.x - p2.x).abs();
             let overlap_y = (h1.y + h2.y) - (p1.y - p2.y).abs();
 
             if overlap_x < overlap_y {
                 let sign = if p1.x > p2.x { 1.0 } else { -1.0 };
-                let push = sign * overlap_x * 0.5; 
+                let push = sign * overlap_x * 0.5;
                 e1_transform.translation.x += push;
                 e2_transform.translation.x -= push;
             } else {
                 let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
-                let push = sign * overlap_y * 0.5; 
+                let push = sign * overlap_y * 0.5;
                 e1_transform.translation.y += push;
                 e2_transform.translation.y -= push;
             }
@@ -432,12 +502,14 @@ fn collide_enemies_with_enemies(
 fn table_hits_enemy(
     time: Res<Time>,
     mut enemy_query: Query<(&Transform, &mut Health), With<Enemy>>,
-    table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
+    table_query: Query<
+        (&Transform, &Collider, Option<&crate::enemy::Velocity>),
+        With<table::Table>,
+    >,
 ) {
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
     for (enemy_tf, mut health) in &mut enemy_query {
-        
         let enemy_pos = enemy_tf.translation.truncate();
 
         for (table_tf, table_col, vel_opt) in &table_query {
@@ -461,13 +533,10 @@ fn table_hits_enemy(
                 if speed > threshold {
                     let dmg = speed * 0.02;
                     health.0 -= dmg;
-
-
                 }
             }
         }
     }
-
 }
 
 fn ranged_enemy_ai(
@@ -475,20 +544,31 @@ fn ranged_enemy_ai(
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
     mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI), With<RangedEnemy>>,
     mut shoot_writer: EventWriter<RangedEnemyShootEvent>,
+    lvlstate: Res<LevelState>,
 ) {
-    let Ok(player_tf) = player_query.get_single() else {
+    let Ok(player_tf) = player_query.single() else {
         return;
     };
     let player_pos = player_tf.translation.truncate();
-    let dt = time.delta_secs();
+
+    // Difficulty scaling per room as f32
+    let difficulty_mult: f32 = match *lvlstate {
+        LevelState::InRoom(idx) => 1.0 + (idx as f32 * 0.10),
+        LevelState::EnteredRoom(idx) => 1.0 + (idx as f32 * 0.10),
+        LevelState::NotRoom => 1.0,
+    };
 
     for (enemy_tf, mut vel, mut ai) in &mut enemies {
-        ai.fire_cooldown.tick(time.delta());
+        // scale cooldown tick by difficulty multiplier (faster in deeper rooms)
+        let scaled_dt = time.delta_secs() * difficulty_mult;
+        ai.fire_cooldown.tick(Duration::from_secs_f32(scaled_dt));
 
         let enemy_pos = enemy_tf.translation.truncate();
         let diff = player_pos - enemy_pos;
         let dist = diff.length();
-        if dist == 0.0 { continue; }
+        if dist == 0.0 {
+            continue;
+        }
 
         let dir = diff / dist;
 
@@ -503,15 +583,12 @@ fn ranged_enemy_ai(
             Vec2::ZERO
         };
 
-        let accel = ENEMY_ACCEL * dt;
+        let accel = ENEMY_ACCEL * time.delta_secs();
         vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(ENEMY_SPEED);
 
         // shoot if in range + cooldown finished
         if ai.fire_cooldown.finished() && dist <= ai.range {
-            // For debugging: you can leave this log in for now
-            info!("Ranger at {:?} is shooting!", enemy_tf.translation);
-
-            shoot_writer.send(RangedEnemyShootEvent {
+            shoot_writer.write(RangedEnemyShootEvent {
                 origin: enemy_tf.translation,
                 direction: dir,
                 speed: ai.projectile_speed,

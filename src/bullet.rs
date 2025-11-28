@@ -18,6 +18,12 @@ pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
 pub struct Bullet;
 pub struct BulletPlugin;
 
+#[derive(Component)]
+pub enum BulletOwner {
+    Player,
+    Enemy,
+}
+
 #[derive(Component, Deref, DerefMut)]
 pub struct AnimationTimer(Timer);
 
@@ -28,13 +34,14 @@ impl Plugin for BulletPlugin {
     fn build(&self, app:&mut App) {
         app.add_systems(Startup, load_bullet)
             .add_systems(Update, shoot_bullet_on_click)
-            .add_systems(Update,spawn_bullets_from_ranged.run_if(in_state(GameState::Playing)),)
             .add_systems(Update, move_bullets.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, animate_bullet.after(move_bullets).run_if(in_state(GameState::Playing)),)
+            .add_systems(Update, animate_bullet.after(move_bullets).run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, bullet_hits_player.run_if(in_state(GameState::Playing)))   // <── new
             .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)));
+            .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, spawn_bullets_from_ranged.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -113,6 +120,7 @@ pub fn shoot_bullet_on_click(
         },
         Velocity(dir_vec * BULLET_SPEED),
         Bullet,
+        BulletOwner::Player,
         Collider { half_extents: Vec2::splat(5.0) },
     ));
 }
@@ -147,6 +155,7 @@ pub fn spawn_bullets_from_ranged(
             },
             Velocity(dir * ev.speed),            // bullet.rs's Velocity
             Bullet,
+            BulletOwner::Enemy,
             Collider { half_extents: Vec2::splat(5.0) },
         ));
     }
@@ -222,12 +231,17 @@ fn animate_bullet(
 
 fn bullet_hits_enemy(
     mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
-    bullet_query: Query<(&Transform, Entity), With<Bullet>>,
+    bullet_query: Query<(&Transform, Entity, &BulletOwner), With<Bullet>>,
     mut commands: Commands,
 ) {
     let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
     let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
-    for (bullet_tf, bullet_entity) in &bullet_query {
+
+    for (bullet_tf, bullet_entity, owner) in &bullet_query {
+        if !matches!(owner, BulletOwner::Player) {
+            continue;
+        }
+
         let bullet_pos = bullet_tf.translation;
         for (enemy_tf, mut health) in &mut enemy_query {
             let enemy_pos = enemy_tf.translation;
@@ -237,10 +251,39 @@ fn bullet_hits_enemy(
             ) {
                 health.0 -= 25.0;
                 commands.entity(bullet_entity).despawn();
+                break;
             }
         }
     }
 }
+
+fn bullet_hits_player(
+    mut player_q: Query<(&Transform, &mut crate::player::Health), With<crate::player::Player>>,
+    bullet_q: Query<(Entity, &Transform, &BulletOwner), With<Bullet>>,
+    mut commands: Commands,
+) {
+    let bullet_half = Vec2::splat(8.0);         // same as other collisions
+    let player_half = Vec2::splat(TILE_SIZE);   // tweak if your player collider is different
+
+    let Ok((player_tf, mut health)) = player_q.get_single_mut() else {
+        return;
+    };
+    let p = player_tf.translation;
+
+    for (entity, b_tf, owner) in &bullet_q {
+        // Only bullets fired by **enemies** hurt the player
+        if !matches!(owner, BulletOwner::Enemy) {
+            continue;
+        }
+
+        let b = b_tf.translation;
+        if aabb_overlap(b.x, b.y, bullet_half, p.x, p.y, player_half) {
+            health.0 -= 10.0;   // damage amount – tune as you like
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
 
 fn bullet_hits_table(
     mut commands: Commands,
