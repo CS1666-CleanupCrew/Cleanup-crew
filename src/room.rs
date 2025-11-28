@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{SeedableRng};
 use rand::rngs::StdRng;
-use core::num;
+// use core::num;
 use std::collections::HashSet;
 
 use crate::collidable::{Collidable, Collider};
@@ -34,6 +34,8 @@ pub struct Room{
     pub tile_top_left_corner: Vec2,
     pub tile_bot_right_corner: Vec2,
     layout: Vec<String>,
+    pub air_pressure: f32,
+    pub breaches: Vec<Vec2>,
 }
 
 impl Room{
@@ -47,6 +49,8 @@ impl Room{
             tile_top_left_corner: tile_tlc.clone(),
             tile_bot_right_corner: tile_brc.clone(),
             layout: room_layout.clone(),
+            air_pressure: 100.0,
+            breaches: Vec::new(),
         }
     }
 
@@ -61,13 +65,22 @@ impl Room{
 
 pub struct RoomPlugin;
 
+#[derive(Component)]
+pub struct AirPressureUI;
+
 impl Plugin for RoomPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(GameState::Loading), setup)
+            .add_systems(OnEnter(GameState::Playing), setup_air_pressure_ui)
             .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)))
             .add_systems(Update, entered_room.run_if(in_state(GameState::Playing)))
             .add_systems(Update, playing_room.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, track_window_breaches.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, update_room_air_pressure.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, apply_breach_forces_to_entities.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, damage_player_from_low_pressure.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, update_air_pressure_ui.run_if(in_state(GameState::Playing)))
             ;
     }
 }
@@ -79,9 +92,6 @@ fn setup(
     commands.insert_resource(EnemyPosition(HashSet::new()));
 }
 
-//ne = number of enemies
-//tlc = top left corner
-//brc = bottom right corner
 pub fn create_room(
     tlc: Vec2,
     brc: Vec2,
@@ -160,10 +170,6 @@ pub fn entered_room(
 
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
 
-                // let image = tiles.closed_door.clone();
-                // commands.entity(*door).entry::<Sprite>().and_modify(|mut sprite|{
-                //     sprite.image = image;
-                // });
             }
             generate_enemies_in_room(1, None, &mut rooms, index, commands, & enemy_res, & ranged_res, & play_query);
             //println!("Generated Enemies. Moving to InRoom State");
@@ -188,11 +194,9 @@ pub fn playing_room(
     {
         LevelState::InRoom(index) =>
         {
-            //println!("Num of Enemies: {}", rooms.0[index].numofenemies);
             if rooms.0[index].numofenemies == 0{
                 println!("All enemies defeated");
 
-                // Calculate room center and spawn heart
                 let center_x = (rooms.0[index].top_left_corner.x + rooms.0[index].bot_right_corner.x) / 2.0;
                 let center_y = (rooms.0[index].top_left_corner.y + rooms.0[index].bot_right_corner.y) / 2.0;
                 let room_center = Vec2::new(center_x, center_y);
@@ -207,7 +211,7 @@ pub fn playing_room(
                 }
                 rooms.0[index].cleared = true;
 
-                rooms.0.remove(index); //Not sure if we'll need a room after its cleared
+                rooms.0.remove(index);
 
                 player.0 += 1;
                 *lvlstate = LevelState::NotRoom;
@@ -243,18 +247,37 @@ pub fn generate_enemies_in_room(
     room.numofenemies = scaled_num_enemies;
 
     let top =  (room.tile_bot_right_corner.y - room.tile_top_left_corner.y) as usize - 2;
+    let bot = 1;
 
-    for (y, row) in room.layout[2..top].iter().enumerate()
+    let left = 1;
+    let right = (room.tile_bot_right_corner.x - room.tile_top_left_corner.x) as usize - 2;
+    
+    for y in bot..top
     {
-        let pos_y = room.top_left_corner.y - ((y+2) as f32 * 32.0);
-        for (x, ch) in row.chars().enumerate()
+        let row_index = room.tile_top_left_corner.y as usize + y;
+        
+        if row_index >= room.layout.len() {
+            continue;
+        }
+        
+        let row = &room.layout[row_index];
+
+        for x in left..right
         {
-            if x != 1 && x < row.len()-2{
-                let pos_x = room.top_left_corner.x + (x as f32 * 32.0);
-                if ch == '#' 
-                {
-                        floors.push((pos_x, pos_y));
-                }
+
+            let col_index = x + room.tile_top_left_corner.x as usize;
+            
+            if col_index >= row.len() {
+                continue;
+            }
+            
+            let ch = row.chars().nth(col_index).unwrap_or('.');
+            
+            if ch == '#' {
+                let world_x = room.top_left_corner.x + (x as f32 * TILE_SIZE);
+                let world_y = room.bot_right_corner.y + ((top - y) as f32 * TILE_SIZE);
+
+                floors.push((world_x, world_y));
             }
         }
     }
@@ -265,9 +288,7 @@ pub fn generate_enemies_in_room(
     {
         let mut seeded = StdRng::seed_from_u64(s);
         floors.shuffle(&mut seeded);
-    } 
-    else 
-    {
+    } else {
         let mut trng = rand::rng();
         floors.shuffle(&mut trng);
     }
@@ -284,14 +305,14 @@ pub fn generate_enemies_in_room(
     }
 }
 
-pub fn generate_enemies_from_grid(
-    grid: &[String],
+pub fn generate_enemies_for_all_rooms(
     num_of_enemies: usize,
     seed: Option<u64>,
-    enemy_hash: &mut EnemyPosition,
     rooms: & RoomVec,
+    enemy_hash: &mut EnemyPosition,
+    grid: & Vec<String>
 ){  
-    for (i, room) in rooms.0.iter().enumerate()
+    for (_i, room) in rooms.0.iter().enumerate()
     {
         let mut floors: Vec<(usize, usize)> = Vec::new();
 
@@ -314,7 +335,6 @@ pub fn generate_enemies_from_grid(
             }
         }
 
-        // Shuffle and pick up to max_tables positions
         if let Some(s) = seed 
         {
             let mut seeded = StdRng::seed_from_u64(s);
@@ -328,4 +348,254 @@ pub fn generate_enemies_from_grid(
 
         enemy_hash.0.extend(floors.into_iter().take(num_of_enemies));
     }
+}
+
+pub fn update_room_air_pressure(
+    time: Res<Time>,
+    mut rooms: ResMut<RoomVec>,
+) {
+    for (idx, room) in rooms.0.iter_mut().enumerate() {
+        if room.breaches.is_empty() {
+            continue;
+        }
+
+        let base_escape_rate = 2.5;
+        let total_escape_rate = base_escape_rate * room.breaches.len() as f32;
+        
+        let old_pressure = room.air_pressure;
+        
+        room.air_pressure -= total_escape_rate * time.delta_secs();
+        room.air_pressure = room.air_pressure.max(0.0);
+        
+        if (old_pressure / 10.0).floor() != (room.air_pressure / 10.0).floor() {
+            info!("Room {} pressure: {:.1}% (escaping at {:.1}%/sec)", 
+                  idx, room.air_pressure, total_escape_rate);
+        }
+    }
+}
+
+pub fn track_window_breaches(
+    mut rooms: ResMut<RoomVec>,
+    windows: Query<(&Transform, &crate::window::GlassState), With<crate::window::Window>>,
+) {
+    for (window_transform, glass_state) in windows.iter() {
+        if *glass_state == crate::window::GlassState::Broken {
+            let breach_pos = window_transform.translation.truncate();
+            
+            for (idx, room) in rooms.0.iter_mut().enumerate() {
+                let expanded_tlc = Vec2::new(room.top_left_corner.x - 64.0, room.top_left_corner.y + 64.0);
+                let expanded_brc = Vec2::new(room.bot_right_corner.x + 64.0, room.bot_right_corner.y - 64.0);
+                
+                let in_expanded_bounds = expanded_tlc.x <= breach_pos.x 
+                    && expanded_tlc.y >= breach_pos.y 
+                    && expanded_brc.x >= breach_pos.x 
+                    && expanded_brc.y <= breach_pos.y;
+                
+                if in_expanded_bounds {
+                    if !room.breaches.iter().any(|&b| b.distance(breach_pos) < 1.0) {
+                        room.breaches.push(breach_pos);
+                        info!("Breach added to room {} at {:?}! Room now has {} breaches. Air pressure: {:.1}", 
+                              idx, breach_pos, room.breaches.len(), room.air_pressure);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+pub fn apply_breach_forces_to_entities(
+    time: Res<Time>,
+    rooms: Res<RoomVec>,
+    mut tables: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
+    mut player: Query<(&Transform, &mut crate::player::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::player::Player>, Without<crate::table::Table>)>,
+    mut enemies: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::enemy::Enemy>, Without<crate::player::Player>, Without<crate::table::Table>)>,
+) {
+    for (transform, mut velocity, pulled_by_fluid) in tables.iter_mut() {
+        apply_breach_force_to_entity(
+            &rooms,
+            transform.translation.truncate(),
+            &mut velocity.velocity,
+            pulled_by_fluid.mass,
+            time.delta_secs(),
+            3.0,
+        );
+    }
+
+    if let Ok((transform, mut velocity, pulled_by_fluid)) = player.single_mut() {
+        apply_breach_force_to_entity(
+            &rooms,
+            transform.translation.truncate(),
+            &mut **velocity,
+            pulled_by_fluid.mass,
+            time.delta_secs(),
+            1.0,
+        );
+    }
+
+    for (transform, mut velocity, pulled_by_fluid) in enemies.iter_mut() {
+        apply_breach_force_to_entity(
+            &rooms,
+            transform.translation.truncate(),
+            &mut velocity.velocity,
+            pulled_by_fluid.mass,
+            time.delta_secs(),
+            1.0,
+        );
+    }
+}
+
+fn apply_breach_force_to_entity(
+    rooms: &RoomVec,
+    entity_pos: Vec2,
+    velocity: &mut Vec2,
+    mass: f32,
+    delta_time: f32,
+    force_multiplier: f32,
+) {
+    let mut current_room: Option<&Room> = None;
+    for room in rooms.0.iter() {
+        if room.bounds_check(entity_pos) {
+            current_room = Some(room);
+            break;
+        }
+    }
+
+    let Some(room) = current_room else {
+        return;
+    };
+
+    if room.breaches.is_empty() || room.air_pressure >= 100.0 {
+        return;
+    }
+
+    let pressure_ratio = room.air_pressure / 100.0;
+    let pressure_force_factor = (1.0 - pressure_ratio).powf(2.0);
+    
+    let mut nearest_breach = room.breaches[0];
+    let mut min_distance = entity_pos.distance(nearest_breach);
+    
+    for &breach in room.breaches.iter() {
+        let distance = entity_pos.distance(breach);
+        if distance < min_distance {
+            min_distance = distance;
+            nearest_breach = breach;
+        }
+    }
+
+    let to_breach = nearest_breach - entity_pos;
+    let distance = to_breach.length();
+    
+    if distance < 1.0 {
+        return;
+    }
+    
+    let direction = to_breach.normalize();
+    let distance_factor = (1.0 / (distance / 100.0 + 1.0)).min(1.0);
+    let base_force = 50000.0;
+    let total_force = base_force * pressure_force_factor * distance_factor * force_multiplier;
+    let acceleration = direction * (total_force / mass);
+    
+    *velocity += acceleration * delta_time;
+}
+
+pub fn damage_player_from_low_pressure(
+    time: Res<Time>,
+    rooms: Res<RoomVec>,
+    mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer), With<crate::player::Player>>,
+) {
+    let Ok((transform, mut health, mut damage_timer)) = player.single_mut() else {
+        return;
+    };
+
+    let player_pos = transform.translation.truncate();
+    let mut current_room: Option<&Room> = None;
+    
+    for room in rooms.0.iter() {
+        if room.bounds_check(player_pos) {
+            current_room = Some(room);
+            break;
+        }
+    }
+
+    let Some(room) = current_room else {
+        return;
+    };
+
+    let pressure_threshold = 20.0;
+    
+    if room.air_pressure < pressure_threshold {
+        damage_timer.tick(time.delta());
+        
+        if damage_timer.finished() {
+            let damage = 5.0;
+            health.0 -= damage;
+            damage_timer.reset();
+            
+            info!(
+                "Player taking pressure damage! Room pressure: {:.1}% - HP: {:.1}",
+                room.air_pressure, health.0
+            );
+        }
+    }
+}
+
+fn setup_air_pressure_ui(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+) {
+    let font: Handle<Font> = asset_server.load(
+        "fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf"
+    );
+
+    commands.spawn((
+        Text::new("Air: 100%"),
+        TextFont {
+            font: font.clone(),
+            font_size: 24.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.0, 1.0, 0.0)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        AirPressureUI,
+    ));
+}
+
+fn update_air_pressure_ui(
+    rooms: Res<RoomVec>,
+    player: Query<&Transform, With<Player>>,
+    mut ui_query: Query<(&mut Text, &mut TextColor), With<AirPressureUI>>,
+) {
+    let Ok(player_transform) = player.single() else {
+        return;
+    };
+
+    let Ok((mut text, mut color)) = ui_query.single_mut() else {
+        return;
+    };
+
+    let player_pos = player_transform.translation.truncate();
+    let mut current_pressure = 100.0;
+    
+    for room in rooms.0.iter() {
+        if room.bounds_check(player_pos) {
+            current_pressure = room.air_pressure;
+            break;
+        }
+    }
+
+    **text = format!("Air: {:.0}%", current_pressure);
+
+    color.0 = if current_pressure < 20.0 {
+        Color::srgb(1.0, 0.0, 0.0)
+    } else if current_pressure < 50.0 {
+        Color::srgb(1.0, 1.0, 0.0)
+    } else {
+        Color::srgb(0.0, 1.0, 0.0)
+    };
 }

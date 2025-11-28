@@ -138,8 +138,8 @@ impl Leaf {
 
     fn create_random_room<R: Rng>(&mut self, rng: &mut R, min_room_size: usize) {
         // rooms dont take up full rectangle of space in leaf
-        let max_w = self.rect.w - 2;
-        let max_h = self.rect.h - 2;
+        let max_w = self.rect.w - 5;
+        let max_h = self.rect.h - 5;
 
         // this should never occur due to splitting logic
         if max_w < min_room_size || max_h < min_room_size {
@@ -294,7 +294,7 @@ pub fn build_full_level(
     const MAP_W: usize = 300 + 40;
     const MAP_H: usize = 300 + 20;
     const MIN_LEAF_SIZE: usize = 70;
-    const MIN_ROOM_SIZE: usize = 30;
+    const MIN_ROOM_SIZE: usize = 20;
     let seed: u64 = random_range(0..=10000000); // 140;
 
     // full map of '.'
@@ -423,7 +423,9 @@ fn bsp_generate_level(
     }
 
     // connect rooms with hallways
-    connect_terminals(&terminals, map);
+    recursive_hallway(&root, map, &mut rng);
+
+    // connect_terminals(&terminals, map);
 }
 
 fn split_leaf_recursive<R: Rng>(
@@ -487,67 +489,61 @@ fn connect_terminals(
 
 // just might have to come back to these ones
 
-// fn recursive_hallway<R: Rng>(
-//     leaf: &mut Leaf,
-//     map: &mut Vec<Vec<char>>,
-//     rng: &mut R
-// ) {
-//     let mut start: Option<&Rect> = None;
-//     let mut end: Option<&Rect> = None;
-//     let stay_right: bool;
-//     if let (Some(left), Some(right)) = (leaf.left.as_mut(), leaf.right.as_mut()) {
-//         recursive_hallway(left, map, rng);
-//         recursive_hallway(right, map, rng);
-//     }
-//     if let Some(room) = &(leaf.left.as_ref().unwrap()).room {
-//         start = Some(room);
-//         if let Some(room) = &(leaf.right.as_ref().unwrap()).room {
-//             end = Some(room);
-//         } else {
-//             stay_right = false;
-//             if let Some(room) = find_next_room(stay_right, leaf) {
-//                 end = Some(room);
-//             }
-//         }
-//     } else {
-//         if let Some(room) = &(leaf.right.as_ref().unwrap()).room {
-//             end = Some(room);
-//             stay_right = true;
-//             if let Some(room) = find_next_room(stay_right, leaf) {
-//                 start = Some(room);
-//             }
-//         }
-//     }
-//     if let (Some(s), Some(e)) = (start, end) {
-//         draw_hallway(s, e, map);
-//     }
-// }
+// Finds the next room recursively
+fn find_next_room(stay_right: bool, leaf_rc: &Rc<RefCell<Leaf>>) -> Option<Rect> {
+    let leaf = leaf_rc.borrow();
+    if let Some(room) = &leaf.room {
+        return Some(room.clone());
+    }
 
-// fn find_next_room<'a>(stay_right: bool, leaf: &'a Leaf) -> Option<&'a Rect> {
-//     if let Some(room) = &leaf.room {
-//         return Some(room);
-//     }
-//     if stay_right {
-//         if let Some(r) = &leaf.right {
-//             if let Some(room) = find_next_room(true, r) {
-//                 return Some(room);
-//             }
-//         }
-//         if let Some(l) = &leaf.left {
-//             return find_next_room(true, l);
-//         }
-//     } else {
-//         if let Some(l) = &leaf.left {
-//             if let Some(room) = find_next_room(false, l) {
-//                 return Some(room);
-//             }
-//         }
-//         if let Some(r) = &leaf.right {
-//             return find_next_room(false, r);
-//         }
-//     }
-//     None
-// }
+    if stay_right {
+        if let Some(r) = &leaf.right {
+            if let Some(room) = find_next_room(true, r) {
+                return Some(room);
+            }
+        }
+        if let Some(l) = &leaf.left {
+            return find_next_room(true, l);
+        }
+    } else {
+        if let Some(l) = &leaf.left {
+            if let Some(room) = find_next_room(false, l) {
+                return Some(room);
+            }
+        }
+        if let Some(r) = &leaf.right {
+            return find_next_room(false, r);
+        }
+    }
+
+    None
+}
+
+// Recursive hallway creation
+fn recursive_hallway<R: Rng>(
+    leaf_rc: &Rc<RefCell<Leaf>>,
+    map: &mut Vec<Vec<char>>,
+    rng: &mut R,
+) {
+    // Recurse first
+    {
+        let leaf = leaf_rc.borrow();
+        if let (Some(left_rc), Some(right_rc)) = (&leaf.left, &leaf.right) {
+            recursive_hallway(left_rc, map, rng);
+            recursive_hallway(right_rc, map, rng);
+        }
+    }
+
+    // After recursion, find start/end rooms
+    let leaf = leaf_rc.borrow();
+    let start = leaf.left.as_ref().and_then(|l| find_next_room(false, l));
+    let end = leaf.right.as_ref().and_then(|r| find_next_room(true, r));
+
+    if let (Some(s), Some(e)) = (start, end) {
+        draw_hallway(&s, &e, map);
+    }
+}
+
 
 fn draw_hallway(
     start: &Rect,

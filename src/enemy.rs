@@ -12,7 +12,6 @@ use crate::room::{LevelState, RoomVec};
 use crate::table;
 use std::time::Duration;
 
-
 const ANIM_TIME: f32 = 0.2;
 
 #[derive(Component)]
@@ -169,7 +168,7 @@ fn load_ranged_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
     });
 }
 
-//if enemy's hp = 0, then despawn
+// if enemy's hp = 0, then despawn
 fn check_enemy_health(
     mut commands: Commands,
     enemy_query: Query<(Entity, &Health), With<Enemy>>,
@@ -186,7 +185,12 @@ fn check_enemy_health(
     }
 }
 
-pub fn spawn_enemy_at(commands: &mut Commands, enemy_res: &EnemyRes, at: Vec3, active: bool) {
+pub fn spawn_enemy_at(
+    commands: &mut Commands,
+    enemy_res: &EnemyRes,
+    at: Vec3,
+    active: bool,
+) {
     let mut e = commands.spawn((
         Sprite::from_image(enemy_res.frames[0].clone()),
         Transform {
@@ -467,7 +471,7 @@ fn move_enemy(
     }
 }
 
-//collide enemies with each other
+// collide enemies with each other
 fn collide_enemies_with_enemies(
     mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>)>,
 ) {
@@ -500,7 +504,7 @@ fn collide_enemies_with_enemies(
 }
 
 fn table_hits_enemy(
-    time: Res<Time>,
+    _time: Res<Time>,
     mut enemy_query: Query<(&Transform, &mut Health), With<Enemy>>,
     table_query: Query<
         (&Transform, &Collider, Option<&crate::enemy::Velocity>),
@@ -597,3 +601,4 @@ fn ranged_enemy_ai(
         }
     }
 }
+
