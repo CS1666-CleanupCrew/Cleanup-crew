@@ -391,7 +391,7 @@ impl DamageTimer {
 fn enemy_hits_player(
     time: Res<Time>,
     mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer), With<crate::player::Player>>,
-    mut enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+    enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>, // Add Health query
     mut commands: Commands,
 ) {
     let player_half = Vec2::splat(32.0);
@@ -402,7 +402,7 @@ fn enemy_hits_player(
 
         let player_pos = player_tf.translation.truncate();
 
-        for (enemy_entity, enemy_tf) in &mut enemy_query {
+        for (enemy_entity, enemy_tf, enemy_health) in &enemy_query { // Get enemy health
             let enemy_pos = enemy_tf.translation.truncate();
             if aabb_overlap(
                 player_pos.x, 
@@ -419,9 +419,13 @@ fn enemy_hits_player(
                     );
                     health.0 -= 15.0;
                     damage_timer.0.reset();
-                    commands.entity(enemy_entity).insert(HitAnimation {
-                        timer: Timer::from_seconds(0.3, TimerMode::Once),
-                    });
+                    
+                    // Only add HitAnimation if enemy will survive
+                    if enemy_health.0 > 0.0 {
+                        commands.entity(enemy_entity).insert(HitAnimation {
+                            timer: Timer::from_seconds(0.3, TimerMode::Once),
+                        });
+                    }
                 }
             }
         }
