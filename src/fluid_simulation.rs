@@ -157,6 +157,11 @@ impl FluidGrid {
             debug!("Breach created at ({}, {}) ", x, y);
         }
     }
+    
+    pub fn remove_breach(&mut self, x: usize, y: usize) {
+        self.breaches.retain(|&(bx, by)| !(bx == x && by == y));
+        debug!("Breach removed at ({}, {})", x, y);
+    }
 
     // convert from vector to 2d
     #[inline]

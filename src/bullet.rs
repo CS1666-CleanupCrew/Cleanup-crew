@@ -169,16 +169,11 @@ pub fn spawn_bullets_from_ranged(
 pub struct Velocity(pub Vec2);
 
 pub fn move_bullets(
-    mut bullet_q: Query<(Entity, &mut Transform, &Velocity), With<Bullet>>,
+    mut bullet_q: Query<(&mut Transform, &Velocity), With<Bullet>>,
     time: Res<Time>,
 ) {
-    for (entity, mut transform, vel) in bullet_q.iter_mut() {
+    for (mut transform, vel) in bullet_q.iter_mut() {
         transform.translation += (vel.0 * time.delta_secs()).extend(0.0);
-
-        // Despawn off-screen bullets (optional)
-        // if transform.translation.length() > 5000.0 {
-        //     commands.entity(entity).despawn();
-        // }
     }
 }
 
@@ -264,7 +259,7 @@ fn bullet_hits_player(
     let bullet_half = Vec2::splat(8.0);         // same as other collisions
     let player_half = Vec2::splat(TILE_SIZE);   // tweak if your player collider is different
 
-    let Ok((player_tf, mut health)) = player_q.get_single_mut() else {
+    let Ok((player_tf, mut health)) = player_q.single_mut() else {
         return;
     };
     let p = player_tf.translation;
