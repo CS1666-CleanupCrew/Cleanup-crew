@@ -4,7 +4,8 @@ use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
 use core::num;
 use std::collections::HashSet;
-
+use bevy::time::Time;
+use bevy::ecs::component::Tick;
 use crate::collidable::{Collidable, Collider};
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::Door;
