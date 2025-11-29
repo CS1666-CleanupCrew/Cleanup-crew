@@ -198,7 +198,7 @@ pub fn playing_room(
     }
 }
 
-ppub fn generate_enemies_in_room(
+pub fn generate_enemies_in_room(
     num_of_enemies: usize,
     seed: Option<u64>,
     rooms: &mut RoomVec,
