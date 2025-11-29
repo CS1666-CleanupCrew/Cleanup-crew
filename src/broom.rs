@@ -118,20 +118,29 @@ fn broom_hit_enemies_system(
     let player_pos = player_tf.translation.truncate();
 
     for (broom_tf, broom_col) in &broom_query {
-        let broom_pos = broom_tf.translation.truncate();
-        let broom_size = broom_col.half_extents;
+        let broom_center = broom_tf.translation.truncate();
+
+        let half_extents = broom_col.half_extents;
+
+        let inv_rot = broom_tf.rotation.conjugate();
 
         for mut enemy_tf in &mut enemies {
             let enemy_pos = enemy_tf.translation.truncate();
 
-            if (broom_pos.x - enemy_pos.x).abs() < broom_size.x &&
-               (broom_pos.y - enemy_pos.y).abs() < broom_size.y {
+            let to_enemy_world = Vec3::new(enemy_pos.x - broom_center.x, enemy_pos.y - broom_center.y, 0.0);
 
+            let to_enemy_local = inv_rot * to_enemy_world;
+            let to_enemy_local2 = to_enemy_local.truncate();
+
+            if to_enemy_local2.x.abs() < half_extents.x && to_enemy_local2.y.abs() < half_extents.y {
                 info!("Enemy hit by broom!");
 
-                let mut knockback_dir = (enemy_pos - player_pos).normalize_or_zero();
+                let mut knockback_dir: Vec2 = (enemy_pos - broom_center).normalize_or_zero();
 
-                // avoid zero vector
+                if knockback_dir.length_squared() == 0.0 {
+                    knockback_dir = (enemy_pos - player_pos).normalize_or_zero();
+                }
+
                 if knockback_dir.length_squared() == 0.0 {
                     knockback_dir = Vec2::Y;
                 }

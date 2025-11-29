@@ -169,7 +169,6 @@ pub fn spawn_bullets_from_ranged(
 pub struct Velocity(pub Vec2);
 
 pub fn move_bullets(
-    mut commands: Commands,
     mut bullet_q: Query<(Entity, &mut Transform, &Velocity), With<Bullet>>,
     time: Res<Time>,
 ) {
@@ -177,9 +176,9 @@ pub fn move_bullets(
         transform.translation += (vel.0 * time.delta_secs()).extend(0.0);
 
         // Despawn off-screen bullets (optional)
-        if transform.translation.length() > 5000.0 {
-            commands.entity(entity).despawn();
-        }
+        // if transform.translation.length() > 5000.0 {
+        //     commands.entity(entity).despawn();
+        // }
     }
 }
 

@@ -157,7 +157,7 @@ pub fn entered_room(
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
             }
-            generate_enemies_in_room(1, None, &mut rooms, index, commands, &enemy_res, &ranged_res, &play_query);
+            generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query);
             *lvlstate = LevelState::InRoom(index);
         }
         _ => {}
@@ -176,7 +176,7 @@ pub fn playing_room(
         LevelState::InRoom(index) =>
         {
             if rooms.0[index].numofenemies == 0{
-                println!("All enemies defeated");
+                info!("All enemies defeated");
 
                 let center_x = (rooms.0[index].top_left_corner.x + rooms.0[index].bot_right_corner.x) / 2.0;
                 let center_y = (rooms.0[index].top_left_corner.y + rooms.0[index].bot_right_corner.y) / 2.0;
@@ -203,54 +203,45 @@ pub fn generate_enemies_in_room(
     seed: Option<u64>,
     rooms: &mut RoomVec,
     index: usize,
-    mut commands: Commands,
+    mut commands: &mut Commands,
     enemy_res: &EnemyRes,
     ranged_res: &RangedEnemyRes,
     play_query: &NumOfCleared,
 ) {
     let rooms_cleared = play_query.0;
     let mut floors: Vec<(f32, f32)> = Vec::new();
+
     let room = &mut rooms.0[index];
-    let scaled_num_enemies = 1*rooms_cleared + num_of_enemies;
-    
+    let scaled_num_enemies = 1 * rooms_cleared + num_of_enemies;
     room.numofenemies = scaled_num_enemies;
 
-    let top = (room.tile_bot_right_corner.y - room.tile_top_left_corner.y) as usize - 2;
-    let bot = 1;
-    let left = 1;
-    let right = (room.tile_bot_right_corner.x - room.tile_top_left_corner.x) as usize - 2;
+    let height = room.layout.len();
+    if height == 0 { return; }
     
-    for y in bot..top
-    {
-        let row_index = room.tile_top_left_corner.y as usize + y;
-        
-        if row_index >= room.layout.len() {
-            continue;
-        }
-        
-        let row = &room.layout[row_index];
+    let width = room.layout[0].len();
 
-        for x in left..right
-        {
-            let col_index = x + room.tile_top_left_corner.x as usize;
-            
-            if col_index >= row.len() {
-                continue;
-            }
-            
-            let ch = row.chars().nth(col_index).unwrap_or('.');
-            
+    for ly in 0..height {
+        let row = &room.layout[ly];
+
+        for lx in 0..width {
+            let ch = row.as_bytes()[lx] as char;
+
             if ch == '#' {
-                let world_x = room.top_left_corner.x + (x as f32 * TILE_SIZE);
-                let world_y = room.bot_right_corner.y + ((top - y) as f32 * TILE_SIZE);
+                let world_x = room.top_left_corner.x + lx as f32 * TILE_SIZE;
+
+                let world_y = room.top_left_corner.y - ly as f32 * TILE_SIZE;
 
                 floors.push((world_x, world_y));
             }
         }
     }
 
-    if let Some(s) = seed 
-    {
+    if floors.is_empty() {
+        info!("Room {} has zero floor tiles! Cannot spawn enemies.", index);
+        return;
+    }
+
+    if let Some(s) = seed {
         let mut seeded = StdRng::seed_from_u64(s);
         floors.shuffle(&mut seeded);
     } else {
@@ -259,16 +250,20 @@ pub fn generate_enemies_in_room(
     }
 
     for (idx, (x, y)) in floors.into_iter().take(scaled_num_enemies).enumerate() {
-        let pos = Vec3::new(x as f32, y as f32, Z_ENTITIES);
+        let pos = Vec3::new(x, y, Z_ENTITIES);
 
         if idx % 4 == 0 {
-            // 1 in 4 are rangers
+            // 1 in 4 are ranged
             spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true);
         } else {
             spawn_enemy_at(&mut commands, enemy_res, pos, true);
         }
     }
+
+    info!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }
+
+
 pub fn generate_enemies_for_all_rooms(
     num_of_enemies: usize,
     seed: Option<u64>,
