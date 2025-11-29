@@ -293,8 +293,8 @@ pub fn build_full_level(
     // +40 and +20 are padding
     const MAP_W: usize = 300 + 40;
     const MAP_H: usize = 300 + 20;
-    const MIN_LEAF_SIZE: usize = 70;
-    const MIN_ROOM_SIZE: usize = 20;
+    const MIN_LEAF_SIZE: usize = 80;
+    const MIN_ROOM_SIZE: usize = 40;
     let seed: u64 = random_range(0..=10000000); // 140;
 
     // full map of '.'
@@ -389,8 +389,8 @@ fn bsp_generate_level(
                 leaf.room = Some(Rect { x: top_left_x, y: top_left_y, w: preset_room.layout[0].len(), h: preset_room.layout.len() });
             } else {
                 // create a random rectangle inside leaf
-                let room_w = rng.random_range(min_room_size..=leaf.rect.w - 2);
-                let room_h = rng.random_range(min_room_size..=leaf.rect.h - 2);
+                let room_w = rng.random_range(min_room_size/2..=leaf.rect.w - 5);
+                let room_h = rng.random_range(min_room_size/2..=leaf.rect.h - 5);
                 let room_x = rng.random_range(leaf.rect.x..=leaf.rect.x + leaf.rect.w - room_w);
                 let room_y = rng.random_range(leaf.rect.y..=leaf.rect.y + leaf.rect.h - room_h);
 
@@ -463,29 +463,31 @@ fn split_leaf_recursive<R: Rng>(
             );
         }
     } else {
-        leaf_mut.create_random_room(rng, min_room_size);
+        leaf_mut.create_random_room(rng, min_room_size/2);
         terminals.push(Rc::clone(leaf));
     }
 }
 
-fn connect_terminals(
-    terminals: &[LeafRef],
-    map: &mut Vec<Vec<char>>,
-) {
-    let mut rooms: Vec<Rect> = Vec::new();
+// outdated way of doing hallways
 
-    for leaf in terminals {
-        if let Some(room) = leaf.borrow().room.clone() {
-            rooms.push(room);
-        }
-    }
+// fn connect_terminals(
+//     terminals: &[LeafRef],
+//     map: &mut Vec<Vec<char>>,
+// ) {
+//     let mut rooms: Vec<Rect> = Vec::new();
 
-    rooms.sort_by_key(|r| r.center());
+//     for leaf in terminals {
+//         if let Some(room) = leaf.borrow().room.clone() {
+//             rooms.push(room);
+//         }
+//     }
 
-    for i in 0..rooms.len().saturating_sub(1) {
-        draw_hallway(&rooms[i], &rooms[i + 1], map);
-    }
-}
+//     rooms.sort_by_key(|r| r.center());
+
+//     for i in 0..rooms.len().saturating_sub(1) {
+//         draw_hallway(&rooms[i], &rooms[i + 1], map);
+//     }
+// }
 
 // just might have to come back to these ones
 
