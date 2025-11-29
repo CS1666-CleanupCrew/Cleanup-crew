@@ -5,7 +5,6 @@ use rand::rngs::StdRng;
 // use core::num;
 use std::collections::HashSet;
 use bevy::time::Time;
-use bevy::ecs::component::Tick;
 use crate::collidable::{Collidable, Collider};
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::Door;
@@ -152,10 +151,12 @@ pub fn entered_room(
     {
         LevelState::EnteredRoom(index) =>
         {
+            
             for door in rooms.0[index].doors.iter(){
                 commands.entity(*door).insert(Collidable);
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
+                
             }
             generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query);
             *lvlstate = LevelState::InRoom(index);
@@ -378,7 +379,7 @@ pub fn apply_breach_forces_to_entities(
     }
 
 
-    if let Ok((transform, mut velocity, pulled_by_fluid)) = player.get_single_mut() {
+    if let Ok((transform, mut velocity, pulled_by_fluid)) = player.single_mut() {
 
         apply_breach_force_to_entity(
             &rooms,
@@ -462,7 +463,7 @@ pub fn damage_player_from_low_pressure(
     mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer), With<crate::player::Player>>,
 ) {
 
-    let Ok((transform, mut health, mut damage_timer)) = player.get_single_mut() else {
+    let Ok((transform, mut health, mut damage_timer)) = player.single_mut() else {
 
         return;
     };
@@ -530,11 +531,11 @@ fn update_air_pressure_ui(
     player: Query<&Transform, With<Player>>,
     mut ui_query: Query<(&mut Text, &mut TextColor), With<AirPressureUI>>,
 ) {
-    let Ok(player_transform) = player.get_single() else {
+    let Ok(player_transform) = player.single() else {
         return;
     };
 
-    let Ok((mut text, mut color)) = ui_query.get_single_mut() else {
+    let Ok((mut text, mut color)) = ui_query.single_mut() else {
         return;
     };
 

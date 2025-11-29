@@ -88,7 +88,7 @@ fn check_for_broken_windows(
             breach_positions.push((bx, by));
 
 
-            if let Ok(mut grid) = fluid_query.get_single_mut() {
+            if let Ok(mut grid) = fluid_query.single_mut() {
 
 
                 for &(bx, by) in &breach_positions {
@@ -100,6 +100,28 @@ fn check_for_broken_windows(
                 .entity(entity)
                 .insert(BrokenTimer(Timer::from_seconds(1.5, TimerMode::Once)));
         }
+        if health.0 > 0.0 && *state == GlassState::Broken {
+            info!("Window fixed at {:?}", transform.translation.truncate());
+            *state = GlassState::Intact;
+
+            commands.entity(entity).remove::<NeedsBreachTracking>();
+            commands.entity(entity).remove::<WindowAnimation>();
+            commands.entity(entity).remove::<BrokenTimer>();
+
+            sprite.image = window_graphics.broken[0].clone();
+
+            let world_pos = transform.translation.truncate();
+            let (bx, by) = crate::fluiddynamics::world_to_grid(
+                world_pos,
+                crate::fluiddynamics::GRID_WIDTH,
+                crate::fluiddynamics::GRID_HEIGHT,
+            );
+            if let Ok(mut grid) = fluid_query.single_mut() {
+                
+                grid.remove_breach(bx, by);
+            }
+        }
+
     }
 }
 

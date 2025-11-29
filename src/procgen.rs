@@ -489,7 +489,6 @@ fn split_leaf_recursive<R: Rng>(
 //     }
 // }
 
-// just might have to come back to these ones
 
 // Finds the next room recursively
 fn find_next_room(stay_right: bool, leaf_rc: &Rc<RefCell<Leaf>>) -> Option<Rect> {
@@ -836,6 +835,3 @@ pub fn place_windows<R: Rng>(
         }
     }
 }
-
-
-

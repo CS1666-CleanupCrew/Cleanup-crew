@@ -221,7 +221,7 @@ fn move_player(
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
 ) {
 
-    let Ok(grid) = grid_query.get_single() else {
+    let Ok(grid) = grid_query.single() else {
         return;
     };
     let (mut transform, mut velocity, mut facing) = player.into_inner();
@@ -733,7 +733,7 @@ fn apply_breach_force_to_player(
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
     mut player_query: Query<(&Transform, &mut Velocity, &PulledByFluid), With<Player>>,
 ) {
-    let Ok(grid) = grid_query.get_single() else {
+    let Ok(grid) = grid_query.single() else {
         return;
     };
     
