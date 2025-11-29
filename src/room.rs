@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
+use rand::{SeedableRng};
 use rand::rngs::StdRng;
-use core::num;
+// use core::num;
 use std::collections::HashSet;
 use bevy::time::Time;
 use bevy::ecs::component::Tick;
@@ -11,7 +11,7 @@ use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::Door;
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
-use crate::enemy::{EnemyRes, spawn_enemy_at};
+use crate::enemy::{EnemyRes, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
 
 #[derive(Resource)]
 pub struct EnemyPosition(pub HashSet<(usize, usize)>);
@@ -139,13 +139,13 @@ pub fn track_rooms(
         }
     }
 }
-
 pub fn entered_room(
     mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
     mut commands: Commands,
     tiles: Res<TileRes>,
     enemy_res: Res<EnemyRes>,
+    ranged_res: Res<RangedEnemyRes>,
     play_query: Single<&NumOfCleared, With<Player>>,
 ){
     match *lvlstate
@@ -157,13 +157,12 @@ pub fn entered_room(
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
             }
-            generate_enemies_in_room(1, None, &mut rooms, index, commands, & enemy_res, & play_query);
+            generate_enemies_in_room(1, None, &mut rooms, index, commands, &enemy_res, &ranged_res, &play_query);
             *lvlstate = LevelState::InRoom(index);
         }
         _ => {}
     }
 }
-
 pub fn playing_room(
     mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
@@ -199,16 +198,16 @@ pub fn playing_room(
     }
 }
 
-// KEEP THE WORKING VERSION FROM DOCUMENT 6
-pub fn generate_enemies_in_room(
+ppub fn generate_enemies_in_room(
     num_of_enemies: usize,
     seed: Option<u64>,
     rooms: &mut RoomVec,
     index: usize,
     mut commands: Commands,
-    enemy_res: & EnemyRes,
+    enemy_res: &EnemyRes,
+    ranged_res: &RangedEnemyRes,
     play_query: &NumOfCleared,
-){  
+) {
     let rooms_cleared = play_query.0;
     let mut floors: Vec<(f32, f32)> = Vec::new();
     let room = &mut rooms.0[index];
@@ -216,24 +215,42 @@ pub fn generate_enemies_in_room(
     
     room.numofenemies = scaled_num_enemies;
 
-    let top =  (room.tile_bot_right_corner.y - room.tile_top_left_corner.y) as usize - 2;
-
-    for (y, row) in room.layout[2..top].iter().enumerate()
+    let top = (room.tile_bot_right_corner.y - room.tile_top_left_corner.y) as usize - 2;
+    let bot = 1;
+    let left = 1;
+    let right = (room.tile_bot_right_corner.x - room.tile_top_left_corner.x) as usize - 2;
+    
+    for y in bot..top
     {
-        let pos_y = room.top_left_corner.y - ((y+2) as f32 * 32.0);
-        for (x, ch) in row.chars().enumerate()
+        let row_index = room.tile_top_left_corner.y as usize + y;
+        
+        if row_index >= room.layout.len() {
+            continue;
+        }
+        
+        let row = &room.layout[row_index];
+
+        for x in left..right
         {
-            if x != 1 && x < row.len()-2{
-                let pos_x = room.top_left_corner.x + (x as f32 * 32.0);
-                if ch == '#' 
-                {
-                    floors.push((pos_x, pos_y));
-                }
+            let col_index = x + room.tile_top_left_corner.x as usize;
+            
+            if col_index >= row.len() {
+                continue;
+            }
+            
+            let ch = row.chars().nth(col_index).unwrap_or('.');
+            
+            if ch == '#' {
+                let world_x = room.top_left_corner.x + (x as f32 * TILE_SIZE);
+                let world_y = room.bot_right_corner.y + ((top - y) as f32 * TILE_SIZE);
+
+                floors.push((world_x, world_y));
             }
         }
     }
 
-    if let Some(s) = seed {
+    if let Some(s) = seed 
+    {
         let mut seeded = StdRng::seed_from_u64(s);
         floors.shuffle(&mut seeded);
     } else {
@@ -241,19 +258,25 @@ pub fn generate_enemies_in_room(
         floors.shuffle(&mut trng);
     }
 
-    for i in floors.into_iter().take(scaled_num_enemies){
-        spawn_enemy_at(&mut commands, &enemy_res, Vec3::new(i.0 as f32, i.1 as f32, Z_ENTITIES), true);
+    for (idx, (x, y)) in floors.into_iter().take(scaled_num_enemies).enumerate() {
+        let pos = Vec3::new(x as f32, y as f32, Z_ENTITIES);
+
+        if idx % 4 == 0 {
+            // 1 in 4 are rangers
+            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true);
+        } else {
+            spawn_enemy_at(&mut commands, enemy_res, pos, true);
+        }
     }
 }
-
-pub fn generate_enemies_from_grid(
-    grid: &[String],
+pub fn generate_enemies_for_all_rooms(
     num_of_enemies: usize,
     seed: Option<u64>,
+    rooms: &RoomVec,
     enemy_hash: &mut EnemyPosition,
-    rooms: & RoomVec,
+    grid: &Vec<String>
 ){  
-    for (i, room) in rooms.0.iter().enumerate()
+    for (_i, room) in rooms.0.iter().enumerate()
     {
         let mut floors: Vec<(usize, usize)> = Vec::new();
         let top = room.tile_top_left_corner.y as usize;
@@ -274,7 +297,8 @@ pub fn generate_enemies_from_grid(
             }
         }
 
-        if let Some(s) = seed {
+        if let Some(s) = seed 
+        {
             let mut seeded = StdRng::seed_from_u64(s);
             floors.shuffle(&mut seeded);
         } else {
@@ -286,7 +310,6 @@ pub fn generate_enemies_from_grid(
     }
 }
 
-// AIR PRESSURE SYSTEMS BELOW
 pub fn update_room_air_pressure(
     time: Res<Time>,
     mut rooms: ResMut<RoomVec>,
@@ -359,7 +382,9 @@ pub fn apply_breach_forces_to_entities(
         );
     }
 
+
     if let Ok((transform, mut velocity, pulled_by_fluid)) = player.get_single_mut() {
+
         apply_breach_force_to_entity(
             &rooms,
             transform.translation.truncate(),
@@ -441,7 +466,9 @@ pub fn damage_player_from_low_pressure(
     rooms: Res<RoomVec>,
     mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer), With<crate::player::Player>>,
 ) {
+
     let Ok((transform, mut health, mut damage_timer)) = player.get_single_mut() else {
+
         return;
     };
 

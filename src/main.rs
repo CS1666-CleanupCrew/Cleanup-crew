@@ -203,7 +203,7 @@ fn check_game_over(
     mut next_state: ResMut<NextState<GameState>>,
     player_q: Query<&Health, With<Player>>,
 ) {
-    if let Ok(health) = player_q.get_single() {
+    if let Ok(health) = player_q.single() {
         if health.0 <= 0.0 {
             info!("Player health reached 0 — transitioning to GameOver!");
             next_state.set(GameState::GameOver);

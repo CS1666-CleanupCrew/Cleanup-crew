@@ -1,10 +1,11 @@
 use bevy::prelude::*;
-use crate::player::Player;
-use crate::collidable::{Collidable, Collider};
+// use crate::player::Player;
+// use crate::collidable::{Collidable, Collider};
 
 #[derive(Component)]
 struct Reward;
 
+#[allow(dead_code)]
 #[derive(Resource)]
 struct RewardTiles{
     med: Handle<Image>,
@@ -34,7 +35,7 @@ fn load_crate(
 }
 
 pub fn spawn_reward(
-    pos: Vec3,
+    _pos: Vec3,
 ){
 
 }

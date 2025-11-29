@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::collidable::Collidable;
+// use crate::collidable::Collidable;
 
 #[derive(Component)]
 pub struct Window;
@@ -22,6 +22,7 @@ struct WindowAnimation {
     timer: Timer,
 }
 
+#[allow(dead_code)]
 #[derive(Component)]
 struct BrokenTimer(Timer);
 
@@ -86,7 +87,10 @@ fn check_for_broken_windows(
             );
             breach_positions.push((bx, by));
 
+
             if let Ok(mut grid) = fluid_query.get_single_mut() {
+
+
                 for &(bx, by) in &breach_positions {
                     grid.add_breach(bx, by);
                 }

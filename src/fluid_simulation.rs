@@ -345,7 +345,7 @@ fn pull_objects_toward_breaches(
     grid_query: Query<&FluidGrid>,
     mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
 ) {
-    let Ok(grid) = grid_query.get_single() else {
+    let Ok(grid) = grid_query.single() else {
         return;
     };
     

@@ -141,7 +141,7 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut textu
     commands.insert_resource(player);
 
     //Change time for how fast the player can shoot
-    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Once)));
+    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Repeating)));
     
 }
 
@@ -175,7 +175,7 @@ fn spawn_player(
     let (gx, gy) = spawn_grid.unwrap_or((0, 0));
 
 
-    // Grid → world (note the same vertical flip you use in setup_tilemap)
+    // Grid â†’ world (note the same vertical flip you use in setup_tilemap)
     let x_player_spawn_offset = TILE_SIZE * 2.0;
     let y_player_spawn_offset = -TILE_SIZE * 2.0;
 
@@ -222,7 +222,7 @@ fn move_player(
 ) {
 
     let Ok(grid) = grid_query.get_single() else {
-    return;
+        return;
     };
     let (mut transform, mut velocity, mut facing) = player.into_inner();
 
@@ -391,7 +391,7 @@ impl DamageTimer {
 fn enemy_hits_player(
     time: Res<Time>,
     mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer), With<crate::player::Player>>,
-    enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>, // Add Health query
+    enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>, 
     mut commands: Commands,
 ) {
     let player_half = Vec2::splat(32.0);
@@ -402,7 +402,7 @@ fn enemy_hits_player(
 
         let player_pos = player_tf.translation.truncate();
 
-        for (enemy_entity, enemy_tf, enemy_health) in &enemy_query { // Get enemy health
+        for (enemy_entity, enemy_tf, enemy_health) in &enemy_query { 
             let enemy_pos = enemy_tf.translation.truncate();
             if aabb_overlap(
                 player_pos.x, 
@@ -420,7 +420,7 @@ fn enemy_hits_player(
                     health.0 -= 15.0;
                     damage_timer.0.reset();
                     
-                    // Only add HitAnimation if enemy will survive
+               
                     if enemy_health.0 > 0.0 {
                         commands.entity(enemy_entity).insert(HitAnimation {
                             timer: Timer::from_seconds(0.3, TimerMode::Once),
@@ -785,4 +785,4 @@ fn apply_breach_force_to_player(
         
         
     }
-}    
+}
