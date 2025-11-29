@@ -221,16 +221,16 @@ pub fn generate_enemies_in_room(
     
     let width = room.layout[0].len();
 
-    for ly in 0..height {
-        let row = &room.layout[ly];
+    for y in 1..height-1 {
+        let row = &room.layout[y];
 
-        for lx in 0..width {
-            let ch = row.as_bytes()[lx] as char;
+        for x in 1..width-1 {
+            let ch = row.as_bytes()[x] as char;
 
             if ch == '#' {
-                let world_x = room.top_left_corner.x + lx as f32 * TILE_SIZE;
+                let world_x = room.top_left_corner.x + x as f32 * TILE_SIZE;
 
-                let world_y = room.top_left_corner.y - ly as f32 * TILE_SIZE;
+                let world_y = room.top_left_corner.y - y as f32 * TILE_SIZE;
 
                 floors.push((world_x, world_y));
             }
