@@ -4,7 +4,8 @@ use rand::{SeedableRng};
 use rand::rngs::StdRng;
 // use core::num;
 use std::collections::HashSet;
-
+use bevy::time::Time;
+use bevy::ecs::component::Tick;
 use crate::collidable::{Collidable, Collider};
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::Door;
@@ -108,17 +109,13 @@ pub fn assign_doors(
     mut rooms: ResMut<RoomVec>,
 ){
     for (entity, pos) in doors.iter(){
-
         for room in rooms.0.iter_mut(){
-
             if room.bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) {
                 room.doors.push(entity);
                 break;
             }
-
         }
     }
-
 }
 
 pub fn track_rooms(
@@ -128,18 +125,12 @@ pub fn track_rooms(
 ){
     match *lvlstate
     {
-        LevelState::EnteredRoom(_) =>
-        {
-        }
-        LevelState::InRoom(_)=>
-        {
-        }
+        LevelState::EnteredRoom(_) => {}
+        LevelState::InRoom(_)=> {}
         _ =>
         {
             let pos = player.into_inner();
-        
             for (index, room )in rooms.0.iter_mut().enumerate(){
-
                 if !room.cleared && room.within_bounds_check(Vec2::new(pos.translation.x, pos.translation.y)){
                     println!("Entered Room");
                     *lvlstate = LevelState::EnteredRoom(index);
@@ -147,9 +138,7 @@ pub fn track_rooms(
             }
         }
     }
-    
 }
-
 pub fn entered_room(
     mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
@@ -164,24 +153,16 @@ pub fn entered_room(
         LevelState::EnteredRoom(index) =>
         {
             for door in rooms.0[index].doors.iter(){
-
                 commands.entity(*door).insert(Collidable);
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
-
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
-
             }
-            generate_enemies_in_room(1, None, &mut rooms, index, commands, & enemy_res, & ranged_res, & play_query);
-            //println!("Generated Enemies. Moving to InRoom State");
+            generate_enemies_in_room(1, None, &mut rooms, index, commands, &enemy_res, &ranged_res, &play_query);
             *lvlstate = LevelState::InRoom(index);
         }
-        _ => {
-
-        }
-
+        _ => {}
     }
 }
-
 pub fn playing_room(
     mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
@@ -203,29 +184,21 @@ pub fn playing_room(
                 crate::heart::spawn_heart(&mut commands, &heart_res, room_center);
 
                 for door in rooms.0[index].doors.iter(){
-
                     commands.entity(*door).remove::<Collidable>();
                     commands.entity(*door).remove::<Collider>();
-
                     commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
                 }
                 rooms.0[index].cleared = true;
-
                 rooms.0.remove(index);
-
                 player.0 += 1;
                 *lvlstate = LevelState::NotRoom;
             }
-
         }
-        _ => {
-
-        }
-
+        _ => {}
     }
 }
 
-pub fn generate_enemies_in_room(
+ppub fn generate_enemies_in_room(
     num_of_enemies: usize,
     seed: Option<u64>,
     rooms: &mut RoomVec,
@@ -235,20 +208,15 @@ pub fn generate_enemies_in_room(
     ranged_res: &RangedEnemyRes,
     play_query: &NumOfCleared,
 ) {
-    //println!("Room is {}", index);
     let rooms_cleared = play_query.0;
-
     let mut floors: Vec<(f32, f32)> = Vec::new();
-
     let room = &mut rooms.0[index];
-
     let scaled_num_enemies = 1*rooms_cleared + num_of_enemies;
-
+    
     room.numofenemies = scaled_num_enemies;
 
-    let top =  (room.tile_bot_right_corner.y - room.tile_top_left_corner.y) as usize - 2;
+    let top = (room.tile_bot_right_corner.y - room.tile_top_left_corner.y) as usize - 2;
     let bot = 1;
-
     let left = 1;
     let right = (room.tile_bot_right_corner.x - room.tile_top_left_corner.x) as usize - 2;
     
@@ -264,7 +232,6 @@ pub fn generate_enemies_in_room(
 
         for x in left..right
         {
-
             let col_index = x + room.tile_top_left_corner.x as usize;
             
             if col_index >= row.len() {
@@ -282,8 +249,6 @@ pub fn generate_enemies_in_room(
         }
     }
 
-    // println!("All tiles located");
-    // println!("# of Floors: {}", floors.len());
     if let Some(s) = seed 
     {
         let mut seeded = StdRng::seed_from_u64(s);
@@ -304,25 +269,22 @@ pub fn generate_enemies_in_room(
         }
     }
 }
-
 pub fn generate_enemies_for_all_rooms(
     num_of_enemies: usize,
     seed: Option<u64>,
-    rooms: & RoomVec,
+    rooms: &RoomVec,
     enemy_hash: &mut EnemyPosition,
-    grid: & Vec<String>
+    grid: &Vec<String>
 ){  
     for (_i, room) in rooms.0.iter().enumerate()
     {
         let mut floors: Vec<(usize, usize)> = Vec::new();
-
         let top = room.tile_top_left_corner.y as usize;
         let bot = room.tile_bot_right_corner.y as usize;
 
         for y in bot..top
         { 
             let row = &grid[y];
-
             for (x, ch) in row.chars().enumerate()
             {
                 if x > room.tile_top_left_corner.x as usize && x < room.tile_bot_right_corner.x as usize
@@ -339,9 +301,7 @@ pub fn generate_enemies_for_all_rooms(
         {
             let mut seeded = StdRng::seed_from_u64(s);
             floors.shuffle(&mut seeded);
-        } 
-        else 
-        {
+        } else {
             let mut trng = rand::rng();
             floors.shuffle(&mut trng);
         }
@@ -422,7 +382,9 @@ pub fn apply_breach_forces_to_entities(
         );
     }
 
-    if let Ok((transform, mut velocity, pulled_by_fluid)) = player.single_mut() {
+
+    if let Ok((transform, mut velocity, pulled_by_fluid)) = player.get_single_mut() {
+
         apply_breach_force_to_entity(
             &rooms,
             transform.translation.truncate(),
@@ -504,7 +466,9 @@ pub fn damage_player_from_low_pressure(
     rooms: Res<RoomVec>,
     mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer), With<crate::player::Player>>,
 ) {
-    let Ok((transform, mut health, mut damage_timer)) = player.single_mut() else {
+
+    let Ok((transform, mut health, mut damage_timer)) = player.get_single_mut() else {
+
         return;
     };
 
@@ -571,11 +535,11 @@ fn update_air_pressure_ui(
     player: Query<&Transform, With<Player>>,
     mut ui_query: Query<(&mut Text, &mut TextColor), With<AirPressureUI>>,
 ) {
-    let Ok(player_transform) = player.single() else {
+    let Ok(player_transform) = player.get_single() else {
         return;
     };
 
-    let Ok((mut text, mut color)) = ui_query.single_mut() else {
+    let Ok((mut text, mut color)) = ui_query.get_single_mut() else {
         return;
     };
 

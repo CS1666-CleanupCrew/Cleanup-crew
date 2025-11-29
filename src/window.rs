@@ -87,7 +87,10 @@ fn check_for_broken_windows(
             );
             breach_positions.push((bx, by));
 
-            if let Ok(mut grid) = fluid_query.single_mut() {
+
+            if let Ok(mut grid) = fluid_query.get_single_mut() {
+
+
                 for &(bx, by) in &breach_positions {
                     grid.add_breach(bx, by);
                 }
@@ -99,7 +102,6 @@ fn check_for_broken_windows(
         }
     }
 }
-
 
 fn animate_broken_windows(
     time: Res<Time>,

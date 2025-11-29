@@ -221,7 +221,7 @@ fn move_player(
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
 ) {
 
-    let Ok(grid) = grid_query.single() else {
+    let Ok(grid) = grid_query.get_single() else {
         return;
     };
     let (mut transform, mut velocity, mut facing) = player.into_inner();
@@ -384,14 +384,14 @@ pub fn aabb_overlap(
 //-------------------------------------------------------------------------------------------------------------
 impl DamageTimer {
     pub fn new(seconds: f32) -> Self {
-        Self(Timer::from_seconds(seconds, TimerMode::Repeating))
+        Self(Timer::from_seconds(seconds, TimerMode::Once))
 }
 }
 
 fn enemy_hits_player(
     time: Res<Time>,
     mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer), With<crate::player::Player>>,
-    mut enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+    enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>, 
     mut commands: Commands,
 ) {
     let player_half = Vec2::splat(32.0);
@@ -402,7 +402,7 @@ fn enemy_hits_player(
 
         let player_pos = player_tf.translation.truncate();
 
-        for (enemy_entity, enemy_tf) in &mut enemy_query {
+        for (enemy_entity, enemy_tf, enemy_health) in &enemy_query { 
             let enemy_pos = enemy_tf.translation.truncate();
             if aabb_overlap(
                 player_pos.x, 
@@ -419,9 +419,13 @@ fn enemy_hits_player(
                     );
                     health.0 -= 15.0;
                     damage_timer.0.reset();
-                    commands.entity(enemy_entity).insert(HitAnimation {
-                        timer: Timer::from_seconds(0.3, TimerMode::Repeating),
-                    });
+                    
+               
+                    if enemy_health.0 > 0.0 {
+                        commands.entity(enemy_entity).insert(HitAnimation {
+                            timer: Timer::from_seconds(0.3, TimerMode::Once),
+                        });
+                    }
                 }
             }
         }
@@ -729,7 +733,7 @@ fn apply_breach_force_to_player(
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
     mut player_query: Query<(&Transform, &mut Velocity, &PulledByFluid), With<Player>>,
 ) {
-    let Ok(grid) = grid_query.single() else {
+    let Ok(grid) = grid_query.get_single() else {
         return;
     };
     
