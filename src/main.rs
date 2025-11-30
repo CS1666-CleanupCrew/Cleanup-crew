@@ -4,7 +4,7 @@ use bevy::scene::ron::de;
 use bevy::{prelude::*, window::PresentMode};
 use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels};
 use crate::room::RoomVec;
-use crate::map::MapGridMeta;
+use crate::map::{Door, MapGridMeta};
 
 pub mod collidable;
 pub mod endcredits;
@@ -67,7 +67,13 @@ pub struct ShowAirLabels(pub bool);
 pub struct AirDamageTimer(Timer);
 
 #[derive(Component)]
-pub struct PlayAgain;
+pub enum EndScreenButtons{
+    PlayAgain,
+    MainMenu
+}
+
+#[derive(Component)]
+pub struct GameEntity;
 
 /**
  * States is for the different game states
@@ -136,11 +142,18 @@ fn main() {
                 .run_if(|flag: Res<ShowAirLabels>| flag.0),
         )
 
+        .add_systems(OnExit(GameState::Playing), clean_game)
+        .add_systems(Update, handle_end_screen_buttons.run_if(in_state(GameState::GameOver)))
+        .add_systems(Update, handle_end_screen_buttons.run_if(in_state(GameState::Win)))
+        .add_systems(OnExit(GameState::GameOver), clean_end_screen)
+        .add_systems(OnExit(GameState::Win), clean_end_screen)
+
+
         .add_systems(OnEnter(GameState::GameOver), setup_game_over_screen)
         .add_systems(OnEnter(GameState::Win), load_win)
 
 
-        .add_systems(Startup, setup_ui_health)
+        .add_systems(OnEnter(GameState::Loading), setup_ui_health)
         .add_systems(
             Update,
             update_ui_health_text.run_if(in_state(GameState::Playing)),
@@ -172,8 +185,15 @@ fn check_win(
     mut next_state: ResMut<NextState<GameState>>,
     rooms: Res<RoomVec>,
 ){
-    if rooms.0.len() == 0{
-        info!("All Rooms Cleared");
+    let mut count = 0;
+
+    for room in rooms.0.iter(){
+        if room.cleared{
+            count += 1;
+        }
+    }
+
+    if count == rooms.0.len(){
         next_state.set(GameState::Win);
     }
 }
@@ -182,44 +202,6 @@ fn load_win(
     mut commands: Commands,
     asset_server: Res<AssetServer>
 ){
-    let texture: Handle<Image> = asset_server.load("win.png");
-    
-
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            width: Val::Percent(100.0),
-            height: Val::Percent(100.0),
-            justify_content: JustifyContent::Center,
-            align_items: AlignItems::Center,
-            ..default()
-        },
-        ImageNode {
-            image: texture,
-            ..default()
-        },
-        ZIndex(20),
-        GameOverScreen,
-    ));
-}
-
-// Check if player health is < 0
-fn check_game_over(
-    mut next_state: ResMut<NextState<GameState>>,
-    player_q: Query<&Health, With<Player>>,
-) {
-    if let Ok(health) = player_q.single() {
-        if health.0 <= 0.0 {
-            info!("Player health reached 0 — transitioning to GameOver!");
-            next_state.set(GameState::GameOver);
-        }
-    }
-}
-
-// Display game over screen
-fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let game_over_res: Handle<Image> = asset_server.load("game_over.png");
-    let play_again_res: Handle<Image> = asset_server.load("playagain.png");
 
     commands.spawn((
         Node {
@@ -245,27 +227,127 @@ fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>
                 align_items: AlignItems::Center,
                 ..default()
             },
-            ImageNode::new(game_over_res),
+            ImageNode::new(asset_server.load("win.png")),
         ));
 
-        //Play Again
         root.spawn((
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
+                margin:UiRect {
+                    left: Val::Percent(0.),
+                    right: Val::Percent(25.),
+                    top: Val::Percent(35.),
+                    bottom: Val::Percent(0.)
+                },
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(40.0),
                 ..default()
             },
             ))
             .with_children(|col|{
                 col.spawn((
                     Button,
-                    PlayAgain,
+                    EndScreenButtons::PlayAgain,
                     ImageNode::new(asset_server.load("playagain.png")),
                 ));
+        });
+        root.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                margin:UiRect {
+                    left: Val::Percent(0.),
+                    right: Val::Percent(0.),
+                    top: Val::Percent(25.),
+                    bottom: Val::Percent(0.)
+                },
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ))
+            .with_children(|col|{
+                col.spawn((
+                    Button,
+                    EndScreenButtons::MainMenu,
+                    ImageNode::new(asset_server.load("mainmenu.png")),
+                )); 
+        });
+    });
+}
+
+// Check if player health is < 0
+fn check_game_over(
+    mut next_state: ResMut<NextState<GameState>>,
+    player_q: Query<&Health, With<Player>>,
+) {
+    if let Ok(health) = player_q.single() {
+        if health.0 <= 0.0 {
+            info!("Player health reached 0 — transitioning to GameOver!");
+            next_state.set(GameState::GameOver);
+        }
+    }
+}
+
+// Display game over screen
+fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
+
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        ZIndex(20),
+        GameOverScreen,
+    ))
+    .with_children(|root|{
+
+        //Background
+        root.spawn((
+            Node{
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ImageNode::new(asset_server.load("game_over.png")),
+        ));
+
+        root.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                margin:UiRect {
+                    left: Val::Percent(0.),
+                    right: Val::Percent(0.),
+                    top: Val::Percent(25.),
+                    bottom: Val::Percent(0.)
+                },
+                column_gap: Val::Px(50.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Row,
+                ..default()
+            },
+            ))
+            .with_children(|col|{
+                col.spawn((
+                    Button,
+                    EndScreenButtons::PlayAgain,
+                    ImageNode::new(asset_server.load("playagain.png")),
+                ));
+                col.spawn((
+                    Button,
+                    EndScreenButtons::MainMenu,
+                    ImageNode::new(asset_server.load("mainmenu.png")),
+                )); 
             });
     });
 }
@@ -292,6 +374,7 @@ fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>) {
         TextColor(Color::srgb(1.0, 0.0, 0.0)),
         ZIndex(10),
         HealthDisplay,
+        GameEntity,
     ));
 }
 
@@ -388,13 +471,34 @@ fn log_state_change(state: Res<State<GameState>>) {
     info!("Just moved to {:?}!", state.get());
 }
 
-// fn handle_buttons(
-//     mut interactions: Query<(&Interaction, &MenuButton, Entity), (Changed<Interaction>, With<Button>)>,
-//     mut next_state: ResMut<NextState<GameState>>,
-//     mut show_labels: ResMut<ShowAirLabels>,
-//     children_q: Query<&Children>,
-//     mut texts: Query<&mut Text, With<AirToggleText>>,
-//     mut level_to_load: ResMut<LevelToLoad>,
-// ) {
-//     for (interaction, )
-// }
+fn handle_end_screen_buttons(
+    mut interactions: Query<(&Interaction, &EndScreenButtons), (Changed<Interaction>, With<Button>)>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    for (interaction, which) in &mut interactions {
+        
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        match which {
+            EndScreenButtons::PlayAgain => {
+                next_state.set(GameState::Loading);
+            }
+            EndScreenButtons::MainMenu => {
+                next_state.set(GameState::Menu);
+            }
+        }
+    }
+}
+
+fn clean_end_screen(mut commands: Commands, root_q: Query<Entity, With<GameOverScreen>>) {
+    for e in &root_q {
+        commands.entity(e).despawn();
+    }
+}
+
+fn clean_game(mut commands: Commands, root_q: Query<Entity, With<GameEntity>>) {
+    for e in &root_q {
+        commands.entity(e).despawn();
+    }
+}

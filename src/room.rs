@@ -6,7 +6,7 @@ use rand::rngs::StdRng;
 use std::collections::HashSet;
 use bevy::time::Time;
 use crate::collidable::{Collidable, Collider};
-use crate::{GameState, TILE_SIZE, Z_ENTITIES};
+use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::Door;
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
@@ -26,7 +26,7 @@ pub enum LevelState{
 pub struct RoomVec(pub Vec<Room>);
 
 pub struct Room{
-    cleared: bool,
+    pub cleared: bool,
     pub doors:Vec<Entity>,
     pub numofenemies: usize,
     top_left_corner: Vec2,
@@ -59,7 +59,7 @@ impl Room{
     }
 
     pub fn within_bounds_check(&self, pos:Vec2) -> bool{
-        self.top_left_corner.x+32.0 < pos.x.floor() && self.top_left_corner.y-64.0 > pos.y.floor() && self.bot_right_corner.x-32.0 > pos.x.floor() && self.bot_right_corner.y+32.0 < pos.y.floor()
+        self.top_left_corner.x+64.0 < pos.x.floor() && self.top_left_corner.y-64.0 > pos.y.floor() && self.bot_right_corner.x-64.0 > pos.x.floor() && self.bot_right_corner.y+64.0 < pos.y.floor()
     }
 }
 
@@ -545,6 +545,7 @@ fn setup_air_pressure_ui(
             ..default()
         },
         AirPressureUI,
+        GameEntity,
     ));
 }
 

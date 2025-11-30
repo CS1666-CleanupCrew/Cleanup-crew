@@ -4,7 +4,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::table;
 use crate::window;
 use crate::broom::Broom;
-use crate::{ACCEL_RATE, GameState, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
+use crate::{ACCEL_RATE, GameState, GameEntity, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
 use crate::map::{LevelRes, MapGridMeta};
@@ -207,7 +207,8 @@ fn spawn_player(
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
         NumOfCleared(0),
-        PulledByFluid{mass: 50.0}
+        PulledByFluid{mass: 50.0},
+        GameEntity,
     ));
 }
 
@@ -527,6 +528,7 @@ fn spawn_bullet(
         Collider {
             half_extents: Vec2::splat(5.0), // adjust to bullet size
         },
+        GameEntity,
     ));
 }
 
