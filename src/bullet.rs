@@ -6,13 +6,8 @@ use crate::{reward, table};
 use crate::window;
 use crate::Player;
 use crate::player::{Health, MaxHealth, MoveSpeed, ShootTimer};
-<<<<<<< HEAD
 use crate::{GameState, TILE_SIZE, GameEntity};
-use crate::enemy::{Enemy, RangedEnemyShootEvent};
-=======
-use crate::{GameState, TILE_SIZE};
 use crate::enemy::{RangedEnemyShootEvent};
->>>>>>> 4a1026f8d57d4b931ca075729f95e29620b3dca1
 
 
 
