@@ -56,7 +56,7 @@ fn load_window_graphics(mut commands: Commands, asset_server: Res<AssetServer>) 
 
 fn check_for_broken_windows(
     mut commands: Commands,
-    mut query: Query<(Entity, &Health, &mut Sprite, &mut GlassState, &Transform), With<Window>>,
+    mut query: Query<(Entity, &Health, &mut Sprite, &mut GlassState, &Transform), (With<Window>, Changed<Health>)>,
     mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     window_graphics: Res<WindowGraphics>,
 ) {
