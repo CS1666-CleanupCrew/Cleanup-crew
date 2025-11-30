@@ -374,7 +374,7 @@ fn move_enemy(
     wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>, Without<Player>)>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
 ) {
-    let grid_has_breach = if let Ok(grid) = grid_query.get_single() {
+    let grid_has_breach = if let Ok(grid) = grid_query.single() {
         !grid.breaches.is_empty()
     } else {
         false
@@ -479,7 +479,7 @@ fn collide_enemies_with_enemies(
 
     // get all combinations of 2 enemies
     let mut combinations = enemy_query.iter_combinations_mut();
-    while let Some([(mut e1_transform), (mut e2_transform)]) = combinations.fetch_next() {
+    while let Some([mut e1_transform, mut e2_transform]) = combinations.fetch_next() {
         let (p1, h1) = (e1_transform.translation.truncate(), enemy_half);
         let (p2, h2) = (e2_transform.translation.truncate(), enemy_half);
 

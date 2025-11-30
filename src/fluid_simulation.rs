@@ -157,6 +157,11 @@ impl FluidGrid {
             debug!("Breach created at ({}, {}) ", x, y);
         }
     }
+    
+    pub fn remove_breach(&mut self, x: usize, y: usize) {
+        self.breaches.retain(|&(bx, by)| !(bx == x && by == y));
+        debug!("Breach removed at ({}, {})", x, y);
+    }
 
     // convert from vector to 2d
     #[inline]
@@ -384,7 +389,7 @@ fn pull_objects_toward_breaches(
             
             if distance > 1.0 {
                 // tune this constant to taste
-                let force_magnitude = 5000.0; 
+                 let force_magnitude = 25000.0; 
                 total_force += to_breach.normalize() * force_magnitude;
             }
         }

@@ -1,8 +1,10 @@
 use bevy::prelude::*;
+use crate::bullet::aabb_overlap;
 use crate::{TILE_SIZE, GameState};
 use crate::player::{Player, Facing, FacingDirection};
 use crate::collidable::{Collider, Collidable};
 use crate::enemy::Enemy;
+use crate::window::{Health, GlassState};
 
 #[derive(Component)]
 pub struct Broom;
@@ -19,7 +21,9 @@ impl Plugin for BroomPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Update, broom_input.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_swing_system.run_if(in_state(GameState::Playing)))
-           .add_systems(Update, broom_hit_enemies_system.run_if(in_state(GameState::Playing)));
+           .add_systems(Update, broom_hit_enemies_system.run_if(in_state(GameState::Playing)))
+           .add_systems(Update, broom_fix_window.run_if(in_state(GameState::Playing)));
+
     }
 }
 
@@ -108,7 +112,7 @@ fn broom_swing_system(
 
 fn broom_hit_enemies_system(
     player_query: Query<&Transform, With<Player>>,
-    broom_query: Query<(&Transform, &Collider), (With<Broom>, Without<Enemy>, Without<Player>)>,
+    broom_query: Query<(&Transform, &Collider), (With<Broom>, Without<Player>)>,
     mut enemies: Query<&mut Transform, (With<Enemy>, Without<Player>, Without<Broom>)>,
 ) {
     let player_tf = if let Some(tf) = player_query.iter().next() {
@@ -148,6 +152,37 @@ fn broom_hit_enemies_system(
                 let knockback_distance = TILE_SIZE * 10.0;
                 enemy_tf.translation.x += knockback_dir.x * knockback_distance;
                 enemy_tf.translation.y += knockback_dir.y * knockback_distance;
+            }
+        }
+    }
+}
+
+pub fn broom_fix_window(
+    mut window_query: Query<(&mut Health, &mut GlassState, &Transform, &Sprite), With<Window>>,
+    broom_query: Query<(&Transform, &Sprite), With<Broom>>,
+) {
+    // Only run if a broom exists this frame
+    if let Some((broom_transform, broom_sprite)) = broom_query.iter().next() {
+        let broom_size = broom_sprite.custom_size.unwrap_or(Vec2::ONE);
+        for (mut health, state, window_transform, window_sprite) in window_query.iter_mut() {
+            let window_size = window_sprite.custom_size.unwrap_or(Vec2::ONE);
+
+            if aabb_overlap(
+                broom_transform.translation.x,
+                broom_transform.translation.y,
+                broom_size,
+                window_transform.translation.x,
+                window_transform.translation.y,
+                window_size,
+            ){
+                if *state == GlassState::Broken {
+                    health.0 += 20.0;
+                    info!(
+                        "Broom repaired window at {:?}, new health: {}",
+                        window_transform.translation.truncate(),
+                        health.0
+                    );
+                }
             }
         }
     }

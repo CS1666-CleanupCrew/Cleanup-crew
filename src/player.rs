@@ -228,7 +228,7 @@ fn move_player(
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
 ) {
 
-    let Ok(grid) = grid_query.get_single() else {
+    let Ok(grid) = grid_query.single() else {
         return;
     };
     let (mut transform, mut velocity, mut facing, spd) = player.into_inner();
@@ -742,7 +742,7 @@ fn apply_breach_force_to_player(
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
     mut player_query: Query<(&Transform, &mut Velocity, &PulledByFluid), With<Player>>,
 ) {
-    let Ok(grid) = grid_query.get_single() else {
+    let Ok(grid) = grid_query.single() else {
         return;
     };
     
@@ -780,8 +780,8 @@ fn apply_breach_force_to_player(
 
         
         // the strength of the forces that you can tweak to get more visible results
-        let pressure_force_strength = 100000.0;
-        let velocity_force_strength = 60000.0;
+         let pressure_force_strength = 500000.0;
+        let velocity_force_strength = 300000.0;
         
         let pressure_force = fluid_velocity.normalize_or_zero()  * scaled_pressure_diff  * pressure_force_strength;
         let velocity_force = fluid_velocity * velocity_force_strength;
