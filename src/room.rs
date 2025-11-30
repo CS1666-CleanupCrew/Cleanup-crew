@@ -231,11 +231,8 @@ pub fn generate_enemies_in_room(
 
         for lx in 5..width {
             let ch = row.as_bytes()[lx] as char;
-
-            if ch == 'W'{
-                continue;
-            }
-            else if ch == '#' {
+            
+            if ch == '#' {
                 let world_x = room.top_left_corner.x + lx as f32 * TILE_SIZE;
 
                 let world_y = room.top_left_corner.y - ly as f32 * TILE_SIZE;
@@ -259,9 +256,42 @@ pub fn generate_enemies_in_room(
     }
 
     for (idx, (x, y)) in floors.iter().take(scaled_num_enemies).enumerate() {
+        let tile_x = ((*x - room.top_left_corner.x) / TILE_SIZE).round() as isize;
+        let tile_y = ((room.top_left_corner.y - *y) / TILE_SIZE).round() as isize;
+
+        // Check 8 surrounding tiles
+        let mut adjacent_to_wall = false;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                
+                let nx = tile_x + dx;
+                let ny = tile_y + dy;
+
+                if nx < 0 || ny < 0 || ny as usize >= room.layout.len() || nx as usize >= room.layout[0].len() {
+                    continue;
+                }
+
+                if room.layout[ny as usize].as_bytes()[nx as usize] as char == 'W' {
+                    adjacent_to_wall = true;
+                    break;
+                }
+            }
+            if adjacent_to_wall {
+                break;
+            }
+        }
+        
+        if adjacent_to_wall {
+            continue;
+        }
+
+        
         let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
-        if idx % 4 == 0 {
+        if idx % 4 == 2 {
             // 1 in 4 are ranged
             spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true);
         } else {
@@ -281,6 +311,7 @@ pub fn generate_enemies_in_room(
 
     // info!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }
+
 
 
 pub fn generate_enemies_for_all_rooms(
@@ -353,30 +384,41 @@ pub fn track_window_breaches(
     windows: Query<(&Transform, &crate::window::GlassState), With<crate::window::Window>>,
 ) {
     for (window_transform, glass_state) in windows.iter() {
-        if *glass_state == crate::window::GlassState::Broken {
-            let breach_pos = window_transform.translation.truncate();
-            
-            for (idx, room) in rooms.0.iter_mut().enumerate() {
-                let expanded_tlc = Vec2::new(room.top_left_corner.x - 64.0, room.top_left_corner.y + 64.0);
-                let expanded_brc = Vec2::new(room.bot_right_corner.x + 64.0, room.bot_right_corner.y - 64.0);
-                
-                let in_expanded_bounds = expanded_tlc.x <= breach_pos.x 
-                    && expanded_tlc.y >= breach_pos.y 
-                    && expanded_brc.x >= breach_pos.x 
-                    && expanded_brc.y <= breach_pos.y;
-                
-                if in_expanded_bounds {
-                    if !room.breaches.iter().any(|&b| b.distance(breach_pos) < 1.0) {
-                        room.breaches.push(breach_pos);
-                        info!("Breach added to room {} at {:?}! Room now has {} breaches. Air pressure: {:.1}", 
-                              idx, breach_pos, room.breaches.len(), room.air_pressure);
+        let window_pos = window_transform.translation.truncate();
+
+        for (idx, room) in rooms.0.iter_mut().enumerate() {
+            let expanded_tlc = Vec2::new(room.top_left_corner.x - 64.0, room.top_left_corner.y + 64.0);
+            let expanded_brc = Vec2::new(room.bot_right_corner.x + 64.0, room.bot_right_corner.y - 64.0);
+
+            let in_expanded_bounds = expanded_tlc.x <= window_pos.x
+                && expanded_tlc.y >= window_pos.y
+                && expanded_brc.x >= window_pos.x
+                && expanded_brc.y <= window_pos.y;
+
+            if !in_expanded_bounds {
+                continue;
+            }
+
+            match glass_state {
+                crate::window::GlassState::Broken => {
+                    if !room.breaches.iter().any(|&b| b.distance(window_pos) < 1.0) {
+                        room.breaches.push(window_pos);
+                        info!("Breach added to room {} at {:?}", idx, window_pos);
                     }
-                    break;
+                }
+                crate::window::GlassState::Intact => {
+                    let before = room.breaches.len();
+                    room.breaches.retain(|&b| b.distance(window_pos) >= 1.0);
+                    if room.breaches.len() != before {
+                        info!("Breach removed from room {} at {:?}", idx, window_pos);
+                    }
                 }
             }
+            break;
         }
     }
 }
+
 
 pub fn apply_breach_forces_to_entities(
     time: Res<Time>,

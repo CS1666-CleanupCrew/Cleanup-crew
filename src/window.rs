@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-// use crate::collidable::Collidable;
 
 #[derive(Component)]
 pub struct Window;
@@ -28,6 +27,7 @@ struct BrokenTimer(Timer);
 
 #[derive(Resource)]
 struct WindowGraphics {
+    intact: Handle<Image>,
     broken: Vec<Handle<Image>>,
 }
 
@@ -35,11 +35,9 @@ pub struct WindowPlugin;
 
 impl Plugin for WindowPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, load_window_graphics)
-            .add_systems(
-                Update,
-                (check_for_broken_windows, animate_broken_windows),
-            )
+        app
+            .add_systems(Startup, load_window_graphics)
+            .add_systems(Update, check_for_broken_windows)
             .add_systems(Update, animate_broken_windows);
     }
 }
@@ -52,12 +50,13 @@ fn load_window_graphics(mut commands: Commands, asset_server: Res<AssetServer>) 
     ];
     commands.insert_resource(WindowGraphics {
         broken: broken_handle,
+        intact: asset_server.load("map/window.png"),
     });
 }
 
 fn check_for_broken_windows(
     mut commands: Commands,
-    mut query: Query<(Entity, &Health, &mut Sprite, &mut GlassState, &Transform), With<Window>>,
+    mut query: Query<(Entity, &Health, &mut Sprite, &mut GlassState, &Transform), (With<Window>, Changed<Health>)>,
     mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     window_graphics: Res<WindowGraphics>,
 ) {
@@ -68,12 +67,12 @@ fn check_for_broken_windows(
 
             commands.entity(entity).insert(NeedsBreachTracking);
 
-            commands
-                .entity(entity)
-                .insert(WindowAnimation {
+            commands.entity(entity).insert(
+                WindowAnimation {
                         frame_index: 0,
                         timer: Timer::from_seconds(0.30, TimerMode::Repeating),
-                });
+                }
+            );
 
             sprite.image = window_graphics.broken[0].clone();
 
@@ -96,19 +95,27 @@ fn check_for_broken_windows(
                 }
             }
 
-            commands
-                .entity(entity)
-                .insert(BrokenTimer(Timer::from_seconds(1.5, TimerMode::Once)));
+            commands.entity(entity).insert(
+                BrokenTimer(
+                    Timer::from_seconds(
+                        1.5,
+                        TimerMode::Once
+                    )
+                )
+            );
         }
         if health.0 > 0.0 && *state == GlassState::Broken {
             info!("Window fixed at {:?}", transform.translation.truncate());
             *state = GlassState::Intact;
 
             commands.entity(entity).remove::<NeedsBreachTracking>();
+
             commands.entity(entity).remove::<WindowAnimation>();
+
+            sprite.image = window_graphics.intact.clone();
+
             commands.entity(entity).remove::<BrokenTimer>();
 
-            sprite.image = window_graphics.broken[0].clone();
 
             let world_pos = transform.translation.truncate();
             let (bx, by) = crate::fluiddynamics::world_to_grid(
@@ -116,6 +123,7 @@ fn check_for_broken_windows(
                 crate::fluiddynamics::GRID_WIDTH,
                 crate::fluiddynamics::GRID_HEIGHT,
             );
+
             if let Ok(mut grid) = fluid_query.single_mut() {
                 
                 grid.remove_breach(bx, by);
