@@ -238,7 +238,7 @@ pub fn generate_enemies_in_room(
             else if ch == '#' {
                 let world_x = room.top_left_corner.x + lx as f32 * TILE_SIZE;
 
-                let world_y = room.top_left_corner.y - y as f32 * TILE_SIZE;
+                let world_y = room.top_left_corner.y - ly as f32 * TILE_SIZE;
 
                 floors.push((world_x, world_y));
             }
