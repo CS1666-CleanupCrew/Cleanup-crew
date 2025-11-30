@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use crate::player::Player;
+use crate::player::{MaxHealth, Player};
 use crate::TILE_SIZE;
 
 #[derive(Component)]
@@ -43,10 +43,10 @@ pub fn spawn_heart(
 
 fn collect_heart(
     mut commands: Commands,
-    mut player_query: Query<(&Transform, &mut crate::player::Health), With<Player>>,
+    mut player_query: Query<(&Transform, &mut crate::player::Health, &MaxHealth), With<Player>>,
     heart_query: Query<(Entity, &Transform), With<Heart>>,
 ) {
-    let Ok((player_tf, mut health)) = player_query.single_mut() else {
+    let Ok((player_tf, mut health, maxhp)) = player_query.single_mut() else {
         return;
     };
     
@@ -58,7 +58,7 @@ fn collect_heart(
         let distance = player_pos.distance(heart_pos);
         
         if distance < collect_radius {
-            health.0 = (health.0 + 20.0).min(100.0);
+            health.0 = (health.0 + 20.0).min(maxhp.0);
             commands.entity(heart_entity).despawn();
             info!("Heart collected! Health: {}", health.0);
         }

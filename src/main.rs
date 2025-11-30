@@ -1,5 +1,6 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
+use bevy::scene::ron::de;
 use bevy::{prelude::*, window::PresentMode};
 use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels};
 use crate::room::RoomVec;
@@ -64,6 +65,9 @@ pub struct ShowAirLabels(pub bool);
 
 #[derive(Component)]
 pub struct AirDamageTimer(Timer);
+
+#[derive(Component)]
+pub struct PlayAgain;
 
 /**
  * States is for the different game states
@@ -179,6 +183,7 @@ fn load_win(
     asset_server: Res<AssetServer>
 ){
     let texture: Handle<Image> = asset_server.load("win.png");
+    
 
     commands.spawn((
         Node {
@@ -213,7 +218,8 @@ fn check_game_over(
 
 // Display game over screen
 fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let texture: Handle<Image> = asset_server.load("game_over.png");
+    let game_over_res: Handle<Image> = asset_server.load("game_over.png");
+    let play_again_res: Handle<Image> = asset_server.load("playagain.png");
 
     commands.spawn((
         Node {
@@ -224,13 +230,44 @@ fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>
             align_items: AlignItems::Center,
             ..default()
         },
-        ImageNode {
-            image: texture,
-            ..default()
-        },
         ZIndex(20),
         GameOverScreen,
-    ));
+    ))
+    .with_children(|root|{
+
+        //Background
+        root.spawn((
+            Node{
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ImageNode::new(game_over_res),
+        ));
+
+        //Play Again
+        root.spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(40.0),
+                ..default()
+            },
+            ))
+            .with_children(|col|{
+                col.spawn((
+                    Button,
+                    PlayAgain,
+                    ImageNode::new(asset_server.load("playagain.png")),
+                ));
+            });
+    });
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -350,3 +387,14 @@ fn air_damage_system(
 fn log_state_change(state: Res<State<GameState>>) {
     info!("Just moved to {:?}!", state.get());
 }
+
+// fn handle_buttons(
+//     mut interactions: Query<(&Interaction, &MenuButton, Entity), (Changed<Interaction>, With<Button>)>,
+//     mut next_state: ResMut<NextState<GameState>>,
+//     mut show_labels: ResMut<ShowAirLabels>,
+//     children_q: Query<&Children>,
+//     mut texts: Query<&mut Text, With<AirToggleText>>,
+//     mut level_to_load: ResMut<LevelToLoad>,
+// ) {
+//     for (interaction, )
+// }

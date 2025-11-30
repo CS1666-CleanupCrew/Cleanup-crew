@@ -19,7 +19,7 @@ pub struct EnemyPosition(pub HashSet<(usize, usize)>);
 #[derive(Resource)]
 pub enum LevelState{
     EnteredRoom(usize),
-    InRoom(usize),
+    InRoom(usize, Vec3),
     NotRoom
 }
 
@@ -126,7 +126,7 @@ pub fn track_rooms(
     match *lvlstate
     {
         LevelState::EnteredRoom(_) => {}
-        LevelState::InRoom(_)=> {}
+        LevelState::InRoom(_, _)=> {}
         _ =>
         {
             let pos = player.into_inner();
@@ -157,8 +157,10 @@ pub fn entered_room(
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
             }
-            generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query);
-            *lvlstate = LevelState::InRoom(index);
+            if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query){
+                *lvlstate = LevelState::InRoom(index, pos);
+            }
+            
         }
         _ => {}
     }
@@ -169,25 +171,28 @@ pub fn playing_room(
     mut commands: Commands,
     tiles: Res<TileRes>,
     mut player: Single<&mut NumOfCleared, With<Player>>,
-    heart_res: Res<crate::heart::HeartRes>
+    heart_res: Res<crate::heart::HeartRes>,
+    reward_res: Res<crate::reward::RewardRes>
 ){
     match *lvlstate
     {
-        LevelState::InRoom(index) =>
+        LevelState::InRoom(index, reward_pos) =>
         {
             if rooms.0[index].numofenemies == 0{
-                info!("All enemies defeated");
+                // info!("All enemies defeated");
 
                 let center_x = (rooms.0[index].top_left_corner.x + rooms.0[index].bot_right_corner.x) / 2.0;
                 let center_y = (rooms.0[index].top_left_corner.y + rooms.0[index].bot_right_corner.y) / 2.0;
                 let room_center = Vec2::new(center_x, center_y);
                 crate::heart::spawn_heart(&mut commands, &heart_res, room_center);
+                crate::reward::spawn_reward(&mut commands, reward_pos, &reward_res);
 
                 for door in rooms.0[index].doors.iter(){
                     commands.entity(*door).remove::<Collidable>();
                     commands.entity(*door).remove::<Collider>();
                     commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
                 }
+
                 rooms.0[index].cleared = true;
                 rooms.0.remove(index);
                 player.0 += 1;
@@ -207,7 +212,7 @@ pub fn generate_enemies_in_room(
     enemy_res: &EnemyRes,
     ranged_res: &RangedEnemyRes,
     play_query: &NumOfCleared,
-) {
+) -> Option<Vec3> {
     let rooms_cleared = play_query.0;
     let mut floors: Vec<(f32, f32)> = Vec::new();
 
@@ -215,18 +220,21 @@ pub fn generate_enemies_in_room(
     let scaled_num_enemies = 1 * rooms_cleared + num_of_enemies;
     room.numofenemies = scaled_num_enemies;
 
-    let height = room.layout.len();
-    if height == 0 { return; }
+    let height = room.layout.len() - 6;
+    if height <= 0 { return None; }
     
-    let width = room.layout[0].len();
+    let width = room.layout[0].len() - 6;
 
-    for ly in 0..height {
+    for ly in 5..height {
         let row = &room.layout[ly];
 
-        for lx in 0..width {
+        for lx in 5..width {
             let ch = row.as_bytes()[lx] as char;
 
-            if ch == '#' {
+            if ch == 'W'{
+                continue;
+            }
+            else if ch == '#' {
                 let world_x = room.top_left_corner.x + lx as f32 * TILE_SIZE;
 
                 let world_y = room.top_left_corner.y - ly as f32 * TILE_SIZE;
@@ -238,7 +246,7 @@ pub fn generate_enemies_in_room(
 
     if floors.is_empty() {
         info!("Room {} has zero floor tiles! Cannot spawn enemies.", index);
-        return;
+        return None;
     }
 
     if let Some(s) = seed {
@@ -249,8 +257,8 @@ pub fn generate_enemies_in_room(
         floors.shuffle(&mut trng);
     }
 
-    for (idx, (x, y)) in floors.into_iter().take(scaled_num_enemies).enumerate() {
-        let pos = Vec3::new(x, y, Z_ENTITIES);
+    for (idx, (x, y)) in floors.iter().take(scaled_num_enemies).enumerate() {
+        let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
         if idx % 4 == 0 {
             // 1 in 4 are ranged
@@ -260,7 +268,17 @@ pub fn generate_enemies_in_room(
         }
     }
 
-    info!("Room {}: spawned {} enemies", index, scaled_num_enemies);
+    if let Some(s) = seed {
+        let mut seeded = StdRng::seed_from_u64(s);
+        floors.shuffle(&mut seeded);
+    } else {
+        let mut trng = rand::rng();
+        floors.shuffle(&mut trng);
+    }
+    
+    Some(Vec3::new(floors[0].0, floors[0].1, Z_ENTITIES))
+
+    // info!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }
 
 

@@ -9,6 +9,7 @@ use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
 use crate::map::{LevelRes, MapGridMeta};
 use crate::fluiddynamics::PulledByFluid;
+use crate::bullet::{Bullet, BulletOwner};
 
 const BULLET_SPD: f32 = 700.;
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
@@ -35,7 +36,11 @@ pub struct PlayerRes{
 pub struct Health(pub f32);
 
 #[derive(Component)]
-pub struct Bullet;
+pub struct MaxHealth(pub f32);
+
+#[derive(Component)]
+pub struct MoveSpeed(pub f32);
+
 
 #[derive(Resource)]
 pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
@@ -195,7 +200,9 @@ fn spawn_player(
         Player,
         Velocity::new(),
         Health::new(100.0),
+        MaxHealth(100.0),
         DamageTimer::new(1.0),
+        MoveSpeed(1.0),
         Collidable,
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
@@ -212,7 +219,7 @@ fn spawn_player(
 fn move_player(
     time: Res<Time>,
     input: Res<ButtonInput<KeyCode>>,
-    player: Single<(&mut Transform, &mut Velocity, &mut Facing), With<Player>>,
+    player: Single<(&mut Transform, &mut Velocity, &mut Facing, &MoveSpeed), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
     colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>)>,
     commands: Commands,
@@ -224,7 +231,7 @@ fn move_player(
     let Ok(grid) = grid_query.get_single() else {
         return;
     };
-    let (mut transform, mut velocity, mut facing) = player.into_inner();
+    let (mut transform, mut velocity, mut facing, spd) = player.into_inner();
 
     let mut dir: Vec2 = Vec2::ZERO;
 
@@ -288,7 +295,7 @@ fn move_player(
     let accel = ACCEL_RATE * deltat;
 
     **velocity = if dir.length() > 0. {
-        (**velocity + (dir.normalize_or_zero() * accel)).clamp_length_max(PLAYER_SPEED)
+        (**velocity + (dir.normalize_or_zero() * accel)).clamp_length_max(PLAYER_SPEED + spd.0)
     // allows the player to be moved if the breaches are open
     // the drag helps stop the player so it doesn't feel like they are on ice
     } else if !grid.breaches.is_empty() {
@@ -516,7 +523,7 @@ fn spawn_bullet(
         AnimationFrameCount(3),
         Velocity::new_vec(dir.x, dir.y),
         Bullet,
-        Collidable,
+        BulletOwner::Player,
         Collider {
             half_extents: Vec2::splat(5.0), // adjust to bullet size
         },
@@ -539,7 +546,7 @@ fn move_bullet(
 fn bullet_collision(
     mut commands: Commands,
     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<crate::enemy::Enemy>, Without<table::Table>,)>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<crate::enemy::Enemy>, Without<table::Table>, Without<crate::reward::Reward>)>,
 ) {
     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
         let bx = bullet_transform.translation.x;
@@ -584,19 +591,20 @@ fn animate_bullet(
 
 /**
  * This handles bullet enemy collision
- * 
- * Right now the enemy will typically die despite having a health
- * of 50 and the bullet dealing 25 damage. This probably is happening
- * because this detection is happening every frame. 
 */
 fn bullet_hits_enemy(
     mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
-    bullet_query: Query<(&Transform, Entity), With<Bullet>>,
+    bullet_query: Query<(&Transform, Entity, &BulletOwner), With<Bullet>>,
     mut commands: Commands,
 ) {
     let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
     let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
-    for (bullet_tf, bullet_entity) in &bullet_query {
+
+    for (bullet_tf, bullet_entity, owner) in &bullet_query {
+        if !matches!(owner, BulletOwner::Player) {
+            continue;
+        }
+
         let bullet_pos = bullet_tf.translation;
         for (enemy_tf, mut health) in &mut enemy_query {
             let enemy_pos = enemy_tf.translation;
@@ -606,6 +614,7 @@ fn bullet_hits_enemy(
             ) {
                 health.0 -= 25.0;
                 commands.entity(bullet_entity).despawn();
+                break;
             }
         }
     }
