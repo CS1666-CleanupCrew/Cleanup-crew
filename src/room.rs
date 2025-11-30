@@ -190,7 +190,7 @@ pub fn playing_room(
                     commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
                 }
                 rooms.0[index].cleared = true;
-                rooms.0.remove(index);
+                //rooms.0.remove(index);
                 player.0 += 1;
                 *lvlstate = LevelState::NotRoom;
             }
@@ -422,6 +422,10 @@ fn apply_breach_force_to_entity(
     let Some(room) = current_room else {
         return;
     };
+
+    if room.cleared {
+        return;
+    }
 
     if room.breaches.is_empty() || room.air_pressure >= 100.0 {
         return;

@@ -389,7 +389,7 @@ fn pull_objects_toward_breaches(
             
             if distance > 1.0 {
                 // tune this constant to taste
-                let force_magnitude = 5000.0; 
+                 let force_magnitude = 25000.0; 
                 total_force += to_breach.normalize() * force_magnitude;
             }
         }
