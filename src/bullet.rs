@@ -1,8 +1,11 @@
 use bevy::{prelude::*, window::PrimaryWindow};
+use std::time::Duration;
+use rand::random_range;
 use crate::collidable::{Collidable, Collider};
-use crate::table;
+use crate::{reward, table};
 use crate::window;
 use crate::Player;
+use crate::player::{Health, MaxHealth, MoveSpeed, ShootTimer};
 use crate::{GameState, TILE_SIZE};
 use crate::enemy::{Enemy, RangedEnemyShootEvent};
 
@@ -41,6 +44,7 @@ impl Plugin for BulletPlugin {
             .add_systems(Update, bullet_hits_player.run_if(in_state(GameState::Playing)))   // <── new
             .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, bullet_hits_reward.run_if(in_state(GameState::Playing)))
             .add_systems(Update, spawn_bullets_from_ranged.run_if(in_state(GameState::Playing)));
     }
 }
@@ -180,7 +184,7 @@ pub fn move_bullets(
 fn bullet_collision(
     mut commands: Commands,
     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Window>, Without<Enemy>, Without<crate::enemy::Enemy>, Without<table::Table>,)>,
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Window>, Without<Enemy>, Without<crate::enemy::Enemy>, Without<table::Table>, Without<reward::Reward>)>,
 ) {
     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
         let bx = bullet_transform.translation.x;
@@ -335,6 +339,64 @@ fn bullet_hits_window(
                     continue 'bullet_loop; // Move to the next bullet
                 }
             }
+        }
+    }
+}
+
+fn bullet_hits_reward(
+    mut commands: Commands,
+    reward_query: Query<(Entity, &Transform, &reward::Reward)>,
+    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+    player: Single<(&mut Health, &mut MaxHealth, &mut MoveSpeed, )>,
+    mut shoot_timer: ResMut<ShootTimer>,
+) {
+    let bullet_half = Vec2::splat(12.5); // Bullet's collider size
+    let reward_half = Vec2::splat(TILE_SIZE * 0.5); // Rewards's collider size
+    
+    let (mut hp, mut maxhp, mut movspd) = player.into_inner();
+
+     let bullet_count = bullet_query.iter().count();
+    let reward_count = reward_query.iter().count();
+
+    for (bullet_entity, bullet_tf) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+        
+        for (reward_entity, reward_tf, reward_type) in & reward_query
+        {
+            let reward_pos = reward_tf.translation;
+
+            if aabb_overlap(
+                bullet_pos.x,
+                bullet_pos.y,
+                bullet_half,
+                reward_pos.x,
+                reward_pos.y,
+                reward_half,
+            ) { 
+                println!("Collision Detected");
+                commands.entity(bullet_entity).despawn();
+
+                match reward_type.0{
+                    1 => {
+                        let increase_hp = random_range(5..=20) as f32;
+                        maxhp.0 += increase_hp;
+                        hp.0 += increase_hp;
+                    }
+                    2 => {
+                        let mut atkspd = shoot_timer.0.duration();
+                        atkspd = (atkspd - Duration::from_secs_f32(0.03)).max(Duration::from_secs_f32(0.1));
+                        shoot_timer.0.set_duration(atkspd);
+                    }
+                    3 => {
+                        movspd.0 = (movspd.0 + 20.0).min(600.0);
+                    }
+                    _ => panic!("Reward Type Not Found")
+                }
+               
+
+                commands.entity(reward_entity).despawn(); 
+            }
+            
         }
     }
 }
