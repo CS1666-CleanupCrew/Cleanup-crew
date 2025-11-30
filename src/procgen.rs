@@ -563,13 +563,18 @@ fn draw_hallway(
         for y in y_min..=y_max {
             for x in x_min..=x_max {
                 if y >= 0 && x >= 0 &&
-                   y < map.len() as isize &&
-                   x < map[0].len() as isize {
-                    map[y as usize][x as usize] = '#';
+                y < map.len() as isize &&
+                x < map[0].len() as isize 
+                {
+                    let tile = &mut map[y as usize][x as usize];
+                    if *tile == '.' {
+                        *tile = '#';
+                    }
                 }
             }
         }
     };
+
 
     if rand::random() {
         // horizontal first
@@ -685,7 +690,7 @@ pub fn generate_walls(map: &mut Vec<Vec<char>>) {
 
     for y in 0..rows {
         for x in 0..cols {
-            if map[y][x] != '.' {
+            if map[y][x] != '.' && map[y][x] != ',' {
                 continue;
             }
             for (dx, dy) in neighbor_offsets.iter() {
