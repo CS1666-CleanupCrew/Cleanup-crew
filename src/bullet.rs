@@ -1,13 +1,13 @@
 use bevy::{prelude::*, window::PrimaryWindow};
 use std::time::Duration;
 use rand::random_range;
-use crate::collidable::{Collidable, Collider};
+use crate::collidable::{Collider};
 use crate::{reward, table};
 use crate::window;
 use crate::Player;
 use crate::player::{Health, MaxHealth, MoveSpeed, ShootTimer};
 use crate::{GameState, TILE_SIZE};
-use crate::enemy::{Enemy, RangedEnemyShootEvent};
+use crate::enemy::{RangedEnemyShootEvent};
 
 
 
@@ -40,11 +40,11 @@ impl Plugin for BulletPlugin {
             .add_systems(Update, move_bullets.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             .add_systems(Update, animate_bullet.after(move_bullets).run_if(in_state(GameState::Playing)))
-            .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, bullet_hits_player.run_if(in_state(GameState::Playing)))   // <── new
-            .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, bullet_hits_reward.run_if(in_state(GameState::Playing)))
+            // .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
+            // .add_systems(Update, bullet_hits_player.run_if(in_state(GameState::Playing)))   // <── new
+            // .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
+            // .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
+            // .add_systems(Update, bullet_hits_reward.run_if(in_state(GameState::Playing)))
             .add_systems(Update, spawn_bullets_from_ranged.run_if(in_state(GameState::Playing)));
     }
 }
@@ -181,29 +181,6 @@ pub fn move_bullets(
     }
 }
 
-fn bullet_collision(
-    mut commands: Commands,
-    bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Window>, Without<Enemy>, Without<crate::enemy::Enemy>, Without<table::Table>, Without<reward::Reward>)>,
-) {
-    for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
-        let bx = bullet_transform.translation.x;
-        let by = bullet_transform.translation.y;
-        let b_half = bullet_collider.half_extents;
-
-        // Check collision with all collidable entities
-        for (collider_transform, collider) in &colliders {
-            let cx = collider_transform.translation.x;
-            let cy = collider_transform.translation.y;
-            let c_half = collider.half_extents;
-
-            if aabb_overlap(bx, by, b_half, cx, cy, c_half) {
-                commands.entity(bullet_entity).despawn();
-                break;
-            }
-        }
-    }
-}
 
 fn animate_bullet(
     time: Res<Time>,
@@ -227,153 +204,100 @@ fn animate_bullet(
     }
 }
 
-fn bullet_hits_enemy(
-    mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
-    bullet_query: Query<(&Transform, Entity, &BulletOwner), With<Bullet>>,
+pub fn bullet_collision(
     mut commands: Commands,
+    bullet_query: Query<(Entity, &Transform, &BulletOwner), With<Bullet>>,
+    mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
+    mut player_query: Query<(&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed), With<Player>>,
+    mut table_query: Query<(&Transform, &mut table::Health, &table::TableState), With<table::Table>>,
+    mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
+    reward_query: Query<(Entity, &Transform, &reward::Reward)>,
+    mut shoot_timer: ResMut<ShootTimer>,
 ) {
-    let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
-    let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+    let bullet_half = Vec2::splat(8.0); // General bullet collider size
 
-    for (bullet_tf, bullet_entity, owner) in &bullet_query {
-        if !matches!(owner, BulletOwner::Player) {
-            continue;
+    let Ok(
+        (player_tf, mut hp, mut maxhp, mut movspd)
+    ) = player_query.single_mut()
+    else {
+        return; 
+    };
+
+    for (bullet_entity, bullet_tf, owner) in &bullet_query {
+        let bullet_pos = bullet_tf.translation;
+
+        // bullet hits enemy
+        if matches!(owner, BulletOwner::Player) {
+            for (enemy_tf, mut health) in &mut enemy_query {
+                let enemy_pos = enemy_tf.translation;
+                let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+                if aabb_overlap(
+                    bullet_pos.x, bullet_pos.y, bullet_half,
+                    enemy_pos.x, enemy_pos.y, enemy_half,
+                ) {
+                    health.0 -= 25.0;
+                    commands.entity(bullet_entity).despawn();
+                    break; 
+                }
+            }
         }
 
-        let bullet_pos = bullet_tf.translation;
-        for (enemy_tf, mut health) in &mut enemy_query {
-            let enemy_pos = enemy_tf.translation;
+        // bullet hits player
+        if matches!(owner, BulletOwner::Enemy) {
+            let player_pos = player_tf.translation;
+            let player_half = Vec2::splat(TILE_SIZE);
             if aabb_overlap(
                 bullet_pos.x, bullet_pos.y, bullet_half,
-                enemy_pos.x, enemy_pos.y, enemy_half,
+                player_pos.x, player_pos.y, player_half,
             ) {
-                health.0 -= 25.0;
+                hp.0 -= 10.0;
+                commands.entity(bullet_entity).despawn();
+                continue;
+            }
+        }
+
+        // bullet hits table
+        for (table_tf, mut table_health, state) in &mut table_query {
+            if *state != table::TableState::Intact {
+                continue;
+            }
+            let table_pos = table_tf.translation;
+            let table_half = Vec2::splat(TILE_SIZE * 0.5);
+            if aabb_overlap(
+                bullet_pos.x, bullet_pos.y, bullet_half,
+                table_pos.x, table_pos.y, table_half,
+            ) {
+                table_health.0 -= 25.0;
                 commands.entity(bullet_entity).despawn();
                 break;
             }
         }
-    }
-}
 
-fn bullet_hits_player(
-    mut player_q: Query<(&Transform, &mut crate::player::Health), With<crate::player::Player>>,
-    bullet_q: Query<(Entity, &Transform, &BulletOwner), With<Bullet>>,
-    mut commands: Commands,
-) {
-    let bullet_half = Vec2::splat(8.0);         // same as other collisions
-    let player_half = Vec2::splat(TILE_SIZE);   // tweak if your player collider is different
-
-    let Ok((player_tf, mut health)) = player_q.single_mut() else {
-        return;
-    };
-    let p = player_tf.translation;
-
-    for (entity, b_tf, owner) in &bullet_q {
-        // Only bullets fired by **enemies** hurt the player
-        if !matches!(owner, BulletOwner::Enemy) {
-            continue;
-        }
-
-        let b = b_tf.translation;
-        if aabb_overlap(b.x, b.y, bullet_half, p.x, p.y, player_half) {
-            health.0 -= 10.0;   // damage amount – tune as you like
-            commands.entity(entity).despawn();
-        }
-    }
-}
-
-
-fn bullet_hits_table(
-    mut commands: Commands,
-    mut table_query: Query<(&Transform, &mut table::Health, &table::TableState), With<table::Table>>,
-    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-) {
-    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
-    let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
-
-    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
-        let bullet_pos = bullet_tf.translation;
-        for (table_tf, mut health, state) in &mut table_query {
-            if *state == table::TableState::Intact{
-                let table_pos = table_tf.translation;
-                if aabb_overlap(
-                    bullet_pos.x,
-                    bullet_pos.y,
-                    bullet_half,
-                    table_pos.x,
-                    table_pos.y,
-                    table_half,
-                ) {
-                    health.0 -= 25.0; // Deal 25 damage
-                    commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
-                    continue 'bullet_loop; // Move to the next bullet
-                }
+        // bullet hits window
+        for (window_tf, mut window_health, state) in &mut window_query {
+            if *state != window::GlassState::Intact {
+                continue;
             }
-        }
-    }
-}
-
-fn bullet_hits_window(
-    mut commands: Commands,
-    mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
-    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-) {
-    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
-    let window_half = Vec2::splat(TILE_SIZE * 0.5); // window's collider size
-
-    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
-        let bullet_pos = bullet_tf.translation;
-        for (window_tf, mut health, state) in &mut window_query {
-            if *state == window::GlassState::Intact{
-                let window_pos = window_tf.translation;
-                if aabb_overlap(
-                    bullet_pos.x,
-                    bullet_pos.y,
-                    bullet_half,
-                    window_pos.x,
-                    window_pos.y,
-                    window_half,
-                ) {
-                    health.0 -= 25.0; // Deal 25 damage
-                    commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
-                    continue 'bullet_loop; // Move to the next bullet
-                }
-            }
-        }
-    }
-}
-
-fn bullet_hits_reward(
-    mut commands: Commands,
-    reward_query: Query<(Entity, &Transform, &reward::Reward)>,
-    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-    player: Single<(&mut Health, &mut MaxHealth, &mut MoveSpeed, )>,
-    mut shoot_timer: ResMut<ShootTimer>,
-) {
-    let bullet_half = Vec2::splat(12.5); // Bullet's collider size
-    let reward_half = Vec2::splat(TILE_SIZE * 0.5); // Rewards's collider size
-    
-    let (mut hp, mut maxhp, mut movspd) = player.into_inner();
-
-     let bullet_count = bullet_query.iter().count();
-    let reward_count = reward_query.iter().count();
-
-    for (bullet_entity, bullet_tf) in &bullet_query {
-        let bullet_pos = bullet_tf.translation;
-        
-        for (reward_entity, reward_tf, reward_type) in & reward_query
-        {
-            let reward_pos = reward_tf.translation;
-
+            let window_pos = window_tf.translation;
+            let window_half = Vec2::splat(TILE_SIZE * 0.5);
             if aabb_overlap(
-                bullet_pos.x,
-                bullet_pos.y,
-                bullet_half,
-                reward_pos.x,
-                reward_pos.y,
-                reward_half,
-            ) { 
-                println!("Collision Detected");
+                bullet_pos.x, bullet_pos.y, bullet_half,
+                window_pos.x, window_pos.y, window_half,
+            ) {
+                window_health.0 -= 25.0;
+                commands.entity(bullet_entity).despawn();
+                break;
+            }
+        }
+
+        // bullet hits reward box
+        for (reward_entity, reward_tf, reward_type) in &reward_query {
+            let reward_pos = reward_tf.translation;
+            let reward_half = Vec2::splat(TILE_SIZE * 0.5);
+            if aabb_overlap(
+                bullet_pos.x, bullet_pos.y, bullet_half,
+                reward_pos.x, reward_pos.y, reward_half,
+            ) {
                 commands.entity(bullet_entity).despawn();
 
                 match reward_type.0{
@@ -392,14 +316,15 @@ fn bullet_hits_reward(
                     }
                     _ => panic!("Reward Type Not Found")
                 }
-               
 
-                commands.entity(reward_entity).despawn(); 
+                commands.entity(reward_entity).despawn();
+                break;
             }
-            
         }
     }
 }
+
+
 
 pub fn aabb_overlap(
     ax: f32, ay: f32, a_half: Vec2,
@@ -408,3 +333,205 @@ pub fn aabb_overlap(
     (ax - bx).abs() < (a_half.x + b_half.x) &&
     (ay - by).abs() < (a_half.y + b_half.y)
 }
+
+
+// outdated functions beyond this point for reference only
+
+// fn bullet_collision(
+//     mut commands: Commands,
+//     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
+//     colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Window>, Without<Enemy>, Without<crate::enemy::Enemy>, Without<table::Table>, Without<reward::Reward>)>,
+// ) {
+//     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
+//         let bx = bullet_transform.translation.x;
+//         let by = bullet_transform.translation.y;
+//         let b_half = bullet_collider.half_extents;
+
+//         // Check collision with all collidable entities
+//         for (collider_transform, collider) in &colliders {
+//             let cx = collider_transform.translation.x;
+//             let cy = collider_transform.translation.y;
+//             let c_half = collider.half_extents;
+
+//             if aabb_overlap(bx, by, b_half, cx, cy, c_half) {
+//                 commands.entity(bullet_entity).despawn();
+//                 break;
+//             }
+//         }
+//     }
+// }
+
+
+// fn bullet_hits_enemy(
+//     mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
+//     bullet_query: Query<(&Transform, Entity, &BulletOwner), With<Bullet>>,
+//     mut commands: Commands,
+// ) {
+//     let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
+//     let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+
+//     for (bullet_tf, bullet_entity, owner) in &bullet_query {
+//         if !matches!(owner, BulletOwner::Player) {
+//             continue;
+//         }
+
+//         let bullet_pos = bullet_tf.translation;
+//         for (enemy_tf, mut health) in &mut enemy_query {
+//             let enemy_pos = enemy_tf.translation;
+//             if aabb_overlap(
+//                 bullet_pos.x, bullet_pos.y, bullet_half,
+//                 enemy_pos.x, enemy_pos.y, enemy_half,
+//             ) {
+//                 health.0 -= 25.0;
+//                 commands.entity(bullet_entity).despawn();
+//                 break;
+//             }
+//         }
+//     }
+// }
+
+// fn bullet_hits_player(
+//     mut player_q: Query<(&Transform, &mut crate::player::Health), With<crate::player::Player>>,
+//     bullet_q: Query<(Entity, &Transform, &BulletOwner), With<Bullet>>,
+//     mut commands: Commands,
+// ) {
+//     let bullet_half = Vec2::splat(8.0);         // same as other collisions
+//     let player_half = Vec2::splat(TILE_SIZE);   // tweak if your player collider is different
+
+//     let Ok((player_tf, mut health)) = player_q.single_mut() else {
+//         return;
+//     };
+//     let p = player_tf.translation;
+
+//     for (entity, b_tf, owner) in &bullet_q {
+//         // Only bullets fired by **enemies** hurt the player
+//         if !matches!(owner, BulletOwner::Enemy) {
+//             continue;
+//         }
+
+//         let b = b_tf.translation;
+//         if aabb_overlap(b.x, b.y, bullet_half, p.x, p.y, player_half) {
+//             health.0 -= 10.0;   // damage amount – tune as you like
+//             commands.entity(entity).despawn();
+//         }
+//     }
+// }
+
+
+// fn bullet_hits_table(
+//     mut commands: Commands,
+//     mut table_query: Query<(&Transform, &mut table::Health, &table::TableState), With<table::Table>>,
+//     bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+// ) {
+//     let bullet_half = Vec2::splat(8.0); // Bullet's collider size
+//     let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
+
+//     'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
+//         let bullet_pos = bullet_tf.translation;
+//         for (table_tf, mut health, state) in &mut table_query {
+//             if *state == table::TableState::Intact{
+//                 let table_pos = table_tf.translation;
+//                 if aabb_overlap(
+//                     bullet_pos.x,
+//                     bullet_pos.y,
+//                     bullet_half,
+//                     table_pos.x,
+//                     table_pos.y,
+//                     table_half,
+//                 ) {
+//                     health.0 -= 25.0; // Deal 25 damage
+//                     commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+//                     continue 'bullet_loop; // Move to the next bullet
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// fn bullet_hits_window(
+//     mut commands: Commands,
+//     mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
+//     bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+// ) {
+//     let bullet_half = Vec2::splat(8.0); // Bullet's collider size
+//     let window_half = Vec2::splat(TILE_SIZE * 0.5); // window's collider size
+
+//     'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
+//         let bullet_pos = bullet_tf.translation;
+//         for (window_tf, mut health, state) in &mut window_query {
+//             if *state == window::GlassState::Intact{
+//                 let window_pos = window_tf.translation;
+//                 if aabb_overlap(
+//                     bullet_pos.x,
+//                     bullet_pos.y,
+//                     bullet_half,
+//                     window_pos.x,
+//                     window_pos.y,
+//                     window_half,
+//                 ) {
+//                     health.0 -= 25.0; // Deal 25 damage
+//                     commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+//                     continue 'bullet_loop; // Move to the next bullet
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// fn bullet_hits_reward(
+//     mut commands: Commands,
+//     reward_query: Query<(Entity, &Transform, &reward::Reward)>,
+//     bullet_query: Query<(Entity, &Transform), With<Bullet>>,
+//     player: Single<(&mut Health, &mut MaxHealth, &mut MoveSpeed, )>,
+//     mut shoot_timer: ResMut<ShootTimer>,
+// ) {
+//     let bullet_half = Vec2::splat(12.5); // Bullet's collider size
+//     let reward_half = Vec2::splat(TILE_SIZE * 0.5); // Rewards's collider size
+    
+//     let (mut hp, mut maxhp, mut movspd) = player.into_inner();
+
+//      let bullet_count = bullet_query.iter().count();
+//     let reward_count = reward_query.iter().count();
+
+//     for (bullet_entity, bullet_tf) in &bullet_query {
+//         let bullet_pos = bullet_tf.translation;
+        
+//         for (reward_entity, reward_tf, reward_type) in & reward_query
+//         {
+//             let reward_pos = reward_tf.translation;
+
+//             if aabb_overlap(
+//                 bullet_pos.x,
+//                 bullet_pos.y,
+//                 bullet_half,
+//                 reward_pos.x,
+//                 reward_pos.y,
+//                 reward_half,
+//             ) { 
+//                 println!("Collision Detected");
+//                 commands.entity(bullet_entity).despawn();
+
+                // match reward_type.0{
+                //     1 => {
+                //         let increase_hp = random_range(5..=20) as f32;
+                //         maxhp.0 += increase_hp;
+                //         hp.0 += increase_hp;
+                //     }
+                //     2 => {
+                //         let mut atkspd = shoot_timer.0.duration();
+                //         atkspd = (atkspd - Duration::from_secs_f32(0.03)).max(Duration::from_secs_f32(0.1));
+                //         shoot_timer.0.set_duration(atkspd);
+                //     }
+                //     3 => {
+                //         movspd.0 = (movspd.0 + 20.0).min(600.0);
+                //     }
+                //     _ => panic!("Reward Type Not Found")
+                // }
+               
+
+//                 commands.entity(reward_entity).despawn(); 
+//             }
+            
+//         }
+//     }
+// }
