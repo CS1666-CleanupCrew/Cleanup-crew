@@ -6,7 +6,7 @@ pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
 pub const ENEMY_ACCEL: f32 = 1800.;
 
-use crate::GameState;
+use crate::{GameEntity, GameState};
 use crate::map::EnemySpawnPoints;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
@@ -206,6 +206,7 @@ pub fn spawn_enemy_at(
             index: 0,
         },
         crate::fluiddynamics::PulledByFluid { mass: 10.0 },
+        GameEntity,
     ));
     if active {
         e.insert(ActiveEnemy);
@@ -242,6 +243,7 @@ pub fn spawn_ranged_enemy_at(
             projectile_speed: 600.0,
         },
         crate::fluiddynamics::PulledByFluid { mass: 10.0 },
+        GameEntity,
     ));
 
     if active {

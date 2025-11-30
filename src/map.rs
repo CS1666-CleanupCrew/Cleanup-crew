@@ -10,7 +10,7 @@ use crate::procgen::generate_tables_from_grid;
 use crate::room::*; // RoomRes, track_rooms
 use crate::table;
 use crate::window;
-use crate::{BG_WORLD, GameState, MainCamera, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
+use crate::{BG_WORLD, GameState, MainCamera, GameEntity, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
 use crate::procgen::{ProcgenSet};
 
 
@@ -196,6 +196,7 @@ pub fn setup_tilemap(
                 ParallaxBg { tile: BG_WORLD },
                 ParallaxCell { ix, iy },
                 Name::new("SpaceBG"),
+                GameEntity,
             ));
         }
     }
@@ -270,6 +271,7 @@ pub fn setup_tilemap(
             Sprite::from_image(tiles.floor.clone()),
             Transform::from_translation(pos),
             Name::new("Floor"),
+            GameEntity,
         )
     }).collect();
     commands.spawn_batch(floor_batch);
@@ -284,6 +286,7 @@ pub fn setup_tilemap(
             Collidable,
             Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
             Name::new("Wall"),
+            GameEntity,
         )
     }).collect();
     commands.spawn_batch(wall_batch);
@@ -305,6 +308,7 @@ pub fn setup_tilemap(
             table::Table,
             table::Health(50.0),
             table::TableState::Intact,
+            GameEntity,
         )
     }).collect();
     commands.spawn_batch(table_batch);
@@ -322,6 +326,7 @@ pub fn setup_tilemap(
             window::Window,
             window::Health(50.0),
             window::GlassState::Intact,
+            GameEntity,
         )
     }).collect();
     commands.spawn_batch(glass_batch);
@@ -335,6 +340,7 @@ pub fn setup_tilemap(
             Transform::from_translation(Vec3::new(pos.x, pos.y, Z_FLOOR + 1.0)),
             Name::new("Door"),
             Door { is_open: false, pos },
+            GameEntity,
         )
     }).collect();
     commands.spawn_batch(door_batch);

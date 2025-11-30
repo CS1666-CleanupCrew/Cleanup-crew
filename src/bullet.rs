@@ -6,7 +6,7 @@ use crate::{reward, table};
 use crate::window;
 use crate::Player;
 use crate::player::{Health, MaxHealth, MoveSpeed, ShootTimer};
-use crate::{GameState, TILE_SIZE};
+use crate::{GameState, TILE_SIZE, GameEntity};
 use crate::enemy::{RangedEnemyShootEvent};
 
 
@@ -126,6 +126,7 @@ pub fn shoot_bullet_on_click(
         Bullet,
         BulletOwner::Player,
         Collider { half_extents: Vec2::splat(5.0) },
+        GameEntity,
     ));
 }
 
@@ -161,6 +162,7 @@ pub fn spawn_bullets_from_ranged(
             Bullet,
             BulletOwner::Enemy,
             Collider { half_extents: Vec2::splat(5.0) },
+            GameEntity,
         ));
     }
 }

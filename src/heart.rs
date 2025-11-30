@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use crate::player::{MaxHealth, Player};
-use crate::TILE_SIZE;
+use crate::{TILE_SIZE, GameEntity};
 
 #[derive(Component)]
 pub struct Heart;
@@ -38,6 +38,7 @@ pub fn spawn_heart(
             ..Default::default()
         },
         Heart,
+        GameEntity,
     ));
 }
 

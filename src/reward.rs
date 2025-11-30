@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use rand::random_range;
 use crate::collidable::{Collidable, Collider};
-use crate::TILE_SIZE;
+use crate::{TILE_SIZE, GameEntity};
 
 #[derive(Component)]
 pub struct Reward(pub usize);
@@ -59,6 +59,7 @@ pub fn spawn_reward(
         Reward(reward_type),
         Collidable,
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.75, TILE_SIZE * 0.75) },
+        GameEntity,
     ));
             
 }
