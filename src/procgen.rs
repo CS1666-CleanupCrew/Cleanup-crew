@@ -293,8 +293,8 @@ pub fn build_full_level(
     // +40 and +20 are padding
     const MAP_W: usize = 300 + 40;
     const MAP_H: usize = 300 + 20;
-    const MIN_LEAF_SIZE: usize = 80;
-    const MIN_ROOM_SIZE: usize = 40;
+    const MIN_LEAF_SIZE: usize = 90;
+    const MIN_ROOM_SIZE: usize = 80;
     let seed: u64 = random_range(0..=10000000); // 140;
 
     // full map of '.'
@@ -371,7 +371,7 @@ fn bsp_generate_level(
     for terminal in terminals.iter() {
         let mut leaf = terminal.borrow_mut();
         if let Some(room_rect) = &leaf.room {
-            let choice = rng.random_range(1..=12);
+            let choice = rng.random_range(1..=7);
             if choice <= 6 {
                 // preset room from set of 6
                 let preset_room: &RoomLayout = match choice {
