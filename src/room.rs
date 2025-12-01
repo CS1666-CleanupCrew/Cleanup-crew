@@ -180,7 +180,7 @@ pub fn playing_room(
         LevelState::InRoom(index, reward_pos) =>
         {
             if rooms.0[index].numofenemies == 0{
-                // info!("All enemies defeated");
+                debug!("All enemies defeated");
 
                 let center_x = (rooms.0[index].top_left_corner.x + rooms.0[index].bot_right_corner.x) / 2.0;
                 let center_y = (rooms.0[index].top_left_corner.y + rooms.0[index].bot_right_corner.y) / 2.0;
@@ -274,7 +274,8 @@ pub fn generate_enemies_in_room(
                     continue;
                 }
 
-                if room.layout[ny as usize].as_bytes()[nx as usize] as char == 'W' {
+                if room.layout[ny as usize].as_bytes()[nx as usize] as char == 'W'
+                || room.layout[ny as usize].as_bytes()[nx as usize] as char == 'G'{
                     adjacent_to_wall = true;
                     break;
                 }
