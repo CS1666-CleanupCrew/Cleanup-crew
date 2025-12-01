@@ -371,7 +371,7 @@ fn bsp_generate_level(
     for terminal in terminals.iter() {
         let mut leaf = terminal.borrow_mut();
         if let Some(room_rect) = &leaf.room {
-            let choice = rng.random_range(1..=7);
+            let choice = rng.random_range(1..=8);
             if choice <= 6 {
                 // preset room from set of 6
                 let preset_room: &RoomLayout = match choice {

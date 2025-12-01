@@ -3,7 +3,7 @@ use crate::bullet::aabb_overlap;
 use crate::{TILE_SIZE, GameState};
 use crate::player::{Player, Facing, FacingDirection};
 use crate::collidable::{Collider, Collidable};
-use crate::enemy::Enemy;
+use crate::enemy::{ENEMY_SIZE, Enemy};
 use crate::window::{Health, GlassState, Window};
 
 #[derive(Component)]
@@ -150,32 +150,32 @@ fn broom_swing_system(
 
 
 pub fn broom_hit_enemies_system(
-    player_q: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    broom_q: Query<&Transform, (With<Broom>, Without<Enemy>)>,
-    mut enemies: Query<(&mut Transform, &Collider), With<Enemy>>,
+    mut enemies: Query<(&mut Health, &Transform, &Sprite), (With<Enemy>, Without<Broom>)>,
+    broom_query: Query<(&Transform, &Sprite), (With<Broom>, Without<Enemy>)>,
 ) {
-    let Ok(player_tf) = player_q.single() else { return };
-    let Ok(broom_tf)  = broom_q.single() else { return };
+    if let Some((broom_tf, broom_sprite)) = broom_query.iter().next() {
+        let broom_size = broom_sprite.custom_size.unwrap();
 
-    let pivot = player_tf.translation.truncate();
+        for (mut health, enemy_tf, enemy_sprite) in enemies.iter_mut() {
+            let enemy_size = enemy_sprite.custom_size.unwrap();
 
-    let broom_length = TILE_SIZE * 2.0;
-    let broom_width  = TILE_SIZE * 1.0;
-    let radius = broom_width * 0.5;
-
-    let tip = pivot + (broom_tf.rotation * Vec3::new(broom_length, 0.0, 0.0)).truncate();
-
-    for (mut enemy_tf, col) in &mut enemies {
-        let center = enemy_tf.translation.truncate();
-        let half = col.half_extents;
-
-        if aabb_capsule_hit(center, half, pivot, tip, radius) {
-            info!("Enemy hit by broom!");
-            let kb = (center - pivot).normalize_or_zero() * TILE_SIZE * 10.0;
-            enemy_tf.translation += kb.extend(0.0);
+            if aabb_overlap(
+                broom_tf.translation.x,
+                broom_tf.translation.y,
+                broom_size,
+                enemy_tf.translation.x,
+                enemy_tf.translation.y,
+                enemy_size,
+            ) {
+                health.0 -= 10.0;
+                info!("Enemy hit by broom at {:?}", enemy_tf.translation);
+            }
         }
     }
 }
+
+
+
 
 
 
