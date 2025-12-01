@@ -310,7 +310,7 @@ pub fn generate_enemies_in_room(
     
     Some(Vec3::new(floors[0].0, floors[0].1, Z_ENTITIES))
 
-    // info!("Room {}: spawned {} enemies", index, scaled_num_enemies);
+    // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }
 
 
@@ -374,7 +374,7 @@ pub fn update_room_air_pressure(
         room.air_pressure = room.air_pressure.max(0.0);
         
         if (old_pressure / 10.0).floor() != (room.air_pressure / 10.0).floor() {
-            info!("Room {} pressure: {:.1}% (escaping at {:.1}%/sec)", 
+            debug!("Room {} pressure: {:.1}% (escaping at {:.1}%/sec)", 
                   idx, room.air_pressure, total_escape_rate);
         }
     }
@@ -387,7 +387,7 @@ pub fn track_window_breaches(
     for (window_transform, glass_state) in windows.iter() {
         let window_pos = window_transform.translation.truncate();
 
-        for (idx, room) in rooms.0.iter_mut().enumerate() {
+        for (_idx, room) in rooms.0.iter_mut().enumerate() {
             let expanded_tlc = Vec2::new(room.top_left_corner.x - 64.0, room.top_left_corner.y + 64.0);
             let expanded_brc = Vec2::new(room.bot_right_corner.x + 64.0, room.bot_right_corner.y - 64.0);
 
@@ -404,14 +404,14 @@ pub fn track_window_breaches(
                 crate::window::GlassState::Broken => {
                     if !room.breaches.iter().any(|&b| b.distance(window_pos) < 1.0) {
                         room.breaches.push(window_pos);
-                        info!("Breach added to room {} at {:?}", idx, window_pos);
+                        // debug!("Breach added to room {} at {:?}", idx, window_pos);
                     }
                 }
                 crate::window::GlassState::Intact => {
                     let before = room.breaches.len();
                     room.breaches.retain(|&b| b.distance(window_pos) >= 1.0);
                     if room.breaches.len() != before {
-                        info!("Breach removed from room {} at {:?}", idx, window_pos);
+                        // debug!("Breach removed from room {} at {:?}", idx, window_pos);
                     }
                 }
             }
@@ -557,7 +557,7 @@ pub fn damage_player_from_low_pressure(
             health.0 -= damage;
             damage_timer.reset();
             
-            info!(
+            debug!(
                 "Player taking pressure damage! Room pressure: {:.1}% - HP: {:.1}",
                 room.air_pressure, health.0
             );

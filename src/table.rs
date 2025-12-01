@@ -168,9 +168,8 @@ fn apply_table_velocity(
         transform.translation = pos; // Apply the final, collision-checked position
         // --- End of copied logic ---
         
-        // Debug - show which tables are moving
         if velocity.velocity.length() > 1.0 {
-            //info!("Table at ({:.0}, {:.0}) moving with velocity ({:.1}, {:.1})", 
+            // debug!("Table at ({:.0}, {:.0}) moving with velocity ({:.1}, {:.1})", 
             //   transform.translation.x, transform.translation.y,
             //   velocity.velocity.x, velocity.velocity.y);
         }

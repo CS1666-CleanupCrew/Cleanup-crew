@@ -177,7 +177,7 @@ fn check_enemy_health(
 ) {
     for (entity, health) in enemy_query.iter() {
         if health.0 <= 0.0 {
-            if let LevelState::InRoom(index, pos) = *lvlstate {
+            if let LevelState::InRoom(index, _pos) = *lvlstate {
                 rooms.0[index].numofenemies -= 1;
             }
             commands.entity(entity).despawn();
@@ -559,7 +559,7 @@ fn ranged_enemy_ai(
 
     // Difficulty scaling per room as f32
     let difficulty_mult: f32 = match *lvlstate {
-        LevelState::InRoom(idx, pos) => 1.0 + (idx as f32 * 0.10),
+        LevelState::InRoom(idx, _pos) => 1.0 + (idx as f32 * 0.10),
         LevelState::EnteredRoom(idx) => 1.0 + (idx as f32 * 0.10),
         LevelState::NotRoom => 1.0,
     };

@@ -1,10 +1,9 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
-use bevy::scene::ron::de;
 use bevy::{prelude::*, window::PresentMode};
 use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels};
 use crate::room::RoomVec;
-use crate::map::{Door, MapGridMeta};
+use crate::map::MapGridMeta;
 
 pub mod collidable;
 pub mod endcredits;
@@ -284,7 +283,7 @@ fn check_game_over(
 ) {
     if let Ok(health) = player_q.single() {
         if health.0 <= 0.0 {
-            info!("Player health reached 0 — transitioning to GameOver!");
+            debug!("Player health reached 0 — transitioning to GameOver!");
             next_state.set(GameState::GameOver);
         }
     }
@@ -409,7 +408,7 @@ fn damage_on_collision(
 
             if overlap_x && overlap_y {
                 health.0 -= dmg.amount;
-                info!(" Player took {} damage! HP now = {}", dmg.amount, health.0);
+                debug!(" Player took {} damage! HP now = {}", dmg.amount, health.0);
                 cooldown.0.reset();
                 break;
             }
@@ -460,7 +459,7 @@ fn air_damage_system(
         let damage_amount = AIR_DAMAGE_PER_SECOND * AIR_DAMAGE_TICK_RATE;
         health.0 -= damage_amount;
         
-        info!(
+        debug!(
             "Player taking air damage! Pressure: {:.2} at ({}, {}) - HP: {:.1}",
             air_pressure, grid_x, grid_y_flipped, health.0
         );
