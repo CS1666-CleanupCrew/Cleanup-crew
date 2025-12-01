@@ -8,6 +8,9 @@ use crate::Player;
 use crate::player::{Health, MaxHealth, MoveSpeed, ShootTimer};
 use crate::{GameState, TILE_SIZE, GameEntity};
 use crate::enemy::{RangedEnemyShootEvent};
+use crate::room::{LevelState, RoomVec};
+use crate::reaper::Reaper;
+
 
 
 
@@ -213,11 +216,19 @@ fn animate_bullet(
 pub fn bullet_collision(
     mut commands: Commands,
     bullet_query: Query<(Entity, &Transform, &BulletOwner), With<Bullet>>,
-    mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
+        mut enemy_query: Query<
+        (&Transform, &mut crate::enemy::Health),
+        (
+            With<crate::enemy::Enemy>,
+            Without<crate::reaper::Reaper>,
+        ),
+    >,
     mut player_query: Query<(&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed), With<Player>>,
     mut table_query: Query<(&Transform, &mut table::Health, &table::TableState), With<table::Table>>,
     mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
     reward_query: Query<(Entity, &Transform, &reward::Reward)>,
+    lvlstate: Res<LevelState>,
+    rooms: Res<RoomVec>,
     mut shoot_timer: ResMut<ShootTimer>,
 ) {
     let bullet_half = Vec2::splat(8.0); // General bullet collider size
@@ -229,7 +240,12 @@ pub fn bullet_collision(
         return; 
     };
 
-    for (bullet_entity, bullet_tf, owner) in &bullet_query {
+    // Reaper is only damageable in the final room
+    let final_room =
+        matches!(*lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1;
+
+
+        for (bullet_entity, bullet_tf, owner) in &bullet_query {
         let bullet_pos = bullet_tf.translation;
 
         // bullet hits enemy
@@ -243,7 +259,7 @@ pub fn bullet_collision(
                 ) {
                     health.0 -= 25.0;
                     commands.entity(bullet_entity).despawn();
-                    break; 
+                    break;
                 }
             }
         }
@@ -263,68 +279,75 @@ pub fn bullet_collision(
         }
 
         // bullet hits table
-        for (table_tf, mut table_health, state) in &mut table_query {
-            if *state != table::TableState::Intact {
-                continue;
-            }
-            let table_pos = table_tf.translation;
-            let table_half = Vec2::splat(TILE_SIZE * 0.5);
-            if aabb_overlap(
-                bullet_pos.x, bullet_pos.y, bullet_half,
-                table_pos.x, table_pos.y, table_half,
-            ) {
-                table_health.0 -= 25.0;
-                commands.entity(bullet_entity).despawn();
-                break;
+        if matches!(owner, BulletOwner::Player) {
+            for (table_tf, mut table_health, state) in &mut table_query {
+                if *state != table::TableState::Intact {
+                    continue;
+                }
+                let table_pos = table_tf.translation;
+                let table_half = Vec2::splat(TILE_SIZE * 0.5);
+                if aabb_overlap(
+                    bullet_pos.x, bullet_pos.y, bullet_half,
+                    table_pos.x, table_pos.y, table_half,
+                ) {
+                    table_health.0 -= 25.0;
+                    commands.entity(bullet_entity).despawn();
+                    break;
+                }
             }
         }
 
         // bullet hits window
-        for (window_tf, mut window_health, state) in &mut window_query {
-            if *state != window::GlassState::Intact {
-                continue;
-            }
-            let window_pos = window_tf.translation;
-            let window_half = Vec2::splat(TILE_SIZE * 0.5);
-            if aabb_overlap(
-                bullet_pos.x, bullet_pos.y, bullet_half,
-                window_pos.x, window_pos.y, window_half,
-            ) {
-                window_health.0 -= 25.0;
-                commands.entity(bullet_entity).despawn();
-                break;
+        if matches!(owner, BulletOwner::Player) {
+            for (window_tf, mut window_health, state) in &mut window_query {
+                if *state != window::GlassState::Intact {
+                    continue;
+                }
+                let window_pos = window_tf.translation;
+                let window_half = Vec2::splat(TILE_SIZE * 0.5);
+                if aabb_overlap(
+                    bullet_pos.x, bullet_pos.y, bullet_half,
+                    window_pos.x, window_pos.y, window_half,
+                ) {
+                    window_health.0 -= 25.0;
+                    commands.entity(bullet_entity).despawn();
+                    break;
+                }
             }
         }
 
         // bullet hits reward box
-        for (reward_entity, reward_tf, reward_type) in &reward_query {
-            let reward_pos = reward_tf.translation;
-            let reward_half = Vec2::splat(TILE_SIZE * 0.5);
-            if aabb_overlap(
-                bullet_pos.x, bullet_pos.y, bullet_half,
-                reward_pos.x, reward_pos.y, reward_half,
-            ) {
-                commands.entity(bullet_entity).despawn();
+        if matches!(owner, BulletOwner::Player) {
+            for (reward_entity, reward_tf, reward_type) in &reward_query {
+                let reward_pos = reward_tf.translation;
+                let reward_half = Vec2::splat(TILE_SIZE * 0.5);
+                if aabb_overlap(
+                    bullet_pos.x, bullet_pos.y, bullet_half,
+                    reward_pos.x, reward_pos.y, reward_half,
+                ) {
+                    commands.entity(bullet_entity).despawn();
 
-                match reward_type.0{
-                    1 => {
-                        let increase_hp = random_range(5..=20) as f32;
-                        maxhp.0 += increase_hp;
-                        hp.0 += increase_hp;
+                    match reward_type.0 {
+                        1 => {
+                            let increase_hp = random_range(5..=20) as f32;
+                            maxhp.0 += increase_hp;
+                            hp.0 += increase_hp;
+                        }
+                        2 => {
+                            let mut atkspd = shoot_timer.0.duration();
+                            atkspd = (atkspd - Duration::from_secs_f32(0.03))
+                                .max(Duration::from_secs_f32(0.1));
+                            shoot_timer.0.set_duration(atkspd);
+                        }
+                        3 => {
+                            movspd.0 = (movspd.0 + 20.0).min(600.0);
+                        }
+                        _ => panic!("Reward Type Not Found"),
                     }
-                    2 => {
-                        let mut atkspd = shoot_timer.0.duration();
-                        atkspd = (atkspd - Duration::from_secs_f32(0.03)).max(Duration::from_secs_f32(0.1));
-                        shoot_timer.0.set_duration(atkspd);
-                    }
-                    3 => {
-                        movspd.0 = (movspd.0 + 20.0).min(600.0);
-                    }
-                    _ => panic!("Reward Type Not Found")
+
+                    commands.entity(reward_entity).despawn();
+                    break;
                 }
-
-                commands.entity(reward_entity).despawn();
-                break;
             }
         }
     }

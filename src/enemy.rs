@@ -6,10 +6,10 @@ pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
 pub const ENEMY_ACCEL: f32 = 1800.;
 
-use crate::{GameEntity, GameState};
 use crate::map::EnemySpawnPoints;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
+use crate::{GameEntity, GameState};
 use std::time::Duration;
 
 const ANIM_TIME: f32 = 0.2;
@@ -114,6 +114,7 @@ impl Plugin for EnemyPlugin {
                 (
                     ranged_enemy_ai,
                     move_enemy.after(ranged_enemy_ai),
+                    move_reaper_freely.after(ranged_enemy_ai),
                     collide_enemies_with_enemies.after(move_enemy),
                 )
                     .run_if(in_state(GameState::Playing)),
@@ -177,7 +178,7 @@ fn check_enemy_health(
 ) {
     for (entity, health) in enemy_query.iter() {
         if health.0 <= 0.0 {
-            if let LevelState::InRoom(index, _pos) = *lvlstate {
+            if let LevelState::InRoom(index, _) = *lvlstate {
                 rooms.0[index].numofenemies -= 1;
             }
             commands.entity(entity).despawn();
@@ -185,12 +186,7 @@ fn check_enemy_health(
     }
 }
 
-pub fn spawn_enemy_at(
-    commands: &mut Commands,
-    enemy_res: &EnemyRes,
-    at: Vec3,
-    active: bool,
-) {
+pub fn spawn_enemy_at(commands: &mut Commands, enemy_res: &EnemyRes, at: Vec3, active: bool) {
     let mut e = commands.spawn((
         Sprite::from_image(enemy_res.frames[0].clone()),
         Transform {
@@ -371,7 +367,11 @@ fn move_enemy(
             Option<&crate::fluiddynamics::PulledByFluid>,
             Option<&RangedEnemy>,
         ),
-        (With<Enemy>, With<ActiveEnemy>),
+        (
+            With<Enemy>,
+            With<ActiveEnemy>,
+            Without<crate::reaper::Reaper>,
+        ),
     >,
     wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>, Without<Player>)>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
@@ -473,6 +473,16 @@ fn move_enemy(
     }
 }
 
+fn move_reaper_freely(
+    time: Res<Time>,
+    mut query: Query<(&mut Transform, &Velocity), With<crate::reaper::Reaper>>,
+) {
+    let dt = time.delta_secs();
+    for (mut tf, vel) in &mut query {
+        tf.translation += (vel.velocity * dt).extend(0.0);
+    }
+}
+
 // collide enemies with each other
 fn collide_enemies_with_enemies(
     mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>)>,
@@ -507,7 +517,10 @@ fn collide_enemies_with_enemies(
 
 fn table_hits_enemy(
     _time: Res<Time>,
-    mut enemy_query: Query<(&Transform, &mut Health), With<Enemy>>,
+    mut enemy_query: Query<
+        (&Transform, &mut Health),
+        (With<Enemy>, Without<crate::reaper::Reaper>),
+    >,
     table_query: Query<
         (&Transform, &Collider, Option<&crate::enemy::Velocity>),
         With<table::Table>,
@@ -559,7 +572,7 @@ fn ranged_enemy_ai(
 
     // Difficulty scaling per room as f32
     let difficulty_mult: f32 = match *lvlstate {
-        LevelState::InRoom(idx, _pos) => 1.0 + (idx as f32 * 0.10),
+        LevelState::InRoom(idx, _) => 1.0 + (idx as f32 * 0.10),
         LevelState::EnteredRoom(idx) => 1.0 + (idx as f32 * 0.10),
         LevelState::NotRoom => 1.0,
     };
@@ -603,4 +616,3 @@ fn ranged_enemy_ai(
         }
     }
 }
-
