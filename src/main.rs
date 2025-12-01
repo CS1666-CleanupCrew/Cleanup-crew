@@ -24,6 +24,7 @@ pub mod bullet;
 pub mod broom;
 pub mod reward;
 pub mod heart;
+pub mod reaper;
 
 
 
@@ -52,7 +53,7 @@ struct MainCamera;
 struct HealthDisplay;
 
 #[derive(Component)]
-struct Damage { amount: f32, }
+pub struct Damage { amount: f32, }
 
 #[derive(Component)]
 struct GameOverScreen;
@@ -127,6 +128,7 @@ fn main() {
             broom::BroomPlugin,
             reward::RewardPlugin,
             heart::HeartPlugin,
+            reaper::ReaperPlugin,
         ))
         .add_systems(Startup, setup_camera)
         .add_systems(OnEnter(GameState::Menu), log_state_change)
