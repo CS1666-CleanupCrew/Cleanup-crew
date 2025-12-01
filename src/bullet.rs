@@ -79,55 +79,59 @@ pub fn shoot_bullet_on_click(
     q_window: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     bullet_animate: Res<BulletRes>,
+    mut shoot_timer: ResMut<ShootTimer>,
+    time: Res<Time>,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
+    shoot_timer.0.tick(time.delta());
 
-    let window = match q_window.single() {
-        Ok(win) => win,
-        Err(_) => return,
-    };
+    if buttons.pressed(MouseButton::Left) && shoot_timer.0.finished(){
 
-    let Some(cursor_pos) = window.cursor_position() else { return; };
+        let window = match q_window.single() {
+            Ok(win) => win,
+            Err(_) => return,
+        };
 
-    let (camera, cam_transform) = match q_camera.single() {
-        Ok(c) => c,
-        Err(_) => return,
-    };
+        let Some(cursor_pos) = window.cursor_position() else { return; };
 
-    let Some(world_pos) = cursor_to_world(cursor_pos, (camera, cam_transform)) else { return; };
+        let (camera, cam_transform) = match q_camera.single() {
+            Ok(c) => c,
+            Err(_) => return,
+        };
 
-    let Ok(player_transform) = q_player.single() else { return; };
-    let player_pos = player_transform.translation.truncate();
+        let Some(world_pos) = cursor_to_world(cursor_pos, (camera, cam_transform)) else { return; };
 
-    let dir_vec = (world_pos - player_pos).normalize_or_zero();
-    if dir_vec == Vec2::ZERO {
-        return;
-    }
+        let Ok(player_transform) = q_player.single() else { return; };
+        let player_pos = player_transform.translation.truncate();
 
-    let shoot_offset = 16.0;
-    let spawn_pos = player_pos + dir_vec * shoot_offset;
+        let dir_vec = (world_pos - player_pos).normalize_or_zero();
+        if dir_vec == Vec2::ZERO {
+            return;
+        }
 
-    commands.spawn((
-        Sprite::from_atlas_image(
-            bullet_animate.0.clone(),
-            TextureAtlas {
-                layout: bullet_animate.1.clone(),
-                index: 0,
+        let shoot_offset = 16.0;
+        let spawn_pos = player_pos + dir_vec * shoot_offset;
+
+        commands.spawn((
+            Sprite::from_atlas_image(
+                bullet_animate.0.clone(),
+                TextureAtlas {
+                    layout: bullet_animate.1.clone(),
+                    index: 0,
+                },
+            ),
+            Transform {
+                translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
+                scale: Vec3::splat(0.25),
+                ..Default::default()
             },
-        ),
-        Transform {
-            translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
-            scale: Vec3::splat(0.25),
-            ..Default::default()
-        },
-        Velocity(dir_vec * BULLET_SPEED),
-        Bullet,
-        BulletOwner::Player,
-        Collider { half_extents: Vec2::splat(5.0) },
-        GameEntity,
-    ));
+            Velocity(dir_vec * BULLET_SPEED),
+            Bullet,
+            BulletOwner::Player,
+            Collider { half_extents: Vec2::splat(5.0) },
+            GameEntity,
+        ));
+        shoot_timer.0.reset();
+    }
 }
 
 pub fn spawn_bullets_from_ranged(

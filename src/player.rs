@@ -227,6 +227,7 @@ fn move_player(
     bullet_animate: Res<BulletRes>,
     mut shoot_timer: ResMut<ShootTimer>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
+    buttons: Res<ButtonInput<MouseButton>>,
 ) {
 
     let Ok(grid) = grid_query.single() else {
@@ -271,7 +272,7 @@ fn move_player(
     }
 
     shoot_timer.0.tick(time.delta());
-    if input.pressed(KeyCode::Space) && shoot_timer.0.finished() {
+    if input.pressed(KeyCode::Space) && shoot_timer.0.finished() && !buttons.pressed(MouseButton::Left){
         let bullet_dir = match facing.0 {
             FacingDirection::Up => Vec2::new(0.0, 1.0),
             FacingDirection::UpRight => Vec2::new(1.0, 1.0),
