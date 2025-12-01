@@ -65,7 +65,7 @@ fn broom_input(
     player_query: Query<(&Transform, &Facing), (With<Player>, Without<Broom>)>,
     broom_q: Query<Entity, (With<Broom>, Without<Player>)>,
 ) {
-    if keyboard.pressed(KeyCode::KeyC) && broom_q.is_empty() {
+    if (keyboard.pressed(KeyCode::KeyC) || keyboard.pressed(KeyCode::KeyB)) && broom_q.is_empty() {
         if let Some((player_tf, facing)) = player_query.iter().next() {
 
             let broom_length = TILE_SIZE * 2.0;
