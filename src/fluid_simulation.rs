@@ -153,7 +153,6 @@ impl FluidGrid {
     pub fn add_breach(&mut self, x: usize, y: usize) {
         if x < self.width && y < self.height {
             self.breaches.push((x, y));
-            // quieter than info! to avoid console spam in release
             debug!("Breach created at ({}, {}) ", x, y);
         }
     }

@@ -291,11 +291,11 @@ pub fn build_full_level(
     window_cfg: Res<WindowConfig>,
 ) {
     // +40 and +20 are padding
-    const MAP_W: usize = 200 + 40;
-    const MAP_H: usize = 200 + 20;
-    const MIN_LEAF_SIZE: usize = 60;
-    const MIN_ROOM_SIZE: usize = 46;
-    let seed: u64 = random_range(0..=10000000); // 140;
+    const MAP_W: usize = 250 + 40;
+    const MAP_H: usize = 250 + 20;
+    const MIN_LEAF_SIZE: usize = 50;
+    const MIN_ROOM_SIZE: usize = 45;
+    let seed: u64 = random_range(0..u64::MAX);
 
     // full map of '.'
     let mut map: Vec<Vec<char>> = vec![vec!['.'; MAP_W]; MAP_H];
@@ -309,23 +309,23 @@ pub fn build_full_level(
         seed,
         &mut room_vec,
     );
-    info!("Finished BSP generation.");
+    debug!("Finished BSP generation.");
 
     generate_walls(&mut map);
-    info!("Finished wall generation.");
+    debug!("Finished wall generation.");
 
     let mut rng = StdRng::seed_from_u64(seed);
     place_windows(&mut map, &room_vec, &window_cfg, &mut rng);
-    info!("Finished placing windows.");
+    debug!("Finished placing windows.");
 
     place_doors(&mut map, &room_vec);
-    info!("Finished placing doors.");
+    debug!("Finished placing doors.");
 
     let window_count = map.iter()
     .flat_map(|row| row.iter())
     .filter(|&&c| c == 'G')
     .count();
-    info!("Placed {} windows in this level.", window_count);
+    debug!("Placed {} windows in this level.", window_count);
 
 
     let f = File::create("assets/rooms/level.txt").expect("Couldn't create output file");
@@ -335,7 +335,7 @@ pub fn build_full_level(
         let line: String = row.into_iter().collect();
         writeln!(writer, "{line}").expect("Failed to write map row");
     }
-    info!("Finished writing to file.");
+    debug!("Finished writing to file.");
 }
 
 // map: mutable 2D vector representing the map tiles.
@@ -373,7 +373,7 @@ fn bsp_generate_level(
         if let Some(room_rect) = &leaf.room {
             let choice = rng.random_range(1..=8);
             if choice <= 6 {
-                // preset room from set of 6
+                // preset room from set of 6w
                 let preset_room: &RoomLayout = match choice {
                     1 => rooms.room(1),
                     2 => rooms.room(2),
@@ -748,7 +748,7 @@ pub fn place_doors(map: &mut Vec<Vec<char>>, room_vec: &RoomVec) {
 
 pub fn place_windows<R: Rng>(
     map: &mut Vec<Vec<char>>,
-    _room_vec: &RoomVec, // kept for signature compatibility, but unused now
+    room_vec: &RoomVec, // kept for signature compatibility, but unused now
     cfg: &WindowConfig,
     rng: &mut R,
 ) {
@@ -761,36 +761,48 @@ pub fn place_windows<R: Rng>(
     let mut candidates: Vec<(usize, usize)> = Vec::new();
 
     // Any hull wall: 'W' with at least one '#' neighbor and at least one '.' neighbor
-    for y in 0..rows {
-        for x in 0..cols {
-            if map[y][x] != 'W' {
-                continue;
-            }
+    for room in &room_vec.0{
+        let x1 = room.tile_top_left_corner.x as usize;
+        let y1 = room.tile_top_left_corner.y as usize;
+        let x2 = room.tile_bot_right_corner.x as usize;
+        let y2 = room.tile_bot_right_corner.y as usize;
 
-            let mut has_floor = false;
-            let mut has_empty = false;
-
-            // 4 connected neighbors (up, down, left, right)
-            for (dx, dy) in [(1isize, 0isize), (-1, 0), (0, 1), (0, -1)] {
-                let nx = x as isize + dx;
-                let ny = y as isize + dy;
-                if nx < 0 || ny < 0 || nx >= cols as isize || ny >= rows as isize {
+        for y in y1..y2+1 {
+            for x in x1..x2+1 {
+                if map[y][x] != 'W' {
                     continue;
                 }
 
-                match map[ny as usize][nx as usize] {
-                    '#' => has_floor = true,
-                    '.' => has_empty = true,
-                    _ => {}
+                let mut has_floor = false;
+                let mut has_empty = false;
+                
+                // 8 neighbors
+                for (dx, dy) in [
+                    (-1,-1),    (-1, 0),    (-1, 1),
+                    ( 0,-1),                ( 0, 1),
+                    ( 1,-1),    ( 1, 0),    ( 1, 1)
+                ] {
+                    let nx = x as isize + dx;
+                    let ny = y as isize + dy;
+                    if nx < 0 || ny < 0 || nx >= cols as isize || ny >= rows as isize {
+                        continue;
+                    }
+
+                    match map[ny as usize][nx as usize] {
+                        '#' => has_floor = true,
+                        '.' => has_empty = true,
+                        _ => {}
+                    }
+                }
+
+                if has_floor && has_empty {
+                    candidates.push((x, y));
                 }
             }
-
-            if has_floor && has_empty {
-                candidates.push((x, y));
-            }
         }
-    }
 
+    }
+    
         // Filter out candidates too close to doors
     if cfg.avoid_doors_radius > 0 {
         // collect all doors
@@ -829,7 +841,7 @@ pub fn place_windows<R: Rng>(
     }
     desired = desired.min(total);
 
-    info!(
+    debug!(
         "Global windows: {} candidate hull walls, placing {} windows",
         total, desired
     );

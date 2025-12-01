@@ -61,7 +61,7 @@ fn collect_heart(
         if distance < collect_radius {
             health.0 = (health.0 + 20.0).min(maxhp.0);
             commands.entity(heart_entity).despawn();
-            info!("Heart collected! Health: {}", health.0);
+            debug!("Heart collected! Health: {}", health.0);
         }
     }
 }
