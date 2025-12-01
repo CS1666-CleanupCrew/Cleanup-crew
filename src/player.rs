@@ -146,7 +146,7 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut textu
     commands.insert_resource(player);
 
     //Change time for how fast the player can shoot
-    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Repeating)));
+    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Once)));
     
 }
 
