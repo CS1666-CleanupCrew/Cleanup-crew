@@ -183,7 +183,7 @@ fn start_menu_music(
         MenuMusic,
     ));
     
-    info!("Menu music started");
+    debug!("Menu music started");
 }
 
 fn stop_menu_music(
@@ -192,7 +192,7 @@ fn stop_menu_music(
 ) {
     for entity in &music_query {
         commands.entity(entity).despawn();
-        info!("Menu music stopped");
+        debug!("Menu music stopped");
     }
 }
 

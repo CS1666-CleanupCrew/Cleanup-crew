@@ -146,7 +146,7 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut textu
     commands.insert_resource(player);
 
     //Change time for how fast the player can shoot
-    commands.insert_resource(ShootTimer(Timer::from_seconds(0.25, TimerMode::Once)));
+    commands.insert_resource(ShootTimer(Timer::from_seconds(0.5, TimerMode::Once)));
     
 }
 
@@ -422,7 +422,7 @@ fn enemy_hits_player(
                 enemy_half,
             ) {
                 if damage_timer.0.finished() {
-                    info!(
+                    debug!(
                         "Player hit by entity {:?} at position {:?}",
                         enemy_entity, enemy_pos
                     );
@@ -725,15 +725,15 @@ fn table_hits_player(
                     health.0 -= dmg;
                     dmg_timer.0.reset();
 
-                    // info!(
-                    //     "Player hit by TABLE at {:?}, speed={:.2}, damage={:.2}, player health now {:.2}",
-                    //     table_pos, speed, dmg, health.0
-                    // );
+                    debug!(
+                        "Player hit by TABLE at {:?}, speed={:.2}, damage={:.2}, player health now {:.2}",
+                        table_pos, speed, dmg, health.0
+                    );
                 } else {
-                    // debug!(
-                    //     "Table overlap but speed {:.2} <= {:.2}, no damage (table_pos={:?})",
-                    //     speed, threshold, table_pos
-                    // );
+                    debug!(
+                        "Table overlap but speed {:.2} <= {:.2}, no damage (table_pos={:?})",
+                        speed, threshold, table_pos
+                    );
                 }
             }
         }

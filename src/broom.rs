@@ -3,7 +3,7 @@ use crate::bullet::aabb_overlap;
 use crate::{TILE_SIZE, GameState};
 use crate::player::{Player, Facing, FacingDirection};
 use crate::collidable::{Collider, Collidable};
-use crate::enemy::{ENEMY_SIZE, Enemy};
+use crate::enemy::Enemy;
 use crate::window::{Health, GlassState, Window};
 
 #[derive(Component)]
