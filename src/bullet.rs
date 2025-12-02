@@ -20,6 +20,9 @@ const BULLET_SPEED: f32 = 600.0;
 #[derive(Resource)]
 pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
 
+#[derive(Resource)]
+pub struct LaserSound(Handle<AudioSource>);
+
 #[derive(Component)]
 pub struct Bullet;
 pub struct BulletPlugin;
@@ -63,6 +66,9 @@ fn load_bullet(
     let bullet_animate_layout = TextureAtlasLayout::from_grid(UVec2::splat(100), 3, 1, None, None);
     let bullet_animate_handle = texture_atlases.add(bullet_animate_layout);
 
+    let laser_sound: Handle<AudioSource> = asset_server.load("audio/laser_zap.ogg");
+    commands.insert_resource(LaserSound(laser_sound));
+
     commands.insert_resource(BulletRes(bullet_animate_image, bullet_animate_handle));
 }
 
@@ -84,6 +90,7 @@ pub fn shoot_bullet_on_click(
     bullet_animate: Res<BulletRes>,
     mut shoot_timer: ResMut<ShootTimer>,
     time: Res<Time>,
+    laser_sound: Res<LaserSound>,
 ) {
     shoot_timer.0.tick(time.delta());
 
@@ -133,6 +140,9 @@ pub fn shoot_bullet_on_click(
             Collider { half_extents: Vec2::splat(5.0) },
             GameEntity,
         ));
+
+        commands.spawn(AudioPlayer::new(laser_sound.0.clone()));
+
         shoot_timer.0.reset();
     }
 }
@@ -141,6 +151,7 @@ pub fn spawn_bullets_from_ranged(
     mut commands: Commands,
     mut events: EventReader<RangedEnemyShootEvent>,
     bullet_animate: Res<BulletRes>,
+    laser_sound: Res<LaserSound>,
 ) {
     for ev in events.read() {
         let origin = ev.origin;
@@ -171,6 +182,8 @@ pub fn spawn_bullets_from_ranged(
             Collider { half_extents: Vec2::splat(5.0) },
             GameEntity,
         ));
+
+        commands.spawn(AudioPlayer::new(laser_sound.0.clone()));
     }
 }
 
