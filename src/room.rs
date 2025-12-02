@@ -14,7 +14,6 @@ use crate::map::{Door, TablePositions};
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
 use crate::enemy::{EnemyRes, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
-use crate::map::ATABLE;
 use crate::table;
 
 #[derive(Resource)]
@@ -383,7 +382,6 @@ fn generate_tables_in_room(
                 table::Table,
                 table::Health(50.0),
                 table::TableState::Intact,
-                ATABLE,
                 GameEntity,
             ))
         }).collect();
