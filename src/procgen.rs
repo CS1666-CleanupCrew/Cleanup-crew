@@ -769,6 +769,10 @@ pub fn place_windows<R: Rng>(
 
         for y in y1..y2+1 {
             for x in x1..x2+1 {
+                if map.len() == y{
+                    return;
+                }
+
                 if map[y][x] != 'W' {
                     continue;
                 }
