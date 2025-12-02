@@ -783,7 +783,7 @@ fn apply_breach_force_to_player(
 
         
         // the strength of the forces that you can tweak to get more visible results
-        let pressure_force_strength = 500000.0;
+         let pressure_force_strength = 500000.0;
         let velocity_force_strength = 300000.0;
         
         let pressure_force = fluid_velocity.normalize_or_zero()  * scaled_pressure_diff  * pressure_force_strength;

@@ -79,9 +79,6 @@ pub struct BgScroll {
     pub offset: f32,
 }
 
-#[derive(Component)]
-pub struct ATABLE;
-
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
@@ -99,7 +96,6 @@ impl Plugin for MapPlugin {
                 setup_tilemap.after(ProcgenSet::BuildFullLevel).after(load_map),
             )
             .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
-            //.add_systems(OnEnter(GameState::Loading), assign_tables.after(setup_tilemap))
             .add_systems(OnEnter(GameState::Loading), playing_state.after(assign_doors))
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, scroll_background)
