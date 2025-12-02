@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::scene::ron::de;
 
 use std::fs::File;
 use std::io::BufReader;
@@ -44,6 +45,9 @@ pub struct TileRes {
     pub closed_door: Handle<Image>,
     pub open_door: Handle<Image>,
 }
+
+#[derive(Resource)]
+pub struct TablePositions(pub Vec<Vec3>);
 
 #[derive(Resource)]
 pub struct BackgroundRes(pub Handle<Image>);
@@ -95,7 +99,7 @@ impl Plugin for MapPlugin {
                 setup_tilemap.after(ProcgenSet::BuildFullLevel).after(load_map),
             )
             .add_systems(OnEnter(GameState::Loading), assign_doors.after(setup_tilemap))
-            .add_systems(OnEnter(GameState::Loading), assign_tables.after(setup_tilemap))
+            //.add_systems(OnEnter(GameState::Loading), assign_tables.after(setup_tilemap))
             .add_systems(OnEnter(GameState::Loading), playing_state.after(assign_doors))
             .add_systems(Update, follow_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, scroll_background)
@@ -295,28 +299,30 @@ pub fn setup_tilemap(
     }).collect();
     commands.spawn_batch(wall_batch);
 
+    commands.insert_resource(TablePositions(table_positions));
+
     // Batch spawn tables
-    let table_batch: Vec<_> = table_positions.iter().map(|&pos| {
-        let mut sprite = Sprite::from_image(tiles.table.clone());
-        sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
-        (
-            sprite,
-            Transform {
-                translation: pos,
-                scale: Vec3::new(0.5, 1.0, 1.0),
-                ..Default::default()
-            },
-            Collidable,
-            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-            Name::new("Table"),
-            table::Table,
-            table::Health(50.0),
-            table::TableState::Intact,
-            ATABLE,
-            GameEntity,
-        )
-    }).collect();
-    commands.spawn_batch(table_batch);
+    // let table_batch: Vec<_> = table_positions.iter().map(|&pos| {
+    //     let mut sprite = Sprite::from_image(tiles.table.clone());
+    //     sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+    //     (
+    //         sprite,
+    //         Transform {
+    //             translation: pos,
+    //             scale: Vec3::new(0.5, 1.0, 1.0),
+    //             ..Default::default()
+    //         },
+    //         Collidable,
+    //         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+    //         Name::new("Table"),
+    //         table::Table,
+    //         table::Health(50.0),
+    //         table::TableState::Intact,
+    //         ATABLE,
+    //         GameEntity,
+    //     )
+    // }).collect();
+    // commands.spawn_batch(table_batch);
 
     // Batch spawn glass windows
     let glass_batch: Vec<_> = glass_positions.iter().map(|&pos| {

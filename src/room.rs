@@ -1,18 +1,21 @@
-use bevy::ecs::storage::Table;
+
+use bevy::log::Level;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
 use rand::{SeedableRng};
 use rand::rngs::StdRng;
 // use core::num;
 use std::collections::HashSet;
+use std::time::Instant;
 use bevy::time::Time;
 use crate::collidable::{Collidable, Collider};
 use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
-use crate::map::Door;
+use crate::map::{Door, TablePositions};
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
 use crate::enemy::{EnemyRes, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
 use crate::map::ATABLE;
+use crate::table;
 
 #[derive(Resource)]
 pub struct EnemyPosition(pub HashSet<(usize, usize)>);
@@ -30,7 +33,6 @@ pub struct RoomVec(pub Vec<Room>);
 pub struct Room{
     pub cleared: bool,
     pub doors:Vec<Entity>,
-    pub tables:Vec<Entity>,
     pub numofenemies: usize,
     top_left_corner: Vec2,
     bot_right_corner: Vec2,
@@ -46,7 +48,6 @@ impl Room{
         Self{
             cleared: false,
             doors:Vec::new(),
-            tables:Vec::new(),
             numofenemies: 0,
             top_left_corner: tlc.clone(),
             bot_right_corner: brc.clone(),
@@ -121,19 +122,19 @@ pub fn assign_doors(
     }
 }
 
-pub fn assign_tables(
-    tables: Query<(Entity, &Transform), With<ATABLE>>,
-    mut rooms: ResMut<RoomVec>,
-){
-    for (entity, pos) in tables.iter(){
-        for room in rooms.0.iter_mut(){
-            if room.bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) {
-                room.doors.push(entity);
-                break;
-            }
-        }
-    }
-}
+// pub fn assign_tables(
+//     tables: Query<(Entity, &Transform), With<ATABLE>>,
+//     mut rooms: ResMut<RoomVec>,
+// ){
+//     for (entity, pos) in tables.iter(){
+//         for room in rooms.0.iter_mut(){
+//             if room.bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) {
+//                 room.tables.push(entity);
+//                 break;
+//             }
+//         }
+//     }
+// }
 
 pub fn track_rooms(
     player: Single<&Transform, With<Player>>,
@@ -156,6 +157,7 @@ pub fn track_rooms(
         }
     }
 }
+
 pub fn entered_room(
     mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
@@ -164,18 +166,33 @@ pub fn entered_room(
     enemy_res: Res<EnemyRes>,
     ranged_res: Res<RangedEnemyRes>,
     play_query: Single<&NumOfCleared, With<Player>>,
+    table_positions: Res<TablePositions>,
+    tables: Query<Entity, With<table::Table>>,
+
 ){
     match *lvlstate
     {
         LevelState::EnteredRoom(index) =>
         {
-            
+            let mut count = 0;
             for door in rooms.0[index].doors.iter(){
                 commands.entity(*door).insert(Collidable);
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
                 
             }
+            for room in rooms.0.iter(){
+                if room.cleared{
+                    count+=1;
+                }
+            }
+            if count == rooms.0.len()-1{
+                for table in tables {
+                    commands.entity(table).despawn();
+                }
+            }
+            generate_tables_in_room(&table_positions, &mut commands, &tiles, &rooms, &lvlstate);
+            
             if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query){
                 *lvlstate = LevelState::InRoom(index, pos);
             }
@@ -184,6 +201,7 @@ pub fn entered_room(
         _ => {}
     }
 }
+
 pub fn playing_room(
     mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
@@ -231,6 +249,7 @@ pub fn generate_enemies_in_room(
     enemy_res: &EnemyRes,
     ranged_res: &RangedEnemyRes,
     play_query: &NumOfCleared,
+
 ) -> Option<Vec3> {
     let rooms_cleared = play_query.0;
     let mut floors: Vec<(f32, f32)> = Vec::new();
@@ -329,6 +348,49 @@ pub fn generate_enemies_in_room(
     Some(Vec3::new(floors[0].0, floors[0].1, Z_ENTITIES))
 
     // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);
+}
+
+fn generate_tables_in_room(
+    table_positions: &TablePositions,
+    commands: &mut Commands, 
+    tiles: &TileRes,
+    rooms: &RoomVec,
+    lvlstate: &LevelState,
+){
+    
+    if let LevelState::EnteredRoom(i) = *lvlstate{
+
+        let table_batch: Vec<_> = table_positions.0.iter().filter_map(|&pos| {
+
+            let check = pos.truncate();
+
+            if !rooms.0[i].bounds_check(check){
+
+                return None;
+            }
+            let mut sprite = Sprite::from_image(tiles.table.clone());
+            sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+            Some((
+                sprite,
+                Transform {
+                    translation: pos,
+                    scale: Vec3::new(0.5, 1.0, 1.0),
+                    ..Default::default()
+                },
+                Collidable,
+                Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+                Name::new("Table"),
+                table::Table,
+                table::Health(50.0),
+                table::TableState::Intact,
+                ATABLE,
+                GameEntity,
+            ))
+        }).collect();
+
+        commands.spawn_batch(table_batch);
+    }
+    
 }
 
 
@@ -442,12 +504,12 @@ pub fn track_window_breaches(
 pub fn apply_breach_forces_to_entities(
     time: Res<Time>,
     rooms: Res<RoomVec>,
-    mut tables: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
-    mut lvlstate: ResMut<LevelState>,
+    mut tables: Query<(Entity, &Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
     mut player: Query<(&Transform, &mut crate::player::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::player::Player>, Without<crate::table::Table>)>,
     mut enemies: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::enemy::Enemy>, Without<crate::player::Player>, Without<crate::table::Table>)>,
 ) {
-    for (transform, mut velocity, pulled_by_fluid) in tables.iter_mut() {
+
+    for (e, transform, mut velocity, pulled_by_fluid) in tables.iter_mut() {
         apply_breach_force_to_entity(
             &rooms,
             transform.translation.truncate(),
