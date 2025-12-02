@@ -7,6 +7,7 @@ use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
+use crate::GameEntity;
 
 
 
@@ -24,8 +25,8 @@ pub struct ReaperState {
 impl Default for ReaperState {
     fn default() -> Self {
         Self {
-            // spawn after 5 seconds in a room
-            timer: Timer::from_seconds(5.0, TimerMode::Once),
+            // spawn after 7 seconds in a room
+            timer: Timer::from_seconds(7.0, TimerMode::Once),
             current_room: None,
             spawned_in_room: None,
         }
@@ -89,7 +90,7 @@ fn spawn_reaper(commands: &mut Commands, at: Vec3, res: &ReaperRes) {
         // treat it like a ranged enemy so it can shoot + keep some distance
         RangedEnemy,
         Velocity::new(),
-        Health::new(200.0),
+        Health::new(500.0),
         RangedEnemyAI {
             range: 450.0,
             fire_cooldown: Timer::from_seconds(0.5, TimerMode::Repeating),
@@ -100,9 +101,10 @@ fn spawn_reaper(commands: &mut Commands, at: Vec3, res: &ReaperRes) {
         },
         Collidable,
         crate::fluiddynamics::PulledByFluid { mass: 20.0 },
+        GameEntity,
     ));
 
-    info!("Reaper spawned at {:?}", at);
+    //info!("Reaper spawned at {:?}", at);
 }
 
 
@@ -146,11 +148,11 @@ fn reaper_room_timer(
                     spawn_reaper_warning(&mut commands, &assets);
                     state.spawned_in_room = Some(idx);
 
-                    info!(
-                        "Reaper spawned in room {} (rooms left: {})",
-                        idx,
-                        rooms.0.len()
-                    );
+                    // info!(
+                    //     "Reaper spawned in room {} (rooms left: {})",
+                    //     idx,
+                    //     rooms.0.len()
+                    // );
                 }
             }
         }
@@ -295,7 +297,6 @@ fn reaper_cleanup_system(
     mut state: ResMut<ReaperState>,
     reaper_q: Query<(Entity, &Health), With<Reaper>>,
 ) {
-    // Figure out if we are currently in a room and which one
     let current_idx = if let LevelState::InRoom(idx, _) = *lvlstate {
         Some(idx)
     } else {
@@ -315,6 +316,8 @@ fn reaper_cleanup_system(
 
     let idx = current_idx.unwrap();
 
+    let in_final_room = is_final_room(&lvlstate, &rooms);
+
     // Check if this room is marked cleared
     let room_cleared = rooms
         .0
@@ -323,13 +326,16 @@ fn reaper_cleanup_system(
         .unwrap_or(false);
 
     for (entity, health) in &reaper_q {
-        // Despawn Reaper if:
-        // 1) room is cleared, OR
-        // 2) its health hit zero (final room kill)
-        if room_cleared || health.0 <= 0.0 {
+        // In non-final rooms: despawn on room clear or death
+        // In final room: ONLY despawn on death
+        let should_despawn =
+            (!in_final_room && room_cleared) || health.0 <= 0.0;
+
+        if should_despawn {
             commands.entity(entity).despawn();
             state.spawned_in_room = None;
         }
     }
 }
+
 

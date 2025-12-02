@@ -165,7 +165,7 @@ pub fn spawn_bullets_from_ranged(
                 scale: Vec3::splat(0.25),
                 ..Default::default()
             },
-            Velocity(dir * ev.speed),            // bullet.rs's Velocity
+            Velocity(dir * ev.speed),
             Bullet,
             BulletOwner::Enemy,
             Collider { half_extents: Vec2::splat(5.0) },
@@ -182,13 +182,21 @@ pub fn spawn_bullets_from_ranged(
 pub struct Velocity(pub Vec2);
 
 pub fn move_bullets(
-    mut bullet_q: Query<(&mut Transform, &Velocity), With<Bullet>>,
+    mut commands: Commands,
+    mut bullet_q: Query<(Entity, &mut Transform, &Velocity), With<Bullet>>,
     time: Res<Time>,
 ) {
-    for (mut transform, vel) in bullet_q.iter_mut() {
+    for (entity, mut transform, vel) in bullet_q.iter_mut() {
         transform.translation += (vel.0 * time.delta_secs()).extend(0.0);
+
+        // Despawn off-screen bullets
+        let p = transform.translation;
+        if p.x.abs() > 4000.0 || p.y.abs() > 4000.0 {
+            commands.entity(entity).despawn();
+        }
     }
 }
+
 
 
 fn animate_bullet(

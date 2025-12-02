@@ -54,6 +54,7 @@ pub struct FluidGrid {
     pub width: usize,
     pub height: usize,
     pub distribution: Vec<[f32; 9]>,
+    pub scratch: Vec<[f32; 9]>,
     pub obstacles: Vec<bool>,
     pub breaches: Vec<(usize, usize)>, //location of the window, where the air is leaking
 }
@@ -87,6 +88,7 @@ impl FluidGrid {
             width,
             height,
             distribution: vec![[0.0; 9]; size],
+            scratch: vec![[0.0; 9]; size],
             obstacles: vec![false; size],
             breaches: Vec::new(),
         }
@@ -262,15 +264,16 @@ fn collision_step(mut query: Query<&mut FluidGrid>) {
 //moving particles into the neighboring cells based on the direction
 fn streaming_step(mut query: Query<&mut FluidGrid>) {
     for mut grid in &mut query {
-        //used as a buffer
+        let width = grid.width;
+        let height = grid.height;
+
+        // Clone the distribution to avoid borrow conflicts
         let old_dist = grid.distribution.clone();
-        //copy of the entire grid
-        let mut new_dist = grid.distribution.clone();
-        //loop through all the cells
-        for y in 0..grid.height {
-            for x in 0..grid.width {
+
+        for y in 0..height {
+            for x in 0..width {
                 let idx = grid.get_index(x, y);
-                
+
                 if grid.obstacles[idx] {
                     continue;
                 }
@@ -280,10 +283,11 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
                     let src_x = x as isize - C_X[i] as isize;
                     let src_y = y as isize - C_Y[i] as isize;
 
-                    //check for bounce back (off the grid or into obstacle)
-                    let bounced_back = if src_x < 0 || src_x >= grid.width as isize || 
-                        src_y < 0 || src_y >= grid.height as isize {
-                        //came from out of bounds
+                    let bounced_back = if src_x < 0
+                        || src_x >= width as isize
+                        || src_y < 0
+                        || src_y >= height as isize
+                    {
                         true
                     } else {
                         //check if it came from an obstacle
@@ -299,8 +303,8 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
                     else {
                         //normal streaming, no bounch back
                         let src_idx = grid.get_index(src_x as usize, src_y as usize);
-                        new_dist[idx][i] = old_dist[src_idx][i];
-                    }   
+                        grid.scratch[idx][i] = old_dist[src_idx][i];
+                    }
                 }
             }
         }
