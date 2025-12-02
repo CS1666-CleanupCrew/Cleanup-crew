@@ -89,6 +89,10 @@ fn setup_menu(
                         align_items: AlignItems::Center,
                         flex_direction: FlexDirection::Column,
                         row_gap: Val::Px(40.0),
+                        margin: UiRect {
+                            top: Val::Px(100.0),
+                            ..default()
+                        },
                         ..default()
                     },
                 ))
