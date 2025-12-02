@@ -2,6 +2,10 @@ use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 use std::fs;
 
+
+use crate::room::Room;
+use crate::room::RoomVec;
+
 //Division of the room in small grids for the airflow measurement there
 pub const GRID_WIDTH: usize = 79;
 pub const GRID_HEIGHT: usize = 39;
@@ -72,11 +76,13 @@ impl Plugin for FluidSimPlugin {
             .add_systems(
                 Update, 
                 (
-                    collision_step,          // step 1 of LBM: local relaxation (BGK)
-                    streaming_step,          // step 2 of LBM: move distributions to neighbors (with bounce-back)
-                    apply_breach_forces,     // simple density reduction near breaches
-                    pull_objects_toward_breaches, // game objects suction towards breaches
-                ).chain()
+                    collision_step,
+                    streaming_step,
+                    apply_breach_forces,
+                    pull_objects_toward_breaches,
+                )
+                    .chain()
+                    .run_if(in_state(crate::GameState::Playing))
             );
     }
 }
@@ -349,63 +355,69 @@ fn apply_breach_forces(mut query: Query<&mut FluidGrid>) {
     
 }
 
-//apply suction forces to objects, pulling them toward breaches
+// apply suction forces ONLY to objects inside the same room as the breach
 fn pull_objects_toward_breaches(
+    rooms: Res<RoomVec>,
     grid_query: Query<&FluidGrid>,
     mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
 ) {
     let Ok(grid) = grid_query.single() else {
         return;
     };
-    
+
     if grid.breaches.is_empty() {
         return;
     }
-    
-    // Use TILE_SIZE instead of hard-coded 8.0
-    let cell_size = crate::TILE_SIZE; // 32.0
-    //calculate grid origin (center of grid is at world origin 0,0)
+
+    // convert breach grid coords → world coords
+    let cell_size = crate::TILE_SIZE;
     let grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
     let grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
-    
-    //info!("Grid: {}×{}, cell_size: {}, origin: ({}, {})", 
-    //      grid.width, grid.height, cell_size, grid_origin_x, grid_origin_y);
-    
+
     for (transform, mut velocity, pulled) in &mut objects {
         let world_pos = transform.translation.truncate();
 
-        // If you later need to read fluid cell values (rho/vel) where this object is,
-        // keep this mapping, but don’t spam logs if outside the grid—just skip quietly.
-        if world_to_grid_opt(world_pos, grid.width, grid.height, cell_size).is_none() {
-            // Silently skip objects that are far outside the fluid grid
+        //find the room object is in
+        let mut current_room: Option<&Room> = None;
+        for room in rooms.0.iter() {
+            if room.bounds_check(world_pos) {
+
+                current_room = Some(room);
+                break;
+            }
+        }
+
+        //dont pull if not in any room
+        let Some(room) = current_room else {
+            continue;
+        };
+
+        // dont apply suction if room has no breaches
+        if room.breaches.is_empty() {
             continue;
         }
-        
+
+        //apply suction forces from all breaches in the room
         let mut total_force = Vec2::ZERO;
-        
-        for &(bx, by) in &grid.breaches {
-            let breach_world_x = grid_origin_x + (bx as f32 * cell_size);
-            let breach_world_y = grid_origin_y + (by as f32 * cell_size);
-            let breach_pos = Vec2::new(breach_world_x, breach_world_y);
-            
-            let to_breach = breach_pos - world_pos;
+
+        for &breach_world_pos in &room.breaches {
+            let to_breach = breach_world_pos - world_pos;
             let distance = to_breach.length();
-            
+
             if distance > 1.0 {
-                // tune this constant to taste
-                 let force_magnitude = 25000.0; 
+                let force_magnitude = 25000.0;
                 total_force += to_breach.normalize() * force_magnitude;
             }
         }
-        
+
+        // apply physics
         let acceleration = total_force / pulled.mass;
-        // If you have Time, multiply by delta; here we assume ~16ms/frame.
         velocity.velocity += acceleration * 0.016;
-        
-        // clamp runaway speeds
+
+        // clamp excessive speeds
         let max_velocity = 200.0;
-        if velocity.velocity.length() > max_velocity  {
-           velocity.velocity = velocity.velocity.normalize() * max_velocity;
+        if velocity.velocity.length() > max_velocity {
+            velocity.velocity = velocity.velocity.normalize() * max_velocity;
         }
     }
 }
