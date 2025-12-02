@@ -207,7 +207,7 @@ fn spawn_player(
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
         NumOfCleared(0),
-        PulledByFluid{mass: 1.0},
+        PulledByFluid{mass: 50.0},
         GameEntity,
     ));
 }
@@ -783,8 +783,8 @@ fn apply_breach_force_to_player(
 
         
         // the strength of the forces that you can tweak to get more visible results
-         let pressure_force_strength = 5000000.0;
-        let velocity_force_strength = 30000.0;
+         let pressure_force_strength = 500000.0;
+        let velocity_force_strength = 300000.0;
         
         let pressure_force = fluid_velocity.normalize_or_zero()  * scaled_pressure_diff  * pressure_force_strength;
         let velocity_force = fluid_velocity * velocity_force_strength;
