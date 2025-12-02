@@ -104,7 +104,14 @@ fn setup_menu(
                         ImageNode::new(assets.load("menu/Title_Play.png")),
                     ));
 
-                    // Test Room Button (Text-based)
+                    // Credits
+                    col.spawn((
+                        Button,
+                        MenuButton::Credits,
+                        ImageNode::new(assets.load("menu/Title_Credits.png")),
+                    ));
+
+                    // Test Room Button (Text-based) – now BELOW Credits
                     col.spawn((
                         Button,
                         MenuButton::PlayTestRoom,
@@ -127,12 +134,7 @@ fn setup_menu(
                         ));
                     });
 
-                    // Credits
-                    col.spawn((
-                        Button,
-                        MenuButton::Credits,
-                        ImageNode::new(assets.load("menu/Title_Credits.png")),
-                    ));
+                    // Air labels toggle row
                     col.spawn((
                         Node {
                             width: Val::Px(420.0),
@@ -165,12 +167,18 @@ fn setup_menu(
                             ));
                         });
 
-                        // Static label
+                        // Static label – smaller font now
                         row.spawn((
                             Text::new("Show air pressure labels"),
-                            TextFont { font_size: 28.0, ..default() },
+                            TextFont { font_size: 20.0, ..default() },
                         ));
                     });
+
+                    // Controls hint text at the very bottom
+                    col.spawn((
+                        Text::new("Controls: [Space] to shoot and [M] to toggle music"),
+                        TextFont { font_size: 20.0, ..default() },
+                    ));
                 });
         });
 }
