@@ -15,6 +15,8 @@ pub struct BroomSwing {
     pub active: bool,
 }
 
+use crate::bullet::Bullet;
+
 pub struct BroomPlugin;
 
 impl Plugin for BroomPlugin {
@@ -22,10 +24,10 @@ impl Plugin for BroomPlugin {
         app.add_systems(Update, broom_input.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_swing_system.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_hit_enemies_system.run_if(in_state(GameState::Playing)))
-           .add_systems(Update, broom_fix_window.run_if(in_state(GameState::Playing)));
+           .add_systems(Update, broom_fix_window.run_if(in_state(GameState::Playing)))
+           .add_systems(Update, broom_hit_bullets_system.run_if(in_state(GameState::Playing)));
     }
 }
-
 
 fn distance_point_to_segment(p: Vec2, a: Vec2, b: Vec2) -> f32 {
     let ab = b - a;
@@ -33,6 +35,33 @@ fn distance_point_to_segment(p: Vec2, a: Vec2, b: Vec2) -> f32 {
     let t = t.clamp(0.0, 1.0);
     let proj = a + ab * t;
     p.distance(proj)
+}
+
+pub fn broom_hit_bullets_system(
+    mut commands: Commands,
+    broom_query: Query<(&Transform, &Collider), With<Broom>>,
+    bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
+) {
+    let (broom_transform, broom_collider) = match broom_query.get_single() {
+        Ok(b) => b,
+        Err(_) => return, // No broom active
+    };
+
+    let broom_center = broom_transform.translation.truncate();
+    let broom_half = broom_collider.half_extents;
+
+    for (bullet_entity, bullet_transform, bullet_collider) in bullet_query.iter() {
+        let bullet_center = bullet_transform.translation.truncate();
+        let bullet_half = bullet_collider.half_extents;
+
+        let overlap =
+            (broom_center.x - bullet_center.x).abs() < (broom_half.x + bullet_half.x) &&
+            (broom_center.y - bullet_center.y).abs() < (broom_half.y + bullet_half.y);
+
+        if overlap {
+            commands.entity(bullet_entity).despawn_recursive();
+        }
+    }
 }
 
 fn aabb_capsule_hit(
