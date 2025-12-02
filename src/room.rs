@@ -1,4 +1,3 @@
-use bevy::ecs::storage::Table;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
 use rand::{SeedableRng};
@@ -12,7 +11,6 @@ use crate::map::Door;
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
 use crate::enemy::{EnemyRes, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
-use crate::map::ATABLE;
 
 #[derive(Resource)]
 pub struct EnemyPosition(pub HashSet<(usize, usize)>);
@@ -30,7 +28,6 @@ pub struct RoomVec(pub Vec<Room>);
 pub struct Room{
     pub cleared: bool,
     pub doors:Vec<Entity>,
-    pub tables:Vec<Entity>,
     pub numofenemies: usize,
     top_left_corner: Vec2,
     bot_right_corner: Vec2,
@@ -46,7 +43,6 @@ impl Room{
         Self{
             cleared: false,
             doors:Vec::new(),
-            tables:Vec::new(),
             numofenemies: 0,
             top_left_corner: tlc.clone(),
             bot_right_corner: brc.clone(),
@@ -112,20 +108,6 @@ pub fn assign_doors(
     mut rooms: ResMut<RoomVec>,
 ){
     for (entity, pos) in doors.iter(){
-        for room in rooms.0.iter_mut(){
-            if room.bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) {
-                room.doors.push(entity);
-                break;
-            }
-        }
-    }
-}
-
-pub fn assign_tables(
-    tables: Query<(Entity, &Transform), With<ATABLE>>,
-    mut rooms: ResMut<RoomVec>,
-){
-    for (entity, pos) in tables.iter(){
         for room in rooms.0.iter_mut(){
             if room.bounds_check(Vec2::new(pos.translation.x, pos.translation.y)) {
                 room.doors.push(entity);
@@ -443,7 +425,6 @@ pub fn apply_breach_forces_to_entities(
     time: Res<Time>,
     rooms: Res<RoomVec>,
     mut tables: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
-    mut lvlstate: ResMut<LevelState>,
     mut player: Query<(&Transform, &mut crate::player::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::player::Player>, Without<crate::table::Table>)>,
     mut enemies: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::enemy::Enemy>, Without<crate::player::Player>, Without<crate::table::Table>)>,
 ) {

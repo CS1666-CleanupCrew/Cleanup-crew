@@ -94,7 +94,6 @@ fn animate_broken_tables(
 
         //if timer.0.just_finished() {
             //*visibility = Visibility::Hidden;
-            //commands.entity(entity).despawn();
             commands.entity(entity).remove::<Collidable>();
         //}
     }
@@ -181,10 +180,10 @@ fn apply_table_velocity(
 }
 
 fn collide_tables_with_tables(
-    mut table_query: Query<(Entity, &mut Transform, &Collider), (With<Table>, With<Velocity>)>,
+    mut table_query: Query<(&mut Transform, &Collider), (With<Table>, With<Velocity>)>,
 ) {
     let mut combinations = table_query.iter_combinations_mut();
-    while let Some([(entity1, mut t1_transform, c1), (entity2,mut t2_transform, c2)]) =
+    while let Some([(mut t1_transform, c1), (mut t2_transform, c2)]) =
         combinations.fetch_next()
     {
         let (p1, h1) = (t1_transform.translation.truncate(), c1.half_extents);
@@ -200,13 +199,11 @@ fn collide_tables_with_tables(
                 let push = sign * overlap_x * 0.5; 
                 t1_transform.translation.x += push;
                 t2_transform.translation.x -= push;
-                
             } else {
                 let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
                 let push = sign * overlap_y * 0.5; 
                 t1_transform.translation.y += push;
                 t2_transform.translation.y -= push;
-                
             }
         }
     }
