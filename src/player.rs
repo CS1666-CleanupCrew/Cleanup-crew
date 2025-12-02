@@ -14,6 +14,8 @@ use crate::bullet::{Bullet, BulletOwner};
 const BULLET_SPD: f32 = 700.;
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
 
+#[derive(Resource)]
+pub struct PlayerLaserSound(Handle<AudioSource>);
 
 #[derive(Component)]
 pub struct Player;           
@@ -145,6 +147,9 @@ fn load_player(mut commands: Commands, asset_server: Res<AssetServer>, mut textu
     };
     commands.insert_resource(player);
 
+    let laser_sound: Handle<AudioSource> = asset_server.load("audio/laser_zap.ogg");
+    commands.insert_resource(PlayerLaserSound(laser_sound));
+
     //Change time for how fast the player can shoot
     commands.insert_resource(ShootTimer(Timer::from_seconds(0.5, TimerMode::Once)));
     
@@ -223,11 +228,12 @@ fn move_player(
     player: Single<(&mut Transform, &mut Velocity, &mut Facing, &MoveSpeed), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
     colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>)>,
-    commands: Commands,
+    mut commands: Commands,
     bullet_animate: Res<BulletRes>,
     mut shoot_timer: ResMut<ShootTimer>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
     buttons: Res<ButtonInput<MouseButton>>,
+    laser_sound: Res<PlayerLaserSound>,
 ) {
 
     let Ok(grid) = grid_query.single() else {
@@ -284,11 +290,14 @@ fn move_player(
             FacingDirection::Right => Vec2::new(1.0, 0.0),
         };
         spawn_bullet(
-            commands,
+            &mut commands,
             bullet_animate,
             Vec2 { x: transform.translation.x, y: transform.translation.y },
             bullet_dir,
         );
+
+        commands.spawn(AudioPlayer::new(laser_sound.0.clone()));
+
         shoot_timer.0.reset();
     }
 
@@ -502,7 +511,7 @@ fn load_bullet(
 }
 
 fn spawn_bullet(
-    mut commands: Commands,
+    commands: &mut Commands,
     bullet_animate: Res<BulletRes>,
     pos: Vec2,
     dir: Vec2,
