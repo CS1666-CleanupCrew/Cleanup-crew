@@ -298,18 +298,19 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
                     //if bounced back, reverse direction
                     if bounced_back {
                         let opposite_i = OPPOSITE_DIR[i];
-                        new_dist[idx][i] = old_dist[idx][opposite_i];
-                    }
-                    else {
-                        //normal streaming, no bounch back
+                        grid.scratch[idx][i] = old_dist[idx][opposite_i];
+                    } else {
                         let src_idx = grid.get_index(src_x as usize, src_y as usize);
                         grid.scratch[idx][i] = old_dist[src_idx][i];
                     }
                 }
             }
         }
-        //just replace the old one with the newly calculated one 
-        grid.distribution = new_dist;
+
+        // swap buffers after all modifications
+        let temp = grid.distribution.clone();
+        grid.distribution = grid.scratch.clone();
+        grid.scratch = temp;
     }
 }
 
