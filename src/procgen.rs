@@ -54,8 +54,8 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            density: 0.80,// 80% of eligible wall segments so we can tune how many windows appear
-            min_per_room: 10,
+            density: 0.15,// 15% of eligible wall segments so we can tune how many windows appear
+            min_per_room: 5,
             max_per_room: 5000,
             avoid_doors_radius: 2,
         }
@@ -823,10 +823,10 @@ pub fn place_windows<R: Rng>(
         });
     }
 
-    if candidates.is_empty() {
-        info!("No candidate wall tiles for windows");
-        return;
-    }
+    // if candidates.is_empty() {
+    //     info!("No candidate wall tiles for windows");
+    //     return;
+    // }
 
     candidates.shuffle(rng);
 

@@ -488,12 +488,18 @@ fn collide_enemies_with_enemies(
     mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>)>,
 ) {
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+    let max_interaction_dist = ENEMY_SIZE * 4.0; // or something
+    let max_interaction_dist2 = max_interaction_dist * max_interaction_dist;
 
     // get all combinations of 2 enemies
     let mut combinations = enemy_query.iter_combinations_mut();
     while let Some([mut e1_transform, mut e2_transform]) = combinations.fetch_next() {
         let (p1, h1) = (e1_transform.translation.truncate(), enemy_half);
         let (p2, h2) = (e2_transform.translation.truncate(), enemy_half);
+        let d2 = (p1 - p2).length_squared();
+        if d2 > max_interaction_dist2 {
+            continue;
+        }
 
         // check if they overlap
         if crate::player::aabb_overlap(p1.x, p1.y, h1, p2.x, p2.y, h2) {

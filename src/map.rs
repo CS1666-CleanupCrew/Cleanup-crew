@@ -131,7 +131,7 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>,
     commands.insert_resource(space_tex);
 
     //Change this path for a different map
-    info!("Loading map: {}", level_to_load.0);
+    //info!("Loading map: {}", level_to_load.0);
     let f = File::open(level_to_load.0.clone()).expect("file don't exist");
     let reader = BufReader::new(f);
 
@@ -155,7 +155,7 @@ pub fn setup_tilemap(
     let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
     let map_rows = level.level.len() as f32;
 
-    info!("Spawning level: {} cols × {} rows", map_cols as usize, map_rows as usize);
+    //info!("Spawning level: {} cols × {} rows", map_cols as usize, map_rows as usize);
 
     let map_px_w = map_cols * TILE_SIZE;
     let map_px_h = map_rows * TILE_SIZE;
@@ -352,7 +352,7 @@ pub fn setup_tilemap(
         }
     }
 
-    info!("Spawned {} enemy spawn points", spawns.0.len());
+    // info!("Spawned {} enemy spawn points", spawns.0.len());
     commands.insert_resource(spawns);
 }
 
@@ -391,17 +391,14 @@ fn follow_player(
     //finds all entities that are able to transform and are made of the player component
     player_query: Query<&Transform, (With<player::Player>, Without<MainCamera>)>,
     mut camera_query: Query<&mut Transform, (With<MainCamera>, Without<player::Player>)>,
-    level: Res<LevelRes>,
+    grid_meta: Res<MapGridMeta>,
 ) {
     //players current position.
     if let Ok(player_transform) = player_query.single() {
         //This will error out if we would like to have several cameras, this makes the camera mutable
         if let Ok(mut camera_transform) = camera_query.single_mut() {
-            //level bounds  calculation given 40x23
-            let map_cols = level.level.first().map(|r| r.len()).unwrap_or(0) as f32;
-            let map_rows = level.level.len() as f32;
-            let level_width = map_cols * TILE_SIZE;
-            let level_height = map_rows * TILE_SIZE;
+            let level_width  = grid_meta.cols as f32 * TILE_SIZE;
+            let level_height = grid_meta.rows as f32 * TILE_SIZE;
 
             //these are the bounds for the camera, but it will not move horizontally because we have an exact match between the window and tile width
             let max_x = (level_width - WIN_W) * 0.5;
@@ -413,7 +410,7 @@ fn follow_player(
             let target_x = player_transform.translation.x.clamp(min_x, max_x);
             let target_y = player_transform.translation.y.clamp(min_y, max_y);
             camera_transform.translation.x = target_x;
-            camera_transform.translation.y = target_y;
+            camera_transform. translation.y = target_y;
         }
     }
 }

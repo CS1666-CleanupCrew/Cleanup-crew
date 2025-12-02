@@ -109,6 +109,9 @@ fn apply_table_velocity(
     let deltat = time.delta_secs();
 
     for (mut transform, mut velocity, table_collider) in &mut table_query {
+        if velocity.velocity.length_squared() < 0.01 {
+            continue; // table basically stationary, skip collision checks
+        }
         
 //colliision detection from enemey.rs
         let change = velocity.velocity * deltat;
