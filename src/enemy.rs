@@ -1,6 +1,8 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::Player;
+use crate::reaper::Reaper;
 use bevy::prelude::*;
+use bevy::scene::ron::de;
 
 pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
@@ -60,6 +62,9 @@ impl Velocity {
         }
     }
 }
+
+#[derive(Component)]
+pub struct MeleeEnemy;
 
 #[derive(Component)]
 pub struct RangedEnemy;
@@ -203,6 +208,7 @@ pub fn spawn_enemy_at(commands: &mut Commands, enemy_res: &EnemyRes, at: Vec3, a
         },
         crate::fluiddynamics::PulledByFluid { mass: 10.0 },
         GameEntity,
+        MeleeEnemy,
     ));
     if active {
         e.insert(ActiveEnemy);
@@ -337,7 +343,7 @@ fn animate_ranged_enemy(
 pub fn animate_enemy_hit(
     time: Res<Time>,
     mut commands: Commands,
-    mut enemies: Query<(Entity, &mut Sprite, &mut HitAnimation)>,
+    mut enemies: Query<(Entity, &mut Sprite, &mut HitAnimation), With<MeleeEnemy>>,
     enemy_res: Res<EnemyRes>,
 ) {
     for (entity, mut sprite, mut hit) in &mut enemies {
