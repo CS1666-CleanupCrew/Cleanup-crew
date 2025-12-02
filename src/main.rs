@@ -1,6 +1,7 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
+use bevy::audio::Volume;
 use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels};
 use crate::room::RoomVec;
 use crate::map::MapGridMeta;
@@ -50,6 +51,12 @@ struct MainCamera;
 
 #[derive(Component)]
 struct HealthDisplay;
+
+#[derive(Component)]
+struct GameMusic;
+
+#[derive(Resource)]
+pub struct GameMusicVolume(pub f32);
 
 #[derive(Component)]
 pub struct Damage { amount: f32, }
@@ -142,8 +149,14 @@ fn main() {
                 .after(init_air_grid)
                 .run_if(|flag: Res<ShowAirLabels>| flag.0),
         )
+        .add_systems(OnEnter(GameState::Playing), start_game_music)
+        .add_systems(
+            Update,
+            toggle_game_music.run_if(in_state(GameState::Playing)),
+        )
 
         .add_systems(OnExit(GameState::Playing), clean_game)
+        .add_systems(OnExit(GameState::Playing), stop_game_music)
         .add_systems(Update, handle_end_screen_buttons.run_if(in_state(GameState::GameOver)))
         .add_systems(Update, handle_end_screen_buttons.run_if(in_state(GameState::Win)))
         .add_systems(OnExit(GameState::GameOver), clean_end_screen)
@@ -179,6 +192,7 @@ fn main() {
         )
         
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
+        .insert_resource(GameMusicVolume(0.5)) // .5 volume by default
         .run();
 }
 
@@ -465,6 +479,69 @@ fn air_damage_system(
             "Player taking air damage! Pressure: {:.2} at ({}, {}) - HP: {:.1}",
             air_pressure, grid_x, grid_y_flipped, health.0
         );
+    }
+}
+
+fn start_game_music(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    volume: Res<GameMusicVolume>,
+) {
+    let music_handle = asset_server.load("audio/game_music_maybe.ogg");
+
+    commands.spawn((
+        AudioPlayer::new(music_handle),
+        PlaybackSettings {
+            mode: bevy::audio::PlaybackMode::Loop,
+            volume: Volume::Linear(volume.0),
+            ..default()
+        },
+        GameMusic,
+    ));
+
+    debug!("Game music started");
+}
+
+fn stop_game_music(
+    mut commands: Commands,
+    music_query: Query<Entity, With<GameMusic>>,
+) {
+    for entity in &music_query {
+        commands.entity(entity).despawn();
+        debug!("Game music stopped");
+    }
+}
+
+fn toggle_game_music(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    music_query: Query<Entity, With<GameMusic>>,
+    volume: Res<GameMusicVolume>,
+) {
+    if !keys.just_pressed(KeyCode::KeyM) {
+        return;
+    }
+
+    if music_query.is_empty() {
+        let music_handle = asset_server.load("audio/game_music_maybe.ogg");
+
+        commands.spawn((
+            AudioPlayer::new(music_handle),
+            PlaybackSettings {
+                mode: bevy::audio::PlaybackMode::Loop,
+                volume: Volume::Linear(volume.0),
+                ..default()
+            },
+            GameMusic,
+        ));
+
+        debug!("Game music toggled ON");
+    } else {
+        for e in &music_query {
+            commands.entity(e).despawn();
+        }
+        debug!("Game music toggled OFF");
     }
 }
 
