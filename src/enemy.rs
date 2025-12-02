@@ -10,6 +10,7 @@ use crate::map::EnemySpawnPoints;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
 use crate::{GameEntity, GameState};
+use crate::reaper::Reaper;
 use std::time::Duration;
 
 const ANIM_TIME: f32 = 0.2;
@@ -337,7 +338,10 @@ fn animate_ranged_enemy(
 pub fn animate_enemy_hit(
     time: Res<Time>,
     mut commands: Commands,
-    mut enemies: Query<(Entity, &mut Sprite, &mut HitAnimation)>,
+    mut enemies: Query<
+        (Entity, &mut Sprite, &mut HitAnimation),
+        (Without<RangedEnemy>, Without<Reaper>),
+    >,
     enemy_res: Res<EnemyRes>,
 ) {
     for (entity, mut sprite, mut hit) in &mut enemies {
