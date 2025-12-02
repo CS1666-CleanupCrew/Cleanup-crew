@@ -293,8 +293,8 @@ pub fn build_full_level(
     // +40 and +20 are padding
     const MAP_W: usize = 250 + 40;
     const MAP_H: usize = 250 + 20;
-    const MIN_LEAF_SIZE: usize = 50;
-    const MIN_ROOM_SIZE: usize = 45;
+    const MIN_LEAF_SIZE: usize = 60;
+    const MIN_ROOM_SIZE: usize = 50;
     let seed: u64 = random_range(0..u64::MAX);
 
     // full map of '.'
