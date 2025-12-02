@@ -167,14 +167,14 @@ fn setup_menu(
                             ));
                         });
 
-                        // Static label – smaller font now
+                        // Air pressure labels text
                         row.spawn((
                             Text::new("Show air pressure labels"),
                             TextFont { font_size: 20.0, ..default() },
                         ));
                     });
 
-                    // Controls hint text at the very bottom
+                    // Controls
                     col.spawn((
                         Text::new("Controls: [Space] to shoot and [M] to toggle music"),
                         TextFont { font_size: 20.0, ..default() },
