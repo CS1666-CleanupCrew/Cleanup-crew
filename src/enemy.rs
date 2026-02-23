@@ -191,7 +191,8 @@ fn check_enemy_health(
     }
 }
 
-pub fn spawn_enemy_at(commands: &mut Commands, enemy_res: &EnemyRes, at: Vec3, active: bool) {
+pub fn spawn_enemy_at(commands: &mut Commands, enemy_res: &EnemyRes, at: Vec3, active: bool, health_multiplier: f32) {
+    let base_health = 50.0;
     let mut e = commands.spawn((
         Sprite::from_image(enemy_res.frames[0].clone()),
         Transform {
@@ -200,7 +201,7 @@ pub fn spawn_enemy_at(commands: &mut Commands, enemy_res: &EnemyRes, at: Vec3, a
         },
         Enemy,
         Velocity::new(),
-        Health::new(50.0),
+        Health::new(base_health * health_multiplier),
         AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         EnemyFrames {
             handles: enemy_res.frames.clone(),
@@ -220,7 +221,9 @@ pub fn spawn_ranged_enemy_at(
     ranged_res: &RangedEnemyRes,
     at: Vec3,
     active: bool,
+    health_multiplier: f32,
 ) {
+    let base_health = 40.0;
     let mut e = commands.spawn((
         // start with facing right frame 0
         Sprite::from_image(ranged_res.right_frames[0].clone()),
@@ -231,7 +234,7 @@ pub fn spawn_ranged_enemy_at(
         Enemy,
         RangedEnemy,
         Velocity::new(),
-        Health::new(40.0),
+        Health::new(base_health * health_multiplier),
         RangedAnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         RangedEnemyFrames {
             right: ranged_res.right_frames.clone(),
@@ -262,10 +265,10 @@ fn spawn_enemies_from_points(
     for (i, &p) in points.0.iter().enumerate() {
         if i % 3 == 0 {
             // every 3rd enemy is a ranger
-            spawn_ranged_enemy_at(&mut commands, &ranged_res, p, true);
+            spawn_ranged_enemy_at(&mut commands, &ranged_res, p, true, 1.0);
         } else {
             // others are standard chasers
-            spawn_enemy_at(&mut commands, &enemy_res, p, true);
+            spawn_enemy_at(&mut commands, &enemy_res, p, true, 1.0);
         }
     }
 }

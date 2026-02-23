@@ -1,4 +1,3 @@
-
 use bevy::log::Level;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
@@ -167,6 +166,7 @@ pub fn entered_room(
     play_query: Single<&NumOfCleared, With<Player>>,
     table_positions: Res<TablePositions>,
     tables: Query<Entity, With<table::Table>>,
+    station_level: Res<crate::StationLevel>,
 
 ){
     match *lvlstate
@@ -191,7 +191,7 @@ pub fn entered_room(
             }
             generate_tables_in_room(&table_positions, &mut commands, &tiles, &rooms, &lvlstate);
             
-            if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query){
+            if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query, station_level.0){
                 *lvlstate = LevelState::InRoom(index, pos);
             }
             
@@ -247,14 +247,21 @@ pub fn generate_enemies_in_room(
     enemy_res: &EnemyRes,
     ranged_res: &RangedEnemyRes,
     play_query: &NumOfCleared,
+    station_level: u32,
 
 ) -> Option<Vec3> {
     let rooms_cleared = play_query.0;
     let mut floors: Vec<(f32, f32)> = Vec::new();
 
     let room = &mut rooms.0[index];
-    let scaled_num_enemies = 1 * rooms_cleared + num_of_enemies;
+    // Scale enemy count: base + rooms_cleared + station_level bonus
+    // Each station adds 2 extra enemies per room
+    let station_bonus = (station_level as usize) * 2;
+    let scaled_num_enemies = 1 * rooms_cleared + num_of_enemies + station_bonus;
     room.numofenemies = scaled_num_enemies;
+
+    // Health multiplier: each station increases enemy health by 50%
+    let health_multiplier = 1.0 + (station_level as f32) * 0.5;
 
     let height = room.layout.len() - 6;
     if height <= 0 { return None; }
@@ -329,9 +336,9 @@ pub fn generate_enemies_in_room(
 
         if idx % 4 == 2 {
             // 1 in 4 are ranged
-            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true);
+            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier);
         } else {
-            spawn_enemy_at(&mut commands, enemy_res, pos, true);
+            spawn_enemy_at(&mut commands, enemy_res, pos, true, health_multiplier);
         }
     }
 

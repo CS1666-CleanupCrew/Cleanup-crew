@@ -77,11 +77,34 @@ pub struct AirDamageTimer(Timer);
 #[derive(Component)]
 pub enum EndScreenButtons{
     PlayAgain,
-    MainMenu
+    MainMenu,
+    Continue,
 }
 
 #[derive(Component)]
 pub struct GameEntity;
+
+/// Tracks which station iteration the player is on (0 = first station).
+/// Each subsequent station has harder enemies.
+#[derive(Resource)]
+pub struct StationLevel(pub u32);
+
+impl Default for StationLevel {
+    fn default() -> Self { Self(0) }
+}
+
+/// Saved player buffs carried between stations on "Continue".
+#[derive(Resource, Clone)]
+pub struct SavedPlayerBuffs {
+    pub max_health: f32,
+    pub health: f32,
+    pub move_speed: f32,
+    pub fire_rate: f32,
+    pub num_cleared: usize,
+}
+
+#[derive(Component)]
+pub struct StationLevelDisplay;
 
 /**
  * States is for the different game states
@@ -120,6 +143,7 @@ fn main() {
         .init_state::<GameState>()
         //Calls the plugin
         .init_resource::<ShowAirLabels>()
+        .init_resource::<StationLevel>()
         .add_plugins((
             procgen::ProcGen,
             map::MapPlugin,
@@ -201,8 +225,10 @@ fn main() {
 }
 
 fn check_win(
+    mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     rooms: Res<RoomVec>,
+    player_q: Query<(&Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon, &player::NumOfCleared), With<Player>>,
 ){
     let mut count = 0;
 
@@ -213,14 +239,26 @@ fn check_win(
     }
 
     if count == rooms.0.len(){
+        // Save player buffs before transitioning (player will be despawned on exit)
+        if let Ok((health, max_hp, move_spd, weapon, num_cleared)) = player_q.single() {
+            commands.insert_resource(SavedPlayerBuffs {
+                max_health: max_hp.0,
+                health: health.0,
+                move_speed: move_spd.0,
+                fire_rate: weapon.fire_rate,
+                num_cleared: num_cleared.0,
+            });
+        }
         next_state.set(GameState::Win);
     }
 }
 
 fn load_win(
     mut commands: Commands,
-    asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>,
+    station_level: Res<StationLevel>,
 ){
+    let font: Handle<Font> = asset_server.load("fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf");
 
     commands.spawn((
         Node {
@@ -249,49 +287,112 @@ fn load_win(
             ImageNode::new(asset_server.load("win.png")),
         ));
 
+        // Station cleared text
         root.spawn((
             Node {
+                position_type: PositionType::Absolute,
                 width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                margin:UiRect {
-                    left: Val::Percent(0.),
-                    right: Val::Percent(25.),
-                    top: Val::Percent(35.),
-                    bottom: Val::Percent(0.)
-                },
+                top: Val::Px(20.0),
                 justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
                 ..default()
             },
-            ))
-            .with_children(|col|{
-                col.spawn((
-                    Button,
-                    EndScreenButtons::PlayAgain,
-                    ImageNode::new(asset_server.load("playagain.png")),
-                ));
+        ))
+        .with_children(|r| {
+            r.spawn((
+                Text::new(format!("Station {} Cleared!", station_level.0 + 1)),
+                TextFont { font: font.clone(), font_size: 36.0, ..default() },
+                TextColor(Color::srgb(1.0, 1.0, 0.2)),
+            ));
         });
+
+        // Button column
         root.spawn((
             Node {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
-                margin:UiRect {
-                    left: Val::Percent(0.),
-                    right: Val::Percent(0.),
-                    top: Val::Percent(25.),
-                    bottom: Val::Percent(0.)
+                margin: UiRect {
+                    top: Val::Percent(30.),
+                    ..default()
                 },
                 justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(20.0),
                 ..default()
             },
+        ))
+        .with_children(|col|{
+            // Continue button (new station, keep buffs)
+            col.spawn((
+                Button,
+                EndScreenButtons::Continue,
+                Node {
+                    width: Val::Px(420.0),
+                    height: Val::Px(60.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(8.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.0, 0.5, 0.1, 0.85)),
+                BorderColor(Color::srgba(0.2, 1.0, 0.3, 0.8)),
+                BorderRadius::all(Val::Px(6.0)),
             ))
-            .with_children(|col|{
-                col.spawn((
-                    Button,
-                    EndScreenButtons::MainMenu,
-                    ImageNode::new(asset_server.load("mainmenu.png")),
-                )); 
+            .with_children(|b| {
+                b.spawn((
+                    Text::new(format!("Continue to Station {}", station_level.0 + 2)),
+                    TextFont { font: font.clone(), font_size: 28.0, ..default() },
+                    TextColor(Color::WHITE),
+                ));
+            });
+
+            // Play Again (full restart)
+            col.spawn((
+                Button,
+                EndScreenButtons::PlayAgain,
+                Node {
+                    width: Val::Px(420.0),
+                    height: Val::Px(60.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(8.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.7)),
+                BorderColor(Color::srgba(1.0, 1.0, 1.0, 0.4)),
+                BorderRadius::all(Val::Px(6.0)),
+            ))
+            .with_children(|b| {
+                b.spawn((
+                    Text::new("Restart (New Game)"),
+                    TextFont { font: font.clone(), font_size: 28.0, ..default() },
+                    TextColor(Color::WHITE),
+                ));
+            });
+
+            // Main Menu
+            col.spawn((
+                Button,
+                EndScreenButtons::MainMenu,
+                Node {
+                    width: Val::Px(420.0),
+                    height: Val::Px(60.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(8.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.7)),
+                BorderColor(Color::srgba(1.0, 1.0, 1.0, 0.4)),
+                BorderRadius::all(Val::Px(6.0)),
+            ))
+            .with_children(|b| {
+                b.spawn((
+                    Text::new("Main Menu"),
+                    TextFont { font: font.clone(), font_size: 28.0, ..default() },
+                    TextColor(Color::WHITE),
+                ));
+            });
         });
     });
 }
@@ -375,7 +476,7 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((Camera2d, MainCamera));
 }
 
-fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>, station_level: Res<StationLevel>) {
     let font: Handle<Font> = asset_server.load("fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf");
     commands.spawn((
         Node {
@@ -386,13 +487,33 @@ fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         Text::new("HP: 100"),
         TextFont {
-            font,
+            font: font.clone(),
             font_size: 24.0,
             ..default()
         },
         TextColor(Color::srgb(1.0, 0.0, 0.0)),
         ZIndex(10),
         HealthDisplay,
+        GameEntity,
+    ));
+
+    // Station level display
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(12.0),
+            top: Val::Px(40.0),
+            ..default()
+        },
+        Text::new(format!("Station {}", station_level.0 + 1)),
+        TextFont {
+            font,
+            font_size: 20.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.8, 0.8, 1.0)),
+        ZIndex(10),
+        StationLevelDisplay,
         GameEntity,
     ));
 }
@@ -554,8 +675,10 @@ fn log_state_change(state: Res<State<GameState>>) {
 }
 
 fn handle_end_screen_buttons(
+    mut commands: Commands,
     mut interactions: Query<(&Interaction, &EndScreenButtons), (Changed<Interaction>, With<Button>)>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut station_level: ResMut<StationLevel>,
 ) {
     for (interaction, which) in &mut interactions {
         
@@ -563,10 +686,22 @@ fn handle_end_screen_buttons(
             continue;
         }
         match which {
+            EndScreenButtons::Continue => {
+                // Increment station level — buffs are already saved in SavedPlayerBuffs
+                station_level.0 += 1;
+                info!("Continuing to station {} (difficulty increased)", station_level.0 + 1);
+                next_state.set(GameState::Loading);
+            }
             EndScreenButtons::PlayAgain => {
+                // Full reset
+                station_level.0 = 0;
+                commands.remove_resource::<SavedPlayerBuffs>();
                 next_state.set(GameState::Loading);
             }
             EndScreenButtons::MainMenu => {
+                // Full reset
+                station_level.0 = 0;
+                commands.remove_resource::<SavedPlayerBuffs>();
                 next_state.set(GameState::Menu);
             }
         }

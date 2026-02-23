@@ -162,6 +162,7 @@ fn spawn_player(
     player_sheet: Res<PlayerRes>,
     level: Res<LevelRes>,
     grid: Res<MapGridMeta>,
+    saved_buffs: Option<Res<crate::SavedPlayerBuffs>>,
 ) {
     let (image, layout) = &player_sheet.down;
 
@@ -192,6 +193,21 @@ fn spawn_player(
     let world_x = grid.x0 + gx as f32 * TILE_SIZE + x_player_spawn_offset;
     let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE + y_player_spawn_offset;
 
+    // Apply saved buffs from previous station if continuing, otherwise use defaults
+    let (hp, max_hp, move_speed, fire_rate, num_cleared) = if let Some(buffs) = &saved_buffs {
+        info!(
+            "Applying saved buffs: max_hp={}, hp={}, move_spd={}, fire_rate={}, cleared={}",
+            buffs.max_health, buffs.health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared
+        );
+        (buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared)
+    } else {
+        (100.0, 100.0, 1.0, 0.5, 0)
+    };
+
+    let mut weapon = Weapon::new(WeaponType::BasicLaser);
+    weapon.fire_rate = fire_rate;
+    weapon.shoot_timer = Timer::from_seconds(fire_rate, TimerMode::Once);
+
     commands.spawn((
         Sprite::from_atlas_image(
             image.clone(),
@@ -204,17 +220,17 @@ fn spawn_player(
         },
         Player,
         Velocity(Vec2::ZERO),
-        Health::new(100.0),
-        MaxHealth(100.0),
+        Health::new(hp),
+        MaxHealth(max_hp),
         DamageTimer::new(1.0),
-        MoveSpeed(1.0),
+        MoveSpeed(move_speed),
         Collidable,
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
-        NumOfCleared(0),
+        NumOfCleared(num_cleared),
         PulledByFluid{mass: 50.0},
-        Weapon::new(WeaponType::BasicLaser),  // Add weapon
-        GameEntity,  // Only ONE GameEntity!
+        weapon,
+        GameEntity,
     ));
 }
 
@@ -631,7 +647,7 @@ fn bullet_hits_enemy(
                 enemy_pos.x, enemy_pos.y, enemy_half,
             ) {
                 health.0 -= damage.0;  // Use weapon damage instead of hardcoded 25.0
-                commands.entity(bullet_entity).despawn();
+                if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.despawn(); }
                 break;
             }
         }
@@ -660,7 +676,7 @@ fn bullet_hits_table(
                     table_half,
                 ) {
                     health.0 -= 25.0; // Deal 25 damage
-                    commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.despawn(); } // Despawn bullet on hit
                     continue 'bullet_loop; // Move to the next bullet
                 }
             }
@@ -690,7 +706,7 @@ fn bullet_hits_window(
                     window_half,
                 ) {
                     health.0 -= 25.0; // Deal 25 damage
-                    commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
+                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.despawn(); } // Despawn bullet on hit
                     continue 'bullet_loop; // Move to the next bullet
                 }
             }

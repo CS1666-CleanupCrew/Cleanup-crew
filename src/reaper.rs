@@ -239,7 +239,7 @@ fn bullet_hits_reaper(
                 reaper_half,
             ) {
                 health.0 -= 25.0;
-                commands.entity(bullet_entity).despawn();
+                if let Ok(mut entity) = commands.get_entity(bullet_entity) { entity.despawn(); }
             }
         }
     }

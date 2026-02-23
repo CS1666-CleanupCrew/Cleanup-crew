@@ -59,7 +59,7 @@ pub fn broom_hit_bullets_system(
             (broom_center.y - bullet_center.y).abs() < (broom_half.y + bullet_half.y);
 
         if overlap {
-            commands.entity(bullet_entity).despawn_recursive();
+            if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.despawn(); }
         }
     }
 }
