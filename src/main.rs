@@ -101,6 +101,7 @@ pub struct SavedPlayerBuffs {
     pub move_speed: f32,
     pub fire_rate: f32,
     pub num_cleared: usize,
+    pub armor: f32,
 }
 
 #[derive(Component)]
@@ -228,7 +229,7 @@ fn check_win(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     rooms: Res<RoomVec>,
-    player_q: Query<(&Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon, &player::NumOfCleared), With<Player>>,
+    player_q: Query<(&Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon, &player::NumOfCleared, &player::Armor), With<Player>>,
 ){
     let mut count = 0;
 
@@ -240,13 +241,14 @@ fn check_win(
 
     if count == rooms.0.len(){
         // Save player buffs before transitioning (player will be despawned on exit)
-        if let Ok((health, max_hp, move_spd, weapon, num_cleared)) = player_q.single() {
+        if let Ok((health, max_hp, move_spd, weapon, num_cleared, armor)) = player_q.single() {
             commands.insert_resource(SavedPlayerBuffs {
                 max_health: max_hp.0,
                 health: health.0,
                 move_speed: move_spd.0,
                 fire_rate: weapon.fire_rate,
                 num_cleared: num_cleared.0,
+                armor: armor.0,
             });
         }
         next_state.set(GameState::Win);

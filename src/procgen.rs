@@ -559,13 +559,13 @@ fn draw_hallway(
     let (x1, y1, x2, y2) = (x1 as isize, y1 as isize, x2 as isize, y2 as isize);
 
     // draw a filled rectangle from (x_min,y_min) to (x_max,y_max)
+    // Keep 1-tile margin at each map edge so generate_walls can always place boundary walls
+    let rows = map.len() as isize;
+    let cols = map[0].len() as isize;
     let mut draw_rect = |x_min: isize, y_min: isize, x_max: isize, y_max: isize| {
         for y in y_min..=y_max {
             for x in x_min..=x_max {
-                if y >= 0 && x >= 0 &&
-                y < map.len() as isize &&
-                x < map[0].len() as isize 
-                {
+                if y > 0 && x > 0 && y < rows - 1 && x < cols - 1 {
                     let tile = &mut map[y as usize][x as usize];
                     if *tile == '.' {
                         *tile = '#';
@@ -624,13 +624,15 @@ pub fn write_room(
 
     for (row_idx, row_str) in room.layout.iter().enumerate() {
         let y = top_left_y + row_idx;
-        if y >= map_height {
+        // Keep the last row empty so generate_walls can always place a wall there
+        if y == 0 || y >= map_height.saturating_sub(1) {
             continue;
         }
 
         for (col_idx, ch) in row_str.chars().enumerate() {
             let x = top_left_x + col_idx;
-            if x >= map_width {
+            // Keep the last column empty for the same reason
+            if x == 0 || x >= map_width.saturating_sub(1) {
                 continue;
             }
 

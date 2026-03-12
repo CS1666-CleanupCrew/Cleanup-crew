@@ -44,6 +44,11 @@ pub struct MaxHealth(pub f32);
 #[derive(Component)]
 pub struct MoveSpeed(pub f32);
 
+/// Flat armor value. Damage is multiplied by 100 / (100 + armor).
+/// 0 = no reduction, 100 = 50% reduction, 200 = 66% reduction (RoR2 formula).
+#[derive(Component)]
+pub struct Armor(pub f32);
+
 
 // #[derive(Resource)]
 // pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
@@ -84,6 +89,12 @@ pub enum FacingDirection {
 //         Self(Vec2{x, y})
 //     }
 // }
+
+/// RoR2-style armor formula: returns the fraction of damage that gets through.
+/// armor=0 → 1.0 (full damage), armor=100 → 0.5, armor=200 → 0.33, etc.
+pub fn armor_factor(armor: f32) -> f32 {
+    100.0 / (100.0 + armor.max(0.0))
+}
 
 //creates a variable of health
 impl Health {
@@ -194,14 +205,14 @@ fn spawn_player(
     let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE + y_player_spawn_offset;
 
     // Apply saved buffs from previous station if continuing, otherwise use defaults
-    let (hp, max_hp, move_speed, fire_rate, num_cleared) = if let Some(buffs) = &saved_buffs {
+    let (hp, max_hp, move_speed, fire_rate, num_cleared, armor) = if let Some(buffs) = &saved_buffs {
         info!(
-            "Applying saved buffs: max_hp={}, hp={}, move_spd={}, fire_rate={}, cleared={}",
-            buffs.max_health, buffs.health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared
+            "Applying saved buffs: max_hp={}, hp={}, move_spd={}, fire_rate={}, cleared={}, armor={}",
+            buffs.max_health, buffs.health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared, buffs.armor
         );
-        (buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared)
+        (buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared, buffs.armor)
     } else {
-        (100.0, 100.0, 1.0, 0.5, 0)
+        (100.0, 100.0, 1.0, 0.5, 0, 0.0)
     };
 
     let mut weapon = Weapon::new(WeaponType::BasicLaser);
@@ -223,8 +234,8 @@ fn spawn_player(
         Health::new(hp),
         MaxHealth(max_hp),
         DamageTimer::new(1.0),
-        MoveSpeed(move_speed),
-        Collidable,
+        // grouped into a nested tuple to stay within Bevy's 15-element Bundle limit
+        (MoveSpeed(move_speed), Armor(armor), Collidable),
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
         NumOfCleared(num_cleared),
@@ -430,26 +441,26 @@ impl DamageTimer {
 
 fn enemy_hits_player(
     time: Res<Time>,
-    mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer), With<crate::player::Player>>,
-    enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>, 
+    mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer, &Armor), With<crate::player::Player>>,
+    enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>,
     mut commands: Commands,
 ) {
     let player_half = Vec2::splat(32.0);
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
-    for (player_tf, mut health, mut damage_timer) in &mut player_query {
-        
+    for (player_tf, mut health, mut damage_timer, armor) in &mut player_query {
+
         damage_timer.0.tick(time.delta());
 
         let player_pos = player_tf.translation.truncate();
 
-        for (enemy_entity, enemy_tf, enemy_health) in &enemy_query { 
+        for (enemy_entity, enemy_tf, enemy_health) in &enemy_query {
             let enemy_pos = enemy_tf.translation.truncate();
             if aabb_overlap(
-                player_pos.x, 
-                player_pos.y, 
+                player_pos.x,
+                player_pos.y,
                 player_half,
-                enemy_pos.x, 
-                enemy_pos.y, 
+                enemy_pos.x,
+                enemy_pos.y,
                 enemy_half,
             ) {
                 if damage_timer.0.finished() {
@@ -457,7 +468,7 @@ fn enemy_hits_player(
                         "Player hit by entity {:?} at position {:?}",
                         enemy_entity, enemy_pos
                     );
-                    health.0 -= 15.0;
+                    health.0 -= 15.0 * armor_factor(armor.0);
                     damage_timer.0.reset();
                     
                
@@ -716,12 +727,12 @@ fn bullet_hits_window(
 
 fn table_hits_player(
     time: Res<Time>,
-    mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer), With<Player>>,
+    mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer, &Armor), With<Player>>,
     table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
 ) {
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
 
-    for (player_tf, mut health, mut dmg_timer) in &mut player_query {
+    for (player_tf, mut health, mut dmg_timer, armor) in &mut player_query {
         dmg_timer.0.tick(time.delta());
         let player_pos = player_tf.translation.truncate();
 
@@ -751,8 +762,8 @@ fn table_hits_player(
                 // Only damage the player if the table is actually moving fast enough
                 let threshold = 5.0;
                 if speed > threshold {
-                    // Damage scales with speed
-                    let dmg = speed * 0.02;
+                    // Damage scales with speed, reduced by armor
+                    let dmg = speed * 0.02 * armor_factor(armor.0);
                     health.0 -= dmg;
                     dmg_timer.0.reset();
 
@@ -831,47 +842,40 @@ fn apply_breach_force_to_player(
 }
 
 // Prevents player from being inside walls (e.g., when pushed by tables)
+fn wall_correction(pos: &mut Vec2, player_half: Vec2, walls: &[(Vec2, Vec2)]) {
+    for &(wall_pos, wall_half) in walls {
+        if aabb_overlap(pos.x, pos.y, player_half, wall_pos.x, wall_pos.y, wall_half) {
+            let overlap_x = (player_half.x + wall_half.x) - (pos.x - wall_pos.x).abs();
+            let overlap_y = (player_half.y + wall_half.y) - (pos.y - wall_pos.y).abs();
+            if overlap_x < overlap_y {
+                pos.x += if pos.x > wall_pos.x { overlap_x } else { -overlap_x };
+            } else {
+                pos.y += if pos.y > wall_pos.y { overlap_y } else { -overlap_y };
+            }
+        }
+    }
+}
+
 fn wall_collision_correction(
     mut player_q: Query<&mut Transform, With<Player>>,
     wall_q: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>)>,
 ) {
     let Ok(mut player_tf) = player_q.single_mut() else { return };
-    
-    let player_half = Vec2::splat(TILE_SIZE * 0.5);
+
+    // Must match the hitbox used in move_player and the spawned Collider component.
+    let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
     let mut player_pos = player_tf.translation.truncate();
-    
-    // Check all walls and push player out if they're inside
-    for (wall_tf, wall_col) in &wall_q {
-        let wall_pos = wall_tf.translation.truncate();
-        
-        if aabb_overlap(
-            player_pos.x, player_pos.y, player_half,
-            wall_pos.x, wall_pos.y, wall_col.half_extents
-        ) {
-            // Calculate overlap amounts
-            let overlap_x = (player_half.x + wall_col.half_extents.x) - (player_pos.x - wall_pos.x).abs();
-            let overlap_y = (player_half.y + wall_col.half_extents.y) - (player_pos.y - wall_pos.y).abs();
-            
-            // Push out on the axis with smaller overlap (shortest path out)
-            if overlap_x < overlap_y {
-                // Push horizontally
-                if player_pos.x > wall_pos.x {
-                    player_pos.x += overlap_x;
-                } else {
-                    player_pos.x -= overlap_x;
-                }
-            } else {
-                // Push vertically
-                if player_pos.y > wall_pos.y {
-                    player_pos.y += overlap_y;
-                } else {
-                    player_pos.y -= overlap_y;
-                }
-            }
-        }
-    }
-    
-    // Apply corrected position
+
+    let walls: Vec<(Vec2, Vec2)> = wall_q
+        .iter()
+        .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
+        .collect();
+
+    // Two passes: a single pass can fail in corners where pushing out of wall A
+    // moves the player into wall B, which is only caught on the next pass.
+    wall_correction(&mut player_pos, player_half, &walls);
+    wall_correction(&mut player_pos, player_half, &walls);
+
     player_tf.translation.x = player_pos.x;
     player_tf.translation.y = player_pos.y;
 }

@@ -12,7 +12,7 @@ use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::{Door, TablePositions};
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
-use crate::enemy::{EnemyRes, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
+use crate::enemy::{EnemyRes, LastKillPos, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
 use crate::table;
 
 #[derive(Resource)]
@@ -207,7 +207,8 @@ pub fn playing_room(
     tiles: Res<TileRes>,
     mut player: Single<&mut NumOfCleared, With<Player>>,
     heart_res: Res<crate::heart::HeartRes>,
-    reward_res: Res<crate::reward::RewardRes>
+    reward_res: Res<crate::reward::RewardRes>,
+    last_kill_pos: Res<LastKillPos>,
 ){
     match *lvlstate
     {
@@ -216,10 +217,7 @@ pub fn playing_room(
             if rooms.0[index].numofenemies == 0{
                 debug!("All enemies defeated");
 
-                let center_x = (rooms.0[index].top_left_corner.x + rooms.0[index].bot_right_corner.x) / 2.0;
-                let center_y = (rooms.0[index].top_left_corner.y + rooms.0[index].bot_right_corner.y) / 2.0;
-                let room_center = Vec2::new(center_x, center_y);
-                crate::heart::spawn_heart(&mut commands, &heart_res, room_center);
+                crate::heart::spawn_heart(&mut commands, &heart_res, last_kill_pos.0);
                 crate::reward::spawn_reward(&mut commands, reward_pos, &reward_res);
 
                 for door in rooms.0[index].doors.iter(){
@@ -297,49 +295,70 @@ pub fn generate_enemies_in_room(
         floors.shuffle(&mut trng);
     }
 
-    for (idx, (x, y)) in floors.iter().take(scaled_num_enemies).enumerate() {
+    // Iterate over ALL floor candidates (not just scaled_num_enemies of them) so that
+    // the adjacent_to_wall filter doesn't silently drop spawns and leave numofenemies
+    // higher than the number of enemies that actually exist in the room.
+    let mut actually_spawned: usize = 0;
+    let mut spawn_idx: usize = 0; // separate counter so ranged ratio stays consistent
+    for (x, y) in floors.iter() {
+        if actually_spawned >= scaled_num_enemies {
+            break;
+        }
+
         let tile_x = ((*x - room.top_left_corner.x) / TILE_SIZE).round() as isize;
         let tile_y = ((room.top_left_corner.y - *y) / TILE_SIZE).round() as isize;
 
-        // Check 8 surrounding tiles
+        // Skip tiles adjacent to walls or windows
         let mut adjacent_to_wall = false;
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                if dx == 0 && dy == 0 {
-                    continue;
-                }
-                
+        'adj: for dy in -1..=1isize {
+            for dx in -1..=1isize {
+                if dx == 0 && dy == 0 { continue; }
+
                 let nx = tile_x + dx;
                 let ny = tile_y + dy;
 
-                if nx < 0 || ny < 0 || ny as usize >= room.layout.len() || nx as usize >= room.layout[0].len() {
+                if nx < 0 || ny < 0
+                    || ny as usize >= room.layout.len()
+                    || nx as usize >= room.layout[ny as usize].len()
+                {
                     continue;
                 }
 
-                if room.layout[ny as usize].as_bytes()[nx as usize] as char == 'W'
-                || room.layout[ny as usize].as_bytes()[nx as usize] as char == 'G'{
+                let ch = room.layout[ny as usize].as_bytes()[nx as usize] as char;
+                if ch == 'W' || ch == 'G' {
                     adjacent_to_wall = true;
-                    break;
+                    break 'adj;
                 }
             }
-            if adjacent_to_wall {
-                break;
-            }
         }
-        
+
         if adjacent_to_wall {
             continue;
         }
 
-        
+        // Also skip if the tile itself is outside the room's world bounds (safety net).
+        if !room.bounds_check(Vec2::new(*x, *y)) {
+            continue;
+        }
+
         let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
-        if idx % 4 == 2 {
-            // 1 in 4 are ranged
+        if spawn_idx % 4 == 2 {
             spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier);
         } else {
             spawn_enemy_at(&mut commands, enemy_res, pos, true, health_multiplier);
         }
+        actually_spawned += 1;
+        spawn_idx += 1;
+    }
+
+    // numofenemies must equal what was actually spawned — a mismatch would permanently
+    // lock the room if some tiles were rejected by the wall-adjacency filter.
+    room.numofenemies = actually_spawned;
+
+    if actually_spawned == 0 {
+        info!("Room {}: all candidate tiles were adjacent to walls, cannot spawn.", index);
+        return None;
     }
 
     if let Some(s) = seed {
@@ -349,7 +368,7 @@ pub fn generate_enemies_in_room(
         let mut trng = rand::rng();
         floors.shuffle(&mut trng);
     }
-    
+
     Some(Vec3::new(floors[0].0, floors[0].1, Z_ENTITIES))
 
     // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);

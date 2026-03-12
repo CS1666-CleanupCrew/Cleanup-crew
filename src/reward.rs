@@ -12,6 +12,7 @@ pub struct RewardRes{
     max_hp: Handle<Image>,
     atk_spd: Handle<Image>,
     mov_spd: Handle<Image>,
+    armor: Handle<Image>,
 }
 
 pub struct RewardPlugin;
@@ -30,6 +31,7 @@ fn load_crates(
         max_hp: asset_server.load("rewards/HeartBox.png"),
         atk_spd: asset_server.load("rewards/AtkSpdBox.png"),
         mov_spd: asset_server.load("rewards/MoveSpdBox.png"),
+        armor: asset_server.load("rewards/ArmorBox.png"),
     };
 
     commands.insert_resource(reward_tiles);
@@ -40,12 +42,13 @@ pub fn spawn_reward(
     pos: Vec3,
     box_sprite: &RewardRes,
 ){
-    let reward_type: usize = random_range(1..=3);
+    let reward_type: usize = random_range(1..=4);
     let reward_img = match reward_type
     {
-        1 => {box_sprite.max_hp.clone()},
-        2 => {box_sprite.atk_spd.clone()},
-        3 => {box_sprite.mov_spd.clone()},
+        1 => box_sprite.max_hp.clone(),
+        2 => box_sprite.atk_spd.clone(),
+        3 => box_sprite.mov_spd.clone(),
+        4 => box_sprite.armor.clone(),
         _ => panic!("How did we get here? Reward img error")
     };
 
@@ -63,3 +66,10 @@ pub fn spawn_reward(
     ));
             
 }
+
+// Buff	Effect	Fits the theme
+// Vacuum Resistance	Increases your PulledByFluid.mass — harder to suck toward breaches	Magnetic boots
+// Regen	Slowly regenerates HP over time	Life support module
+// Piercing Rounds	Bullets pass through enemies	Plasma cutter
+// Damage Up	Increases BulletDamage	Overcharged cell
+// Shield Burst	A one-time hit absorber that recharges between rooms	Emergency barrier

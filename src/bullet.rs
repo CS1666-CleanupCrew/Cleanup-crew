@@ -206,7 +206,7 @@ pub fn move_bullets(
 
         let p = transform.translation;
         if p.x.abs() > 4000.0 || p.y.abs() > 4000.0 {
-            if let Ok(mut ec) = commands.get_entity(entity) { ec.insert(MarkedForDespawn); }
+            commands.entity(entity).try_insert(MarkedForDespawn);
         }
     }
 }
@@ -237,7 +237,7 @@ pub fn bullet_collision(
         (With<crate::enemy::Enemy>, Without<crate::reaper::Reaper>),
     >,
     mut player_query: Query<
-        (&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed),
+        (&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut crate::player::Armor),
         With<Player>,
     >,
     mut table_query: Query<
@@ -259,7 +259,7 @@ pub fn bullet_collision(
 ) {
     let bullet_half = Vec2::splat(8.0);
 
-    let Ok((player_tf, mut hp, mut maxhp, mut movspd)) = player_query.single_mut() else {
+    let Ok((player_tf, mut hp, mut maxhp, mut movspd, mut armor)) = player_query.single_mut() else {
         return;
     };
 
@@ -282,7 +282,7 @@ pub fn bullet_collision(
                     enemy_half,
                 ) {
                     health.0 -= damage.0; // Use bullet damage
-                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.insert(MarkedForDespawn); }
+                    commands.entity(bullet_entity).try_insert(MarkedForDespawn);
                     continue 'bullet_loop;
                 }
             }
@@ -300,8 +300,8 @@ pub fn bullet_collision(
                 player_pos.y,
                 player_half,
             ) {
-                hp.0 -= damage.0; // Use bullet damage
-                if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.insert(MarkedForDespawn); }
+                hp.0 -= damage.0 * crate::player::armor_factor(armor.0);
+                commands.entity(bullet_entity).try_insert(MarkedForDespawn);
                 continue 'bullet_loop;
             }
         }
@@ -323,7 +323,7 @@ pub fn bullet_collision(
                     table_half,
                 ) {
                     table_health.0 -= damage.0; // Use bullet damage
-                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.insert(MarkedForDespawn); }
+                    commands.entity(bullet_entity).try_insert(MarkedForDespawn);
                     continue 'bullet_loop;
                 }
             }
@@ -346,7 +346,7 @@ pub fn bullet_collision(
                     window_half,
                 ) {
                     window_health.0 -= damage.0; // Use bullet damage
-                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.insert(MarkedForDespawn); }
+                    commands.entity(bullet_entity).try_insert(MarkedForDespawn);
                     continue 'bullet_loop;
                 }
             }
@@ -365,7 +365,7 @@ pub fn bullet_collision(
                     reward_pos.y,
                     reward_half,
                 ) {
-                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.insert(MarkedForDespawn); }
+                    commands.entity(bullet_entity).try_insert(MarkedForDespawn);
 
                     // Handle reward pickup
                     if let Ok(mut weapon) = player_weapon_q.single_mut() {
@@ -386,6 +386,14 @@ pub fn bullet_collision(
                             3 => {
                                 movspd.0 = (movspd.0 + 20.0).min(600.0);
                             }
+                            4 => {
+                                // Armor: each pickup adds 20 armor
+                                // armor_factor(20)  ≈ 83% dmg taken
+                                // armor_factor(100) = 50% dmg taken
+                                // armor_factor(200) ≈ 33% dmg taken
+                                // No hard cap — returns diminish naturally via the formula.
+                                armor.0 += 20.0;
+                            }
                             _ => panic!("Reward Type Not Found"),
                         }
                     }
@@ -405,7 +413,7 @@ pub fn bullet_collision(
                 wall_pos.y,
                 wall_col.half_extents,
             ) {
-                if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.insert(MarkedForDespawn); }
+                commands.entity(bullet_entity).try_insert(MarkedForDespawn);
                 continue 'bullet_loop;
             }
         }

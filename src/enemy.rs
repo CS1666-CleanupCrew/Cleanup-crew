@@ -66,6 +66,9 @@ impl Velocity {
 #[derive(Component)]
 pub struct MeleeEnemy;
 
+#[derive(Resource, Default)]
+pub struct LastKillPos(pub Vec2);
+
 #[derive(Component)]
 pub struct RangedEnemy;
 
@@ -109,7 +112,8 @@ pub struct RangedEnemyShootEvent {
 pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, load_enemy)
+        app.init_resource::<LastKillPos>()
+            .add_systems(Startup, load_enemy)
             .add_systems(Startup, load_ranged_enemy)
             .add_event::<RangedEnemyShootEvent>()
             // .add_systems(OnEnter(GameState::Playing), spawn_enemies_from_points)
@@ -121,6 +125,7 @@ impl Plugin for EnemyPlugin {
                     move_enemy.after(ranged_enemy_ai),
                     move_reaper_freely.after(ranged_enemy_ai),
                     collide_enemies_with_enemies.after(move_enemy),
+                    wall_correction_for_enemies.after(collide_enemies_with_enemies),
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -177,15 +182,17 @@ fn load_ranged_enemy(mut commands: Commands, asset_server: Res<AssetServer>) {
 // if enemy's hp = 0, then despawn
 fn check_enemy_health(
     mut commands: Commands,
-    enemy_query: Query<(Entity, &Health), With<Enemy>>,
+    enemy_query: Query<(Entity, &Health, &Transform), With<Enemy>>,
     mut rooms: ResMut<RoomVec>,
     lvlstate: Res<LevelState>,
+    mut last_kill_pos: ResMut<LastKillPos>,
 ) {
-    for (entity, health) in enemy_query.iter() {
+    for (entity, health, transform) in enemy_query.iter() {
         if health.0 <= 0.0 {
             if let LevelState::InRoom(index, _) = *lvlstate {
                 rooms.0[index].numofenemies -= 1;
             }
+            last_kill_pos.0 = transform.translation.truncate();
             commands.entity(entity).despawn();
         }
     }
@@ -492,6 +499,42 @@ fn move_reaper_freely(
     let dt = time.delta_secs();
     for (mut tf, vel) in &mut query {
         tf.translation += (vel.velocity * dt).extend(0.0);
+    }
+}
+
+// After move_enemy and collide_enemies_with_enemies both run, some enemies may have
+// been pushed into walls. This corrects those overlaps the same way
+// wall_collision_correction does for the player.
+fn wall_correction_for_enemies(
+    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>)>,
+    wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>)>,
+) {
+    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+
+    // Collect wall data once so every enemy reuses it.
+    let walls: Vec<(Vec2, Vec2)> = wall_query
+        .iter()
+        .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
+        .collect();
+
+    for mut enemy_tf in &mut enemy_query {
+        let mut pos = enemy_tf.translation.truncate();
+
+        for &(wall_pos, wall_half) in &walls {
+            if crate::player::aabb_overlap(pos.x, pos.y, enemy_half, wall_pos.x, wall_pos.y, wall_half) {
+                let overlap_x = (enemy_half.x + wall_half.x) - (pos.x - wall_pos.x).abs();
+                let overlap_y = (enemy_half.y + wall_half.y) - (pos.y - wall_pos.y).abs();
+
+                if overlap_x < overlap_y {
+                    pos.x += if pos.x > wall_pos.x { overlap_x } else { -overlap_x };
+                } else {
+                    pos.y += if pos.y > wall_pos.y { overlap_y } else { -overlap_y };
+                }
+            }
+        }
+
+        enemy_tf.translation.x = pos.x;
+        enemy_tf.translation.y = pos.y;
     }
 }
 
