@@ -313,10 +313,10 @@ fn streaming_step(mut query: Query<&mut FluidGrid>) {
             }
         }
 
-        // swap buffers after all modifications
-        let temp = grid.distribution.clone();
-        grid.distribution = grid.scratch.clone();
-        grid.scratch = temp;
+        // Swap buffers via move — no heap allocation or cloning.
+        let new_dist = std::mem::take(&mut grid.scratch);
+        let old_dist = std::mem::replace(&mut grid.distribution, new_dist);
+        grid.scratch = old_dist;
     }
 }
 
