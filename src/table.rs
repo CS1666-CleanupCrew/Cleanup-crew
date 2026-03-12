@@ -87,33 +87,35 @@ fn check_for_broken_tables(
 fn animate_broken_tables(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &mut Visibility, &mut BrokenTimer), With<Table>>,
+    // Only process tables that still have Collidable — avoids issuing a no-op
+    // remove command every single frame once it's already been stripped off.
+    mut query: Query<(Entity, &mut BrokenTimer), (With<Table>, With<Collidable>)>,
 ) {
-    for (entity, _visibility, mut timer) in query.iter_mut() {
+    for (entity, mut timer) in query.iter_mut() {
         timer.0.tick(time.delta());
-
-        //if timer.0.just_finished() {
-            //*visibility = Visibility::Hidden;
-            commands.entity(entity).remove::<Collidable>();
-        //}
+        commands.entity(entity).remove::<Collidable>();
     }
 }
 
 fn apply_table_velocity(
     time: Res<Time>,
-    // Updated query to get mutable velocity and the table's collider
     mut table_query: Query<(&mut Transform, &mut crate::enemy::Velocity, &Collider), With<Table>>,
-    // Added query for walls, just like in move_enemy
     wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Table>)>,
 ) {
     let deltat = time.delta_secs();
+
+    // Collect wall data once so every moving table reuses it without paying
+    // Bevy query-iteration overhead again per table.
+    let walls: Vec<(Vec2, Vec2)> = wall_query
+        .iter()
+        .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
+        .collect();
 
     for (mut transform, mut velocity, table_collider) in &mut table_query {
         if velocity.velocity.length_squared() < 0.01 {
             continue; // table basically stationary, skip collision checks
         }
-        
-//colliision detection from enemey.rs
+
         let change = velocity.velocity * deltat;
         let mut pos = transform.translation;
         let table_half = table_collider.half_extents;
@@ -123,13 +125,13 @@ fn apply_table_velocity(
             let mut nx = pos.x + change.x;
             let px = nx;
             let py = pos.y;
-            for (wall_tf, wall_collider) in &wall_query {
-                let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
-                if crate::player::aabb_overlap(px, py, table_half, wx, wy, wall_collider.half_extents) {
+            for &(wall_pos, wall_half) in &walls {
+                let (wx, wy) = (wall_pos.x, wall_pos.y);
+                if crate::player::aabb_overlap(px, py, table_half, wx, wy, wall_half) {
                     if change.x > 0.0 {
-                        nx = wx - (table_half.x + wall_collider.half_extents.x);
+                        nx = wx - (table_half.x + wall_half.x);
                     } else {
-                        nx = wx + (table_half.x + wall_collider.half_extents.x);
+                        nx = wx + (table_half.x + wall_half.x);
                     }
 
                     //wall friction
@@ -146,15 +148,15 @@ fn apply_table_velocity(
         // ---- Y axis ----
         if change.y != 0.0 {
             let mut ny = pos.y + change.y;
-            let px = pos.x; 
+            let px = pos.x;
             let py = ny;
-            for (wall_tf, wall_collider) in &wall_query {
-                let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
-                if crate::player::aabb_overlap(px, py, table_half, wx, wy, wall_collider.half_extents) {
+            for &(wall_pos, wall_half) in &walls {
+                let (wx, wy) = (wall_pos.x, wall_pos.y);
+                if crate::player::aabb_overlap(px, py, table_half, wx, wy, wall_half) {
                     if change.y > 0.0 {
-                        ny = wy - (table_half.y + wall_collider.half_extents.y);
+                        ny = wy - (table_half.y + wall_half.y);
                     } else {
-                        ny = wy + (table_half.y + wall_collider.half_extents.y);
+                        ny = wy + (table_half.y + wall_half.y);
                     }
 
                     //wall friction
@@ -168,26 +170,31 @@ fn apply_table_velocity(
             pos.y = ny;
         }
 
-        transform.translation = pos; // Apply the final, collision-checked position
-        // --- End of copied logic ---
-        
-        if velocity.velocity.length() > 1.0 {
-            // debug!("Table at ({:.0}, {:.0}) moving with velocity ({:.1}, {:.1})", 
-            //   transform.translation.x, transform.translation.y,
-            //   velocity.velocity.x, velocity.velocity.y);
-        }
+        transform.translation = pos;
     }
 }
 
 fn collide_tables_with_tables(
-    mut table_query: Query<(&mut Transform, &Collider), (With<Table>, With<Velocity>)>,
+    mut table_query: Query<(&mut Transform, &Collider, &Velocity), With<Table>>,
 ) {
     let mut combinations = table_query.iter_combinations_mut();
-    while let Some([(mut t1_transform, c1), (mut t2_transform, c2)]) =
+    while let Some([(mut t1_transform, c1, v1), (mut t2_transform, c2, v2)]) =
         combinations.fetch_next()
     {
+        // Skip pairs where both tables are stationary — no collision resolution needed.
+        if v1.velocity.length_squared() < 0.01 && v2.velocity.length_squared() < 0.01 {
+            continue;
+        }
+
         let (p1, h1) = (t1_transform.translation.truncate(), c1.half_extents);
         let (p2, h2) = (t2_transform.translation.truncate(), c2.half_extents);
+
+        // Broad-phase: if centers are further apart than combined half-extents on
+        // either axis they cannot be overlapping — skip the full AABB check.
+        let diff = p1 - p2;
+        if diff.x.abs() >= h1.x + h2.x || diff.y.abs() >= h1.y + h2.y {
+            continue;
+        }
 
         //check if they overlap and push them apart if they do
         if crate::player::aabb_overlap(p1.x, p1.y, h1, p2.x, p2.y, h2) {
@@ -196,12 +203,12 @@ fn collide_tables_with_tables(
 
             if overlap_x < overlap_y {
                 let sign = if p1.x > p2.x { 1.0 } else { -1.0 };
-                let push = sign * overlap_x * 0.5; 
+                let push = sign * overlap_x * 0.5;
                 t1_transform.translation.x += push;
                 t2_transform.translation.x -= push;
             } else {
                 let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
-                let push = sign * overlap_y * 0.5; 
+                let push = sign * overlap_y * 0.5;
                 t1_transform.translation.y += push;
                 t2_transform.translation.y -= push;
             }

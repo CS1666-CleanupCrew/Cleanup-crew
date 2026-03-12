@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use crate::bullet::aabb_overlap;
 use crate::{TILE_SIZE, GameState};
 use crate::player::{Player, Facing, FacingDirection};
-use crate::collidable::{Collider, Collidable};
+use crate::collidable::Collider;
 use crate::enemy::Enemy;
 use crate::window::{Health, GlassState, Window};
 
@@ -91,13 +91,13 @@ fn broom_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    player_query: Query<(&Transform, &Facing), (With<Player>, Without<Broom>)>,
+    mut player_query: Query<(&Transform, &Facing, &mut crate::bullet::Velocity), (With<Player>, Without<Broom>)>,
     broom_q: Query<Entity, (With<Broom>, Without<Player>)>,
 ) {
     if (keyboard.pressed(KeyCode::KeyC) || keyboard.pressed(KeyCode::KeyB)) && broom_q.is_empty() {
-        if let Some((player_tf, facing)) = player_query.iter().next() {
+        if let Some((player_tf, facing, mut velocity)) = player_query.iter_mut().next() {
 
-            let broom_length = TILE_SIZE * 2.0;
+            let broom_length = TILE_SIZE * 2.5;
             let broom_width  = TILE_SIZE * 1.0;
 
             let broom_pos = player_tf.translation + match facing.0 {
@@ -110,6 +110,19 @@ fn broom_input(
                 FacingDirection::DownRight => Vec3::new( broom_length/2.0, -broom_length/2.0, 1.0),
                 FacingDirection::DownLeft  => Vec3::new(-broom_length/2.0, -broom_length/2.0, 1.0),
             };
+
+            // Push the player backward (opposite facing) on swing
+            let push_dir = match facing.0 {
+                FacingDirection::Up        => Vec2::new( 0.0, -1.0),
+                FacingDirection::Down      => Vec2::new( 0.0,  1.0),
+                FacingDirection::Left      => Vec2::new( 1.0,  0.0),
+                FacingDirection::Right     => Vec2::new(-1.0,  0.0),
+                FacingDirection::UpRight   => Vec2::new(-1.0, -1.0).normalize(),
+                FacingDirection::UpLeft    => Vec2::new( 1.0, -1.0).normalize(),
+                FacingDirection::DownRight => Vec2::new(-1.0,  1.0).normalize(),
+                FacingDirection::DownLeft  => Vec2::new( 1.0,  1.0).normalize(),
+            };
+            **velocity = push_dir * 700.0;
 
             let broom_image: Handle<Image> = asset_server.load("Broom.png");
 
@@ -129,8 +142,9 @@ fn broom_input(
                     timer: Timer::from_seconds(0.25, TimerMode::Once),
                     active: true,
                 },
+                // Collider kept for bullet-deflect size query; Collidable intentionally
+                // omitted so the sweeping broom is NOT treated as a wall by collision systems.
                 Collider::from_size(Vec2::new(broom_length, broom_width)),
-                Collidable,
             ));
         }
     }
@@ -148,7 +162,7 @@ fn broom_swing_system(
             swing.timer.tick(time.delta());
 
             if swing.active {
-                let broom_length = TILE_SIZE * 2.0;
+                let broom_length = TILE_SIZE * 2.5;
 
                 let sweep = (-90.0_f32).to_radians()
                     + (swing.timer.elapsed_secs() / swing.timer.duration().as_secs_f32()) 
@@ -179,25 +193,21 @@ fn broom_swing_system(
 
 
 pub fn broom_hit_enemies_system(
-    mut enemies: Query<(&mut Health, &Transform, &Sprite), (With<Enemy>, Without<Broom>)>,
-    broom_query: Query<(&Transform, &Sprite), (With<Broom>, Without<Enemy>)>,
+    mut enemies: Query<(&mut Health, &Transform), (With<Enemy>, Without<Broom>)>,
+    broom_query: Query<(&Transform, &Collider), (With<Broom>, Without<Enemy>)>,
 ) {
-    if let Some((broom_tf, broom_sprite)) = broom_query.iter().next() {
-        let broom_size = broom_sprite.custom_size.unwrap();
-
-        for (mut health, enemy_tf, enemy_sprite) in enemies.iter_mut() {
-            let enemy_size = enemy_sprite.custom_size.unwrap();
-
+    let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+    if let Some((broom_tf, broom_col)) = broom_query.iter().next() {
+        for (mut health, enemy_tf) in enemies.iter_mut() {
             if aabb_overlap(
                 broom_tf.translation.x,
                 broom_tf.translation.y,
-                broom_size,
+                broom_col.half_extents,
                 enemy_tf.translation.x,
                 enemy_tf.translation.y,
-                enemy_size,
+                enemy_half,
             ) {
                 health.0 -= 10.0;
-                info!("Enemy hit by broom at {:?}", enemy_tf.translation);
             }
         }
     }
@@ -209,26 +219,21 @@ pub fn broom_hit_enemies_system(
 
 
 pub fn broom_fix_window(
-    mut window_query: Query<(&mut Health, &mut GlassState, &Transform, &Sprite), (With<Window>, Without<Broom>)>,
-    broom_query: Query<(&Transform, &Sprite), (With<Broom>, Without<Window>)>,
+    mut window_query: Query<(&mut Health, &mut GlassState, &Transform, &crate::collidable::Collider), (With<Window>, Without<Broom>)>,
+    broom_query: Query<(&Transform, &Collider), (With<Broom>, Without<Window>)>,
 ) {
-    if let Some((broom_tf, broom_sprite)) = broom_query.iter().next() {
-        let broom_size = broom_sprite.custom_size.unwrap();
-
-        for (mut health, state, window_tf, window_sprite) in window_query.iter_mut() {
-            let window_size = window_sprite.custom_size.unwrap();
-
+    if let Some((broom_tf, broom_col)) = broom_query.iter().next() {
+        for (mut health, state, window_tf, window_col) in window_query.iter_mut() {
             if aabb_overlap(
                 broom_tf.translation.x,
                 broom_tf.translation.y,
-                broom_size,
+                broom_col.half_extents,
                 window_tf.translation.x,
                 window_tf.translation.y,
-                window_size,
+                window_col.half_extents,
             ) {
                 if *state == GlassState::Broken {
                     health.0 += 20.0;
-                    info!("Broom repaired window at {:?}", window_tf.translation);
                 }
             }
         }
