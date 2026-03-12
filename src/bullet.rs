@@ -7,10 +7,8 @@ use crate::room::{LevelState, RoomVec};
 use crate::weapon::{BulletDamage, BulletRes, Weapon, WeaponSounds};
 use crate::window;
 use crate::{GameEntity, GameState, TILE_SIZE};
-use crate::{reward, table};
+use crate::table;
 use bevy::{prelude::*, window::PrimaryWindow};
-use rand::random_range;
-use std::time::Duration; // Import from weapon.rs
 
 #[derive(Component)]
 pub struct Bullet;
@@ -248,18 +246,16 @@ pub fn bullet_collision(
         (&Transform, &mut window::Health, &window::GlassState),
         With<window::Window>,
     >,
-    reward_query: Query<(Entity, &Transform, &reward::Reward)>,
     wall_query: Query<
         (&Transform, &Collider),
         (With<Collidable>, Without<Player>, Without<Bullet>),
-    >, // Add this
+    >,
     lvlstate: Res<LevelState>,
     rooms: Res<RoomVec>,
-    mut player_weapon_q: Query<&mut Weapon, With<Player>>,
 ) {
     let bullet_half = Vec2::splat(8.0);
 
-    let Ok((player_tf, mut hp, mut maxhp, mut movspd, mut armor)) = player_query.single_mut() else {
+    let Ok((player_tf, mut hp, _maxhp, _movspd, mut armor)) = player_query.single_mut() else {
         return;
     };
 
@@ -352,57 +348,7 @@ pub fn bullet_collision(
             }
         }
 
-        // Bullet hits reward box
-        if matches!(owner, BulletOwner::Player) {
-            for (reward_entity, reward_tf, reward_type) in &reward_query {
-                let reward_pos = reward_tf.translation;
-                let reward_half = Vec2::splat(TILE_SIZE * 0.5);
-                if aabb_overlap(
-                    bullet_pos.x,
-                    bullet_pos.y,
-                    bullet_half,
-                    reward_pos.x,
-                    reward_pos.y,
-                    reward_half,
-                ) {
-                    commands.entity(bullet_entity).try_insert(MarkedForDespawn);
 
-                    // Handle reward pickup
-                    if let Ok(mut weapon) = player_weapon_q.single_mut() {
-                        match reward_type.0 {
-                            1 => {
-                                let increase_hp = random_range(5..=20) as f32;
-                                maxhp.0 += increase_hp;
-                                hp.0 += increase_hp;
-                            }
-                            2 => {
-                                // Increase fire rate
-                                let new_rate = (weapon.fire_rate - 0.03).max(0.1);
-                                weapon.fire_rate = new_rate;
-                                weapon
-                                    .shoot_timer
-                                    .set_duration(Duration::from_secs_f32(new_rate));
-                            }
-                            3 => {
-                                movspd.0 = (movspd.0 + 20.0).min(600.0);
-                            }
-                            4 => {
-                                // Armor: each pickup adds 20 armor
-                                // armor_factor(20)  ≈ 83% dmg taken
-                                // armor_factor(100) = 50% dmg taken
-                                // armor_factor(200) ≈ 33% dmg taken
-                                // No hard cap — returns diminish naturally via the formula.
-                                armor.0 += 20.0;
-                            }
-                            _ => panic!("Reward Type Not Found"),
-                        }
-                    }
-
-                    if let Ok(mut ec) = commands.get_entity(reward_entity) { ec.despawn(); }
-                    continue 'bullet_loop;
-                }
-            }
-        }
         for (wall_tf, wall_col) in &wall_query {
             let wall_pos = wall_tf.translation;
             if aabb_overlap(

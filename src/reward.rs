@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use rand::random_range;
-use crate::collidable::{Collidable, Collider};
+use std::time::Duration;
 use crate::{TILE_SIZE, GameEntity};
+use crate::Player;
+use crate::player::{Health, MaxHealth, MoveSpeed, Armor, aabb_overlap};
+use crate::weapon::Weapon;
 
 #[derive(Component)]
 pub struct Reward(pub usize);
@@ -60,11 +63,51 @@ pub fn spawn_reward(
             ..Default::default()
         },
         Reward(reward_type),
-        Collidable,
-        Collider { half_extents: Vec2::new(TILE_SIZE * 0.75, TILE_SIZE * 0.75) },
         GameEntity,
     ));
             
+}
+
+pub fn player_pickup_reward(
+    mut commands: Commands,
+    mut player_query: Query<(&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut Armor), With<Player>>,
+    reward_query: Query<(Entity, &Transform, &Reward)>,
+    mut player_weapon_q: Query<&mut Weapon, With<Player>>,
+) {
+    let Ok((player_tf, mut hp, mut maxhp, mut movspd, mut armor)) = player_query.single_mut() else {
+        return;
+    };
+    let player_pos = player_tf.translation;
+    let player_half = Vec2::splat(TILE_SIZE * 0.5);
+
+    for (reward_entity, reward_tf, reward_type) in &reward_query {
+        let reward_pos = reward_tf.translation;
+        let reward_half = Vec2::splat(TILE_SIZE * 0.5);
+        if aabb_overlap(player_pos.x, player_pos.y, player_half, reward_pos.x, reward_pos.y, reward_half) {
+            if let Ok(mut weapon) = player_weapon_q.single_mut() {
+                match reward_type.0 {
+                    1 => {
+                        let increase_hp = random_range(5..=20) as f32;
+                        maxhp.0 += increase_hp;
+                        hp.0 += increase_hp;
+                    }
+                    2 => {
+                        let new_rate = (weapon.fire_rate - 0.03).max(0.1);
+                        weapon.fire_rate = new_rate;
+                        weapon.shoot_timer.set_duration(Duration::from_secs_f32(new_rate));
+                    }
+                    3 => {
+                        movspd.0 = (movspd.0 + 20.0).min(600.0);
+                    }
+                    4 => {
+                        armor.0 += 20.0;
+                    }
+                    _ => panic!("Reward Type Not Found"),
+                }
+            }
+            if let Ok(mut ec) = commands.get_entity(reward_entity) { ec.despawn(); }
+        }
+    }
 }
 
 // Buff	Effect	Fits the theme

@@ -219,6 +219,10 @@ fn main() {
             Update,
             air_damage_system.run_if(in_state(GameState::Playing)),
         )
+        .add_systems(
+            Update,
+            reward::player_pickup_reward.run_if(in_state(GameState::Playing)),
+        )
         
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))
         .insert_resource(GameMusicVolume(0.5)) // .5 volume by default
