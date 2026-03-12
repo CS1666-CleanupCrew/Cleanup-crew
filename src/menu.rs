@@ -176,7 +176,7 @@ fn setup_menu(
 
                     // Controls
                     col.spawn((
-                        Text::new("Controls: [Space] to shoot and [M] to toggle music"),
+                        Text::new("Controls: space or left click to shoot, M to toggle music, and B to use your broom!"),
                         TextFont { font_size: 20.0, ..default() },
                     ));
                 });
