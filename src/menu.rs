@@ -44,10 +44,10 @@ fn setup_menu(
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(0.0),
-                top: Val::Px(0.0),
-                width: Val::Px(1280.0),
-                height: Val::Px(720.0),
+                left: Val::Percent(0.0),
+                top: Val::Percent(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
                 ..default()
             },
             ZIndex(100), // on top of world
@@ -58,10 +58,10 @@ fn setup_menu(
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    width: Val::Px(1280.0),
-                    height: Val::Px(720.0),
+                    left: Val::Percent(0.0),
+                    top: Val::Percent(0.0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     ..default()
                 },
                 ImageNode::new(assets.load("menu/Title_BG.png")),
@@ -71,10 +71,10 @@ fn setup_menu(
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(0.0),
-                    top: Val::Px(0.0),
-                    width: Val::Px(1280.0),
-                    height: Val::Px(720.0),
+                    left: Val::Percent(0.0),
+                    top: Val::Percent(0.0),
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
                     ..default()
                 },
                 ImageNode::new(assets.load("menu/Title_Text.png")),

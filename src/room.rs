@@ -325,7 +325,10 @@ pub fn generate_enemies_in_room(
                 }
 
                 let ch = room.layout[ny as usize].as_bytes()[nx as usize] as char;
-                if ch == 'W' || ch == 'G' {
+                // '.' = border tile → becomes W via generate_walls
+                // ',' = passage tile → also becomes W via generate_walls
+                // 'W' = explicit wall, 'G' = glass window
+                if matches!(ch, 'W' | 'G' | '.' | ',') {
                     adjacent_to_wall = true;
                     break 'adj;
                 }
