@@ -116,3 +116,15 @@ pub fn player_pickup_reward(
 // Piercing Rounds	Bullets pass through enemies	Plasma cutter
 // Damage Up	Increases BulletDamage	Overcharged cell
 // Shield Burst	A one-time hit absorber that recharges between rooms	Emergency barrier
+// Speed Up	Increases MoveSpeed	Thrusters switch movement tech from broom to thrusters. dodge in direction of mouse
+// larger fuel tank for thusters
+// make broom go through tables you can take a lot of damage trying to repair through tables
+// internal oxygen tank that gives you time to repair windows after they break
+// make window generation better
+// table need to stop moving when you fix the window
+// air need to slowly fill back up
+// reaper not going through walls anymore?
+// better visual when it
+// better feedback in general
+// broken tables shouldnt damage you
+// the tables are so fucked
