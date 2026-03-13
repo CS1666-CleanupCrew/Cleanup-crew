@@ -116,3 +116,5 @@ pub fn player_pickup_reward(
 // Piercing Rounds	Bullets pass through enemies	Plasma cutter
 // Damage Up	Increases BulletDamage	Overcharged cell
 // Shield Burst	A one-time hit absorber that recharges between rooms	Emergency barrier
+// Speed Up	Increases MoveSpeed	Thrusters switch movement tech from broom to thrusters.
+// larger fuel tank for thusters
