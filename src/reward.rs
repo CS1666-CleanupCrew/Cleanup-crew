@@ -3,7 +3,7 @@ use rand::random_range;
 use std::time::Duration;
 use crate::{TILE_SIZE, GameEntity};
 use crate::Player;
-use crate::player::{Health, MaxHealth, MoveSpeed, Armor, aabb_overlap};
+use crate::player::{Health, MaxHealth, MoveSpeed, Armor, AirTank, aabb_overlap};
 use crate::weapon::Weapon;
 
 #[derive(Component)]
@@ -16,6 +16,8 @@ pub struct RewardRes{
     atk_spd: Handle<Image>,
     mov_spd: Handle<Image>,
     armor: Handle<Image>,
+    air_tank: Handle<Image>,
+    drain_rate: Handle<Image>,
 }
 
 pub struct RewardPlugin;
@@ -35,6 +37,8 @@ fn load_crates(
         atk_spd: asset_server.load("rewards/AtkSpdBox.png"),
         mov_spd: asset_server.load("rewards/MoveSpdBox.png"),
         armor: asset_server.load("rewards/ArmorBox.png"),
+        air_tank: asset_server.load("rewards/AirTankBox.png"),
+        drain_rate: asset_server.load("rewards/DrainRateBox.png"),
     };
 
     commands.insert_resource(reward_tiles);
@@ -45,13 +49,15 @@ pub fn spawn_reward(
     pos: Vec3,
     box_sprite: &RewardRes,
 ){
-    let reward_type: usize = random_range(1..=4);
+    let reward_type: usize = random_range(1..=6);
     let reward_img = match reward_type
     {
         1 => box_sprite.max_hp.clone(),
         2 => box_sprite.atk_spd.clone(),
         3 => box_sprite.mov_spd.clone(),
         4 => box_sprite.armor.clone(),
+        5 => box_sprite.air_tank.clone(),
+        6 => box_sprite.drain_rate.clone(),
         _ => panic!("How did we get here? Reward img error")
     };
 
@@ -70,11 +76,11 @@ pub fn spawn_reward(
 
 pub fn player_pickup_reward(
     mut commands: Commands,
-    mut player_query: Query<(&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut Armor), With<Player>>,
+    mut player_query: Query<(&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut Armor, &mut AirTank), With<Player>>,
     reward_query: Query<(Entity, &Transform, &Reward)>,
     mut player_weapon_q: Query<&mut Weapon, With<Player>>,
 ) {
-    let Ok((player_tf, mut hp, mut maxhp, mut movspd, mut armor)) = player_query.single_mut() else {
+    let Ok((player_tf, mut hp, mut maxhp, mut movspd, mut armor, mut tank)) = player_query.single_mut() else {
         return;
     };
     let player_pos = player_tf.translation;
@@ -101,6 +107,15 @@ pub fn player_pickup_reward(
                     }
                     4 => {
                         armor.0 += 20.0;
+                    }
+                    5 => {
+                        // Larger air tank: +2.5 seconds of grace period
+                        tank.max_capacity += 2.5;
+                        tank.current = (tank.current + 2.5).min(tank.max_capacity);
+                    }
+                    6 => {
+                        // Slower drain: 20% reduction per pickup (minimum 0.2 units/sec)
+                        tank.drain_rate = (tank.drain_rate * 0.8).max(0.2);
                     }
                     _ => panic!("Reward Type Not Found"),
                 }

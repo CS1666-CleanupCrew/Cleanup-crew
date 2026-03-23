@@ -49,6 +49,21 @@ pub struct MoveSpeed(pub f32);
 #[derive(Component)]
 pub struct Armor(pub f32);
 
+/// Internal oxygen reserve. Drains when room air pressure is low, giving the
+/// player a grace period before they start taking damage.
+#[derive(Component)]
+pub struct AirTank {
+    pub current: f32,      // current oxygen [0..max_capacity]
+    pub max_capacity: f32, // maximum oxygen
+    pub drain_rate: f32,   // units consumed per second in low-air environments
+}
+
+impl AirTank {
+    pub fn new(max_capacity: f32, drain_rate: f32) -> Self {
+        Self { current: max_capacity, max_capacity, drain_rate }
+    }
+}
+
 
 // #[derive(Resource)]
 // pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
@@ -205,15 +220,20 @@ fn spawn_player(
     let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE + y_player_spawn_offset;
 
     // Apply saved buffs from previous station if continuing, otherwise use defaults
-    let (hp, max_hp, move_speed, fire_rate, num_cleared, armor) = if let Some(buffs) = &saved_buffs {
-        info!(
-            "Applying saved buffs: max_hp={}, hp={}, move_spd={}, fire_rate={}, cleared={}, armor={}",
-            buffs.max_health, buffs.health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared, buffs.armor
-        );
-        (buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared, buffs.armor)
-    } else {
-        (100.0, 100.0, 1.0, 0.5, 0, 0.0)
-    };
+    let (hp, max_hp, move_speed, fire_rate, num_cleared, armor, tank_max, tank_drain) =
+        if let Some(buffs) = &saved_buffs {
+            info!(
+                "Applying saved buffs: max_hp={}, hp={}, move_spd={}, fire_rate={}, cleared={}, armor={}, tank_max={}, tank_drain={}",
+                buffs.max_health, buffs.health, buffs.move_speed, buffs.fire_rate,
+                buffs.num_cleared, buffs.armor, buffs.air_tank_max, buffs.air_tank_drain_rate
+            );
+            (
+                buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate,
+                buffs.num_cleared, buffs.armor, buffs.air_tank_max, buffs.air_tank_drain_rate,
+            )
+        } else {
+            (100.0, 100.0, 1.0, 0.5, 0, 0.0, 5.0, 1.0)
+        };
 
     let mut weapon = Weapon::new(WeaponType::BasicLaser);
     weapon.fire_rate = fire_rate;
@@ -240,6 +260,7 @@ fn spawn_player(
         Facing(FacingDirection::Down),
         NumOfCleared(num_cleared),
         PulledByFluid{mass: 50.0},
+        AirTank::new(tank_max, tank_drain),
         weapon,
         GameEntity,
     ));
