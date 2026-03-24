@@ -127,7 +127,7 @@ impl Plugin for PlayerPlugin {
             .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
             .add_systems(Update, table_hits_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, wall_collision_correction.after(move_player).run_if(in_state(GameState::Playing)))
+            .add_systems(Update, wall_collision_correction.after(apply_breach_force_to_player).run_if(in_state(GameState::Playing)))
 
             ;
     }
@@ -374,21 +374,30 @@ fn move_player(
         let mut nx = pos.x + delta.x;
         let px = nx;
         let py = pos.y;
+        let mut hit_x = false;
 
         for (ct, c) in &colliders {
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
-                if delta.x > 0.0 {
-                    nx = cx - (player_half.x + c.half_extents.x);
+                let candidate = if delta.x > 0.0 {
+                    cx - (player_half.x + c.half_extents.x)
                 } else {
-                    nx = cx + (player_half.x + c.half_extents.x);
+                    cx + (player_half.x + c.half_extents.x)
+                };
+                // Keep the most restrictive (closest) wall, not the last one found.
+                if delta.x > 0.0 {
+                    nx = nx.min(candidate);
+                } else {
+                    nx = nx.max(candidate);
                 }
-                // wall friction
-                if dir.y != 0.0 {
-                    velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
-                }
-                velocity.x = 0.0;
+                hit_x = true;
             }
+        }
+        if hit_x {
+            if dir.y != 0.0 {
+                velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
+            }
+            velocity.x = 0.0;
         }
         pos.x = nx;
     }
@@ -398,21 +407,30 @@ fn move_player(
         let mut ny = pos.y + delta.y;
         let px = pos.x;
         let py = ny;
+        let mut hit_y = false;
 
         for (ct, c) in &colliders {
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
-                if delta.y > 0.0 {
-                    ny = cy - (player_half.y + c.half_extents.y);
+                let candidate = if delta.y > 0.0 {
+                    cy - (player_half.y + c.half_extents.y)
                 } else {
-                    ny = cy + (player_half.y + c.half_extents.y);
+                    cy + (player_half.y + c.half_extents.y)
+                };
+                // Keep the most restrictive (closest) wall.
+                if delta.y > 0.0 {
+                    ny = ny.min(candidate);
+                } else {
+                    ny = ny.max(candidate);
                 }
-                // wall friciton
-                if dir.x != 0.0 {
-                    velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
-                }
-                velocity.y = 0.0;
+                hit_y = true;
             }
+        }
+        if hit_y {
+            if dir.x != 0.0 {
+                velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
+            }
+            velocity.y = 0.0;
         }
         pos.y = ny;
     }
@@ -836,8 +854,11 @@ fn apply_breach_force_to_player(
         let acceleration = total_force / pulled.mass;
         let deltat = time.delta_secs();
         velocity.0 += acceleration * deltat;
-        
-        
+
+        // Cap speed so the player can't tunnel through walls from breach suction.
+        // Anything above ~one tile per frame (32 / 0.016s ≈ 2000) causes tunneling;
+        // 900 is fast enough to feel pulled while staying safely below that threshold.
+        velocity.0 = velocity.0.clamp_length_max(900.0);
     }
 }
 

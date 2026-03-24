@@ -2,7 +2,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
 use bevy::audio::Volume;
-use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels};
+use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels, update_air_label_visibility, spawn_fluid_pressure_labels, update_fluid_pressure_labels};
 use crate::room::RoomVec;
 use crate::map::MapGridMeta;
 
@@ -176,6 +176,23 @@ fn main() {
             OnEnter(GameState::Playing),
             spawn_pressure_labels
                 .after(init_air_grid)
+                .run_if(|flag: Res<ShowAirLabels>| flag.0),
+        )
+        .add_systems(
+            OnEnter(GameState::Playing),
+            spawn_fluid_pressure_labels
+                .run_if(|flag: Res<ShowAirLabels>| flag.0),
+        )
+        .add_systems(
+            Update,
+            update_fluid_pressure_labels
+                .run_if(in_state(GameState::Playing))
+                .run_if(|flag: Res<ShowAirLabels>| flag.0),
+        )
+        .add_systems(
+            Update,
+            update_air_label_visibility
+                .run_if(in_state(GameState::Playing))
                 .run_if(|flag: Res<ShowAirLabels>| flag.0),
         )
         .add_systems(OnEnter(GameState::Playing), start_game_music)
