@@ -2,7 +2,7 @@ use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
 use bevy::audio::Volume;
-use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels, update_air_label_visibility, spawn_fluid_pressure_labels, update_fluid_pressure_labels};
+use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break, update_air_label_visibility, spawn_fluid_pressure_labels, update_fluid_pressure_labels};
 use crate::room::RoomVec;
 use crate::map::MapGridMeta;
 
@@ -102,6 +102,8 @@ pub struct SavedPlayerBuffs {
     pub fire_rate: f32,
     pub num_cleared: usize,
     pub armor: f32,
+    pub air_tank_max: f32,
+    pub air_tank_drain_rate: f32,
 }
 
 #[derive(Component)]
@@ -238,6 +240,15 @@ fn main() {
         )
         .add_systems(
             Update,
+            (
+                update_air_on_window_break,
+                update_pressure_labels,
+            )
+                .chain()
+                .run_if(in_state(GameState::Playing)),
+        )
+        .add_systems(
+            Update,
             reward::player_pickup_reward.run_if(in_state(GameState::Playing)),
         )
         
@@ -250,7 +261,7 @@ fn check_win(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     rooms: Res<RoomVec>,
-    player_q: Query<(&Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon, &player::NumOfCleared, &player::Armor), With<Player>>,
+    player_q: Query<(&Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon, &player::NumOfCleared, &player::Armor, &player::AirTank), With<Player>>,
 ){
     let mut count = 0;
 
@@ -262,7 +273,7 @@ fn check_win(
 
     if count == rooms.0.len(){
         // Save player buffs before transitioning (player will be despawned on exit)
-        if let Ok((health, max_hp, move_spd, weapon, num_cleared, armor)) = player_q.single() {
+        if let Ok((health, max_hp, move_spd, weapon, num_cleared, armor, tank)) = player_q.single() {
             commands.insert_resource(SavedPlayerBuffs {
                 max_health: max_hp.0,
                 health: health.0,
@@ -270,6 +281,8 @@ fn check_win(
                 fire_rate: weapon.fire_rate,
                 num_cleared: num_cleared.0,
                 armor: armor.0,
+                air_tank_max: tank.max_capacity,
+                air_tank_drain_rate: tank.drain_rate,
             });
         }
         next_state.set(GameState::Win);
@@ -598,33 +611,40 @@ fn air_damage_system(
     time: Res<Time>,
     air_grid_q: Query<&AirGrid>,
     grid_meta: Res<MapGridMeta>,
-    mut player_q: Query<(&Transform, &mut Health, &mut AirDamageTimer), With<Player>>,
+    mut player_q: Query<(&Transform, &mut Health, &mut AirDamageTimer, &mut player::AirTank), With<Player>>,
 ) {
     let Ok(air_grid) = air_grid_q.single() else {
         return;
     };
 
-    let Ok((transform, mut health, mut timer)) = player_q.single_mut() else {
+    let Ok((transform, mut health, mut timer, mut tank)) = player_q.single_mut() else {
         return;
     };
 
-  
     let player_pos = transform.translation.truncate();
     let grid_x = ((player_pos.x - grid_meta.x0) / TILE_SIZE).clamp(0.0, (grid_meta.cols - 1) as f32) as usize;
     let grid_y = ((player_pos.y - grid_meta.y0) / TILE_SIZE).clamp(0.0, (grid_meta.rows - 1) as f32) as usize;
     let grid_y_flipped = grid_meta.rows.saturating_sub(1).saturating_sub(grid_y);
     let air_pressure = air_grid.get(grid_x, grid_y_flipped);
 
-   
+    let delta = time.delta_secs();
+
+    if air_pressure < LOW_AIR_THRESHOLD {
+        // Low air: drain the tank
+        tank.current = (tank.current - tank.drain_rate * delta).max(0.0);
+    } else {
+        // Good air: refill the tank
+        tank.current = (tank.current + tank.drain_rate * delta).min(tank.max_capacity);
+    }
+
     timer.0.tick(time.delta());
 
-    
-    if air_pressure < LOW_AIR_THRESHOLD && timer.0.just_finished() {
+    // Only deal damage once the tank is fully depleted
+    if air_pressure < LOW_AIR_THRESHOLD && tank.current <= 0.0 && timer.0.just_finished() {
         let damage_amount = AIR_DAMAGE_PER_SECOND * AIR_DAMAGE_TICK_RATE;
         health.0 -= damage_amount;
-        
         debug!(
-            "Player taking air damage! Pressure: {:.2} at ({}, {}) - HP: {:.1}",
+            "Player taking air damage! Pressure: {:.2} at ({}, {}) - tank empty - HP: {:.1}",
             air_pressure, grid_x, grid_y_flipped, health.0
         );
     }

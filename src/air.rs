@@ -1,6 +1,7 @@
-use crate::map::LevelRes;
+use crate::map::{LevelRes, MapGridMeta};
 use crate::noise::PerlinField;
-use crate::{TILE_SIZE, Z_ENTITIES};
+use crate::window::GlassState;
+use crate::{GameEntity, TILE_SIZE, Z_ENTITIES};
 use bevy::prelude::*;
 use rand::Rng;
 
@@ -106,7 +107,7 @@ pub fn init_air_grid(
         }
     }
 
-    commands.spawn(grid);
+    commands.spawn((grid, GameEntity));
     info!("AirGrid initialized: {}x{} tiles", w, h);
 }
 
@@ -164,23 +165,72 @@ pub fn spawn_pressure_labels(
                 Transform::from_xyz(world_x, world_y, Z_ENTITIES + 10.0),
                 PressureLabel,
                 GridPos { x, y },
+                GameEntity,
             ));
         }
     }
 }
 
-/// Update labels if AirGrid changes (if reseeded or tweak params)
+/// Update labels whenever the AirGrid pressure values change.
 pub fn update_pressure_labels(
     air: Query<&AirGrid, Changed<AirGrid>>,
-    mut q: Query<(&GridPos, &mut Text, &mut TextColor), With<PressureLabel>>,
+    mut q: Query<(&GridPos, &mut Text2d, &mut TextColor), With<PressureLabel>>,
 ) {
     let Ok(air) = air.single() else {
         return;
     };
     for (pos, mut text, mut color) in &mut q {
         let p = air.get(pos.x, pos.y);
-        *text = Text::new(format!("{:.1}", p));
+        text.0 = format!("{:.1}", p);
         color.0 = pressure_to_color(p);
+    }
+}
+
+/// When a window breaks, drop pressure in the AirGrid around the breach position.
+pub fn update_air_on_window_break(
+    windows_q: Query<(&Transform, &GlassState), Changed<GlassState>>,
+    mut air_q: Query<&mut AirGrid>,
+    grid_meta: Res<MapGridMeta>,
+) {
+    if windows_q.is_empty() {
+        return;
+    }
+    let Ok(mut air) = air_q.single_mut() else {
+        return;
+    };
+
+    for (transform, state) in &windows_q {
+        if *state != GlassState::Broken {
+            continue;
+        }
+
+        let world_pos = transform.translation.truncate();
+        let ax = ((world_pos.x - grid_meta.x0) / TILE_SIZE)
+            .clamp(0.0, (air.w - 1) as f32) as usize;
+        let ay_from_bottom = ((world_pos.y - grid_meta.y0) / TILE_SIZE)
+            .clamp(0.0, (air.h - 1) as f32) as usize;
+        let ay = (air.h - 1).saturating_sub(ay_from_bottom);
+
+        let radius: isize = 10;
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let nx = ax as isize + dx;
+                let ny = ay as isize + dy;
+                if nx < 0 || ny < 0 || nx >= air.w as isize || ny >= air.h as isize {
+                    continue;
+                }
+                let (nx, ny) = (nx as usize, ny as usize);
+                if air.is_obstacle(nx, ny) {
+                    continue;
+                }
+                let dist = ((dx * dx + dy * dy) as f32).sqrt();
+                if dist <= radius as f32 {
+                    let drop_factor = 1.0 - dist / radius as f32;
+                    let current = air.get(nx, ny);
+                    air.set(nx, ny, current * (1.0 - drop_factor * 0.9));
+                }
+            }
+        }
     }
 }
 
