@@ -71,6 +71,9 @@ pub struct RoomPlugin;
 #[derive(Component)]
 pub struct AirPressureUI;
 
+#[derive(Component)]
+pub struct AirTankUI;
+
 impl Plugin for RoomPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -84,6 +87,7 @@ impl Plugin for RoomPlugin {
             .add_systems(Update, apply_breach_forces_to_entities.run_if(in_state(GameState::Playing)))
             .add_systems(Update, damage_player_from_low_pressure.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_air_pressure_ui.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, update_air_tank_ui.run_if(in_state(GameState::Playing)))
             ;
     }
 }
@@ -466,21 +470,30 @@ pub fn update_room_air_pressure(
     time: Res<Time>,
     mut rooms: ResMut<RoomVec>,
 ) {
+    let refill_rate = 5.0; // %/sec when all windows are sealed
+
     for (idx, room) in rooms.0.iter_mut().enumerate() {
         if room.breaches.is_empty() {
+            if room.air_pressure < 100.0 {
+                let old_pressure = room.air_pressure;
+                room.air_pressure = (room.air_pressure + refill_rate * time.delta_secs()).min(100.0);
+                if (old_pressure / 10.0).floor() != (room.air_pressure / 10.0).floor() {
+                    debug!("Room {} refilling: {:.1}%", idx, room.air_pressure);
+                }
+            }
             continue;
         }
 
         let base_escape_rate = 2.5;
         let total_escape_rate = base_escape_rate * room.breaches.len() as f32;
-        
+
         let old_pressure = room.air_pressure;
-        
+
         room.air_pressure -= total_escape_rate * time.delta_secs();
         room.air_pressure = room.air_pressure.max(0.0);
-        
+
         if (old_pressure / 10.0).floor() != (room.air_pressure / 10.0).floor() {
-            debug!("Room {} pressure: {:.1}% (escaping at {:.1}%/sec)", 
+            debug!("Room {} pressure: {:.1}% (escaping at {:.1}%/sec)",
                   idx, room.air_pressure, total_escape_rate);
         }
     }
@@ -657,17 +670,15 @@ fn apply_breach_force_to_entity(
 pub fn damage_player_from_low_pressure(
     time: Res<Time>,
     rooms: Res<RoomVec>,
-    mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer), With<crate::player::Player>>,
+    mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer, &mut crate::player::AirTank), With<crate::player::Player>>,
 ) {
-
-    let Ok((transform, mut health, mut damage_timer)) = player.single_mut() else {
-
+    let Ok((transform, mut health, mut damage_timer, mut tank)) = player.single_mut() else {
         return;
     };
 
     let player_pos = transform.translation.truncate();
     let mut current_room: Option<&Room> = None;
-    
+
     for room in rooms.0.iter() {
         if room.bounds_check(player_pos) {
             current_room = Some(room);
@@ -680,19 +691,25 @@ pub fn damage_player_from_low_pressure(
     };
 
     let pressure_threshold = 20.0;
-    
+
     if room.air_pressure < pressure_threshold {
-        damage_timer.tick(time.delta());
-        
-        if damage_timer.finished() {
-            let damage = 5.0;
-            health.0 -= damage;
-            damage_timer.reset();
-            
-            debug!(
-                "Player taking pressure damage! Room pressure: {:.1}% - HP: {:.1}",
-                room.air_pressure, health.0
-            );
+        // Low air: drain the tank
+        tank.current = (tank.current - tank.drain_rate * time.delta_secs()).max(0.0);
+
+        // Only damage the player once the tank is fully depleted
+        if tank.current <= 0.0 {
+            damage_timer.tick(time.delta());
+
+            if damage_timer.finished() {
+                let damage = 5.0;
+                health.0 -= damage;
+                damage_timer.reset();
+
+                debug!(
+                    "Player taking pressure damage! Room pressure: {:.1}% - HP: {:.1}",
+                    room.air_pressure, health.0
+                );
+            }
         }
     }
 }
@@ -722,6 +739,24 @@ fn setup_air_pressure_ui(
         AirPressureUI,
         GameEntity,
     ));
+
+    commands.spawn((
+        Text::new("Tank: 100%"),
+        TextFont {
+            font,
+            font_size: 24.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.2, 1.0, 0.5)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(38.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        AirTankUI,
+        GameEntity,
+    ));
 }
 
 fn update_air_pressure_ui(
@@ -739,7 +774,7 @@ fn update_air_pressure_ui(
 
     let player_pos = player_transform.translation.truncate();
     let mut current_pressure = 100.0;
-    
+
     for room in rooms.0.iter() {
         if room.bounds_check(player_pos) {
             current_pressure = room.air_pressure;
@@ -755,5 +790,37 @@ fn update_air_pressure_ui(
         Color::srgb(1.0, 1.0, 0.0)
     } else {
         Color::srgb(0.0, 1.0, 0.0)
+    };
+}
+
+fn update_air_tank_ui(
+    player: Query<(&Transform, &crate::player::AirTank), With<Player>>,
+    rooms: Res<RoomVec>,
+    mut ui_query: Query<(&mut Text, &mut TextColor), With<AirTankUI>>,
+) {
+    let Ok((transform, tank)) = player.single() else {
+        return;
+    };
+    let Ok((mut text, mut color)) = ui_query.single_mut() else {
+        return;
+    };
+
+    let player_pos = transform.translation.truncate();
+    let in_low_air_room = rooms.0.iter()
+        .find(|r| r.bounds_check(player_pos))
+        .map(|r| r.air_pressure < 20.0)
+        .unwrap_or(false);
+
+    let pct = (tank.current / tank.max_capacity * 100.0).clamp(0.0, 100.0);
+    **text = format!("Tank: {:.0}%", pct);
+
+    color.0 = if tank.current <= 0.0 {
+        Color::srgb(1.0, 0.1, 0.1)
+    } else if in_low_air_room {
+        // Draining — fade orange to red as tank depletes
+        let t = pct / 100.0;
+        Color::srgb(1.0, t * 0.6, 0.1)
+    } else {
+        Color::srgb(0.2, 1.0, 0.5)
     };
 }

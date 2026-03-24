@@ -1,10 +1,9 @@
 use crate::collidable::{Collidable, Collider};
-use crate::player::{Health, Player};
+use crate::player::{Health, Player, AirTank};
 use bevy::{prelude::*, window::PresentMode};
 use bevy::audio::Volume;
-use crate::air::{AirGrid, init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break, update_air_label_visibility, spawn_fluid_pressure_labels, update_fluid_pressure_labels};
+use crate::air::{init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break};
 use crate::room::RoomVec;
-use crate::map::MapGridMeta;
 
 pub mod collidable;
 pub mod endcredits;
@@ -35,9 +34,6 @@ const WIN_H: f32 = 720.;
 
 const PLAYER_SPEED: f32 = 500.;
 
-const LOW_AIR_THRESHOLD: f32 = 1.0; 
-const AIR_DAMAGE_PER_SECOND: f32 = 5.0; 
-const AIR_DAMAGE_TICK_RATE: f32 = 0.5;
 const ACCEL_RATE: f32 = 5000.;
 const TILE_SIZE: f32 = 32.;
 const BG_WORLD: f32 = 2048.0;
@@ -52,6 +48,7 @@ struct MainCamera;
 
 #[derive(Component)]
 struct HealthDisplay;
+
 
 #[derive(Component)]
 struct GameMusic;
@@ -70,9 +67,6 @@ struct DamageCooldown(Timer);
 
 #[derive(Resource, Default)]
 pub struct ShowAirLabels(pub bool);
-
-#[derive(Component)]
-pub struct AirDamageTimer(Timer);
 
 #[derive(Component)]
 pub enum EndScreenButtons{
@@ -172,29 +166,11 @@ fn main() {
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
         .add_systems(OnEnter(GameState::Playing), log_state_change)
-        .add_systems(OnEnter(GameState::Playing), setup_air_damage_timer)
         .add_systems(OnEnter(GameState::Playing), init_air_grid)
         .add_systems(
             OnEnter(GameState::Playing),
             spawn_pressure_labels
                 .after(init_air_grid)
-                .run_if(|flag: Res<ShowAirLabels>| flag.0),
-        )
-        .add_systems(
-            OnEnter(GameState::Playing),
-            spawn_fluid_pressure_labels
-                .run_if(|flag: Res<ShowAirLabels>| flag.0),
-        )
-        .add_systems(
-            Update,
-            update_fluid_pressure_labels
-                .run_if(in_state(GameState::Playing))
-                .run_if(|flag: Res<ShowAirLabels>| flag.0),
-        )
-        .add_systems(
-            Update,
-            update_air_label_visibility
-                .run_if(in_state(GameState::Playing))
                 .run_if(|flag: Res<ShowAirLabels>| flag.0),
         )
         .add_systems(OnEnter(GameState::Playing), start_game_music)
@@ -233,10 +209,6 @@ fn main() {
         .add_systems(
             Update,
             check_game_over.run_if(in_state(GameState::Playing)),
-        )
-        .add_systems(
-            Update,
-            air_damage_system.run_if(in_state(GameState::Playing)),
         )
         .add_systems(
             Update,
@@ -593,62 +565,6 @@ fn damage_on_collision(
     }
 }
 
-
-fn setup_air_damage_timer(
-    mut commands: Commands,
-    player_q: Query<Entity, With<Player>>,
-) {
-    if let Ok(player_entity) = player_q.single() {
-        commands.entity(player_entity).insert(AirDamageTimer(
-            Timer::from_seconds(AIR_DAMAGE_TICK_RATE, TimerMode::Repeating)
-        ));
-        info!("Air damage system initialized");
-    }
-}
-
-
-fn air_damage_system(
-    time: Res<Time>,
-    air_grid_q: Query<&AirGrid>,
-    grid_meta: Res<MapGridMeta>,
-    mut player_q: Query<(&Transform, &mut Health, &mut AirDamageTimer, &mut player::AirTank), With<Player>>,
-) {
-    let Ok(air_grid) = air_grid_q.single() else {
-        return;
-    };
-
-    let Ok((transform, mut health, mut timer, mut tank)) = player_q.single_mut() else {
-        return;
-    };
-
-    let player_pos = transform.translation.truncate();
-    let grid_x = ((player_pos.x - grid_meta.x0) / TILE_SIZE).clamp(0.0, (grid_meta.cols - 1) as f32) as usize;
-    let grid_y = ((player_pos.y - grid_meta.y0) / TILE_SIZE).clamp(0.0, (grid_meta.rows - 1) as f32) as usize;
-    let grid_y_flipped = grid_meta.rows.saturating_sub(1).saturating_sub(grid_y);
-    let air_pressure = air_grid.get(grid_x, grid_y_flipped);
-
-    let delta = time.delta_secs();
-
-    if air_pressure < LOW_AIR_THRESHOLD {
-        // Low air: drain the tank
-        tank.current = (tank.current - tank.drain_rate * delta).max(0.0);
-    } else {
-        // Good air: refill the tank
-        tank.current = (tank.current + tank.drain_rate * delta).min(tank.max_capacity);
-    }
-
-    timer.0.tick(time.delta());
-
-    // Only deal damage once the tank is fully depleted
-    if air_pressure < LOW_AIR_THRESHOLD && tank.current <= 0.0 && timer.0.just_finished() {
-        let damage_amount = AIR_DAMAGE_PER_SECOND * AIR_DAMAGE_TICK_RATE;
-        health.0 -= damage_amount;
-        debug!(
-            "Player taking air damage! Pressure: {:.2} at ({}, {}) - tank empty - HP: {:.1}",
-            air_pressure, grid_x, grid_y_flipped, health.0
-        );
-    }
-}
 
 fn start_game_music(
     mut commands: Commands,
