@@ -269,54 +269,48 @@ fn collision_step(mut query: Query<&mut FluidGrid>) {
 
 //moving particles into the neighboring cells based on the direction
 fn streaming_step(mut query: Query<&mut FluidGrid>) {
-    for mut grid in &mut query {
-        let width = grid.width;
-        let height = grid.height;
+    for mut grid_mut in &mut query {
+        let width = grid_mut.width;
+        let height = grid_mut.height;
 
-        // Clone the distribution to avoid borrow conflicts
-        let old_dist = grid.distribution.clone();
+        // Reborrow as a plain &mut to allow Rust's field-split borrow rules.
+        let grid: &mut FluidGrid = &mut *grid_mut;
+
+        // Swap buffers up front: scratch becomes the read source (previous frame),
+        // distribution becomes the write target. Zero heap allocation.
+        std::mem::swap(&mut grid.distribution, &mut grid.scratch);
 
         for y in 0..height {
             for x in 0..width {
-                let idx = grid.get_index(x, y);
+                let idx = y * width + x;
 
                 if grid.obstacles[idx] {
                     continue;
                 }
                 //this loop goes through all the directions
                 for i in 0..9 {
-                    // see where did the particles came from, not where they are going. this is backstreaming
+                    // see where did the particles came from — backstreaming
                     let src_x = x as isize - C_X[i] as isize;
                     let src_y = y as isize - C_Y[i] as isize;
 
-                    let bounced_back = if src_x < 0
+                    let bounced_back = src_x < 0
                         || src_x >= width as isize
                         || src_y < 0
                         || src_y >= height as isize
-                    {
-                        true
-                    } else {
-                        //check if it came from an obstacle
-                        let src_idx = grid.get_index(src_x as usize, src_y as usize);
-                        grid.obstacles[src_idx]
-                    };
+                        || grid.obstacles[src_y as usize * width + src_x as usize];
 
-                    //if bounced back, reverse direction
-                    if bounced_back {
-                        let opposite_i = OPPOSITE_DIR[i];
-                        grid.scratch[idx][i] = old_dist[idx][opposite_i];
+                    // Read from scratch into a local first so the borrow is released
+                    // before we write to distribution.
+                    let val = if bounced_back {
+                        grid.scratch[idx][OPPOSITE_DIR[i]]
                     } else {
-                        let src_idx = grid.get_index(src_x as usize, src_y as usize);
-                        grid.scratch[idx][i] = old_dist[src_idx][i];
-                    }
+                        grid.scratch[src_y as usize * width + src_x as usize][i]
+                    };
+                    grid.distribution[idx][i] = val;
                 }
             }
         }
-
-        // Swap buffers via move — no heap allocation or cloning.
-        let new_dist = std::mem::take(&mut grid.scratch);
-        let old_dist = std::mem::replace(&mut grid.distribution, new_dist);
-        grid.scratch = old_dist;
+        // No end-of-loop swap needed — distribution already holds the new state.
     }
 }
 
@@ -360,6 +354,7 @@ fn pull_objects_toward_breaches(
     rooms: Res<RoomVec>,
     grid_query: Query<&FluidGrid>,
     mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
+    time: Res<Time>,
 ) {
     let Ok(grid) = grid_query.single() else {
         return;
@@ -371,8 +366,8 @@ fn pull_objects_toward_breaches(
 
     // convert breach grid coords → world coords
     let cell_size = crate::TILE_SIZE;
-    let grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
-    let grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
+    let _grid_origin_x = -(grid.width as f32 * cell_size) / 2.0;
+    let _grid_origin_y = -(grid.height as f32 * cell_size) / 2.0;
 
     for (transform, mut velocity, pulled) in &mut objects {
         let world_pos = transform.translation.truncate();
@@ -412,7 +407,7 @@ fn pull_objects_toward_breaches(
 
         // apply physics
         let acceleration = total_force / pulled.mass;
-        velocity.velocity += acceleration * 0.016;
+        velocity.velocity += acceleration * time.delta_secs();
 
         // clamp excessive speeds
         let max_velocity = 200.0;
@@ -420,30 +415,6 @@ fn pull_objects_toward_breaches(
             velocity.velocity = velocity.velocity.normalize() * max_velocity;
         }
     }
-}
-
-// Quiet helper: World → grid; returns None if outside (no logs)
-fn world_to_grid_opt(
-    world_pos: Vec2,
-    grid_width: usize,
-    grid_height: usize,
-    cell_size: f32,
-) -> Option<(usize, usize)> {
-    //calculate grid origin (center of grid is at world origin 0,0)
-    let grid_origin_x = -(grid_width as f32 * cell_size) / 2.0;
-    let grid_origin_y = -(grid_height as f32 * cell_size) / 2.0;
-    
-    let gx = (world_pos.x - grid_origin_x) / cell_size;
-    let gy = (world_pos.y - grid_origin_y) / cell_size;
-
-    if gx < 0.0 || gy < 0.0 {
-        return None;
-    }
-    let (ux, uy) = (gx as usize, gy as usize);
-    if ux >= grid_width || uy >= grid_height {
-        return None;
-    }
-    Some((ux, uy))
 }
 
 // Kept for compatibility with any existing callers; uses TILE_SIZE

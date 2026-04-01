@@ -114,7 +114,7 @@ fn reaper_room_timer(
     lvlstate: Res<LevelState>,
     mut commands: Commands,
     player_q: Query<&Transform, With<Player>>,
-    rooms: Res<RoomVec>,
+    _rooms: Res<RoomVec>,
     reaper_res: Res<ReaperRes>,
     assets: Res<AssetServer>,
 ) {

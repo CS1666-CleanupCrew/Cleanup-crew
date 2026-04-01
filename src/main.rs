@@ -1,5 +1,5 @@
 use crate::collidable::{Collidable, Collider};
-use crate::player::{Health, Player, AirTank};
+use crate::player::{Health, Player};
 use bevy::{prelude::*, window::PresentMode};
 use bevy::audio::Volume;
 use crate::air::{init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break};
@@ -98,6 +98,11 @@ pub struct SavedPlayerBuffs {
     pub armor: f32,
     pub air_tank_max: f32,
     pub air_tank_drain_rate: f32,
+    pub weapon_damage: f32,
+    pub piercing: bool,
+    pub regen_rate: f32,
+    pub shield_max: f32,
+    pub vacuum_mass: f32,
 }
 
 #[derive(Component)]
@@ -202,13 +207,8 @@ fn main() {
                 damage_on_collision,
                 check_game_over,
                 check_win,
-                damage_on_collision,
             )
                 .run_if(in_state(GameState::Playing)),
-        )
-        .add_systems(
-            Update,
-            check_game_over.run_if(in_state(GameState::Playing)),
         )
         .add_systems(
             Update,
@@ -233,7 +233,11 @@ fn check_win(
     mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     rooms: Res<RoomVec>,
-    player_q: Query<(&Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon, &player::NumOfCleared, &player::Armor, &player::AirTank), With<Player>>,
+    player_q: Query<(
+        &Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon,
+        &player::NumOfCleared, &player::Armor, &player::AirTank,
+        &player::Regen, &player::Shield, &fluiddynamics::PulledByFluid,
+    ), With<Player>>,
 ){
     let mut count = 0;
 
@@ -245,7 +249,7 @@ fn check_win(
 
     if count == rooms.0.len(){
         // Save player buffs before transitioning (player will be despawned on exit)
-        if let Ok((health, max_hp, move_spd, weapon, num_cleared, armor, tank)) = player_q.single() {
+        if let Ok((health, max_hp, move_spd, weapon, num_cleared, armor, tank, regen, shield, pull)) = player_q.single() {
             commands.insert_resource(SavedPlayerBuffs {
                 max_health: max_hp.0,
                 health: health.0,
@@ -255,6 +259,11 @@ fn check_win(
                 armor: armor.0,
                 air_tank_max: tank.max_capacity,
                 air_tank_drain_rate: tank.drain_rate,
+                weapon_damage: weapon.damage,
+                piercing: weapon.piercing,
+                regen_rate: regen.0,
+                shield_max: shield.max,
+                vacuum_mass: pull.mass,
             });
         }
         next_state.set(GameState::Win);

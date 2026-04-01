@@ -1,7 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::render_resource::TextureUsages;
-use bevy::scene::ron::de;
-use bevy::text::cosmic_text::ttf_parser::gpos::Anchor;
 
 use std::fs::File;
 use std::io::BufReader;
@@ -11,7 +8,6 @@ use crate::collidable::{Collidable, Collider};
 use crate::player;
 use crate::procgen::generate_tables_from_grid;
 use crate::room::*; // RoomRes, track_rooms
-use crate::table;
 use crate::window;
 use crate::{BG_WORLD, GameState, MainCamera, GameEntity, TILE_SIZE, WIN_H, WIN_W, Z_FLOOR};
 use crate::procgen::{ProcgenSet};

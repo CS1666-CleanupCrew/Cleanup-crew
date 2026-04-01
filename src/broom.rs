@@ -32,20 +32,12 @@ impl Plugin for BroomPlugin {
     }
 }
 
-fn distance_point_to_segment(p: Vec2, a: Vec2, b: Vec2) -> f32 {
-    let ab = b - a;
-    let t = (p - a).dot(ab) / ab.length_squared();
-    let t = t.clamp(0.0, 1.0);
-    let proj = a + ab * t;
-    p.distance(proj)
-}
-
 pub fn broom_hit_bullets_system(
     mut commands: Commands,
     broom_query: Query<(&Transform, &Collider), With<Broom>>,
     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
 ) {
-    let (broom_transform, broom_collider) = match broom_query.get_single() {
+    let (broom_transform, broom_collider) = match broom_query.single() {
         Ok(b) => b,
         Err(_) => return, // No broom active
     };
@@ -66,29 +58,6 @@ pub fn broom_hit_bullets_system(
         }
     }
 }
-
-fn aabb_capsule_hit(
-    aabb_center: Vec2,
-    aabb_half: Vec2,
-    seg_a: Vec2,
-    seg_b: Vec2,
-    radius: f32,
-) -> bool {
-    // Broad phase
-    let seg_min = seg_a.min(seg_b) - Vec2::splat(radius) - aabb_half;
-    let seg_max = seg_a.max(seg_b) + Vec2::splat(radius) + aabb_half;
-
-    if aabb_center.x < seg_min.x || aabb_center.x > seg_max.x ||
-       aabb_center.y < seg_min.y || aabb_center.y > seg_max.y {
-        return false;
-    }
-
-    // Precise
-    let dist = distance_point_to_segment(aabb_center, seg_a, seg_b);
-    dist <= radius + aabb_half.length() * 0.5
-}
-
-
 
 fn broom_input(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -226,11 +195,11 @@ fn broom_push_tables_system(
     player_query: Query<&Facing, With<Player>>,
     mut table_query: Query<(&Transform, &Collider, &mut Velocity), With<Table>>,
 ) {
-    let (broom_tf, broom_col) = match broom_query.get_single() {
+    let (broom_tf, broom_col) = match broom_query.single() {
         Ok(b) => b,
         Err(_) => return,
     };
-    let facing = match player_query.get_single() {
+    let facing = match player_query.single() {
         Ok(f) => f,
         Err(_) => return,
     };

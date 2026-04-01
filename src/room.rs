@@ -1,11 +1,8 @@
-use bevy::log::Level;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
 use rand::{SeedableRng};
 use rand::rngs::StdRng;
-// use core::num;
 use std::collections::HashSet;
-use std::time::Instant;
 use bevy::time::Time;
 use crate::collidable::{Collidable, Collider};
 use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
@@ -171,12 +168,17 @@ pub fn entered_room(
     table_positions: Res<TablePositions>,
     tables: Query<Entity, With<table::Table>>,
     station_level: Res<crate::StationLevel>,
-
+    mut shield_query: Query<&mut crate::player::Shield, With<Player>>,
 ){
     match *lvlstate
     {
         LevelState::EnteredRoom(index) =>
         {
+            // Recharge shield on room entry
+            if let Ok(mut shield) = shield_query.single_mut() {
+                shield.current = shield.max;
+            }
+
             let mut count = 0;
             for door in rooms.0[index].doors.iter(){
                 commands.entity(*door).insert(Collidable);
@@ -607,64 +609,6 @@ pub fn apply_breach_forces_to_entities(
             apply_suction(pos, pulled_by_fluid.mass, &mut velocity.velocity);
         }
     }
-}
-
-fn apply_breach_force_to_entity(
-    rooms: &RoomVec,
-    entity_pos: Vec2,
-    velocity: &mut Vec2,
-    mass: f32,
-    delta_time: f32,
-    force_multiplier: f32,
-) {
-    let mut current_room: Option<&Room> = None;
-    for room in rooms.0.iter() {
-        if room.bounds_check(entity_pos) {
-            current_room = Some(room);
-            break;
-        }
-    }
-
-    let Some(room) = current_room else {
-        return;
-    };
-
-    if room.cleared {
-        return;
-    }
-
-    if room.breaches.is_empty() || room.air_pressure >= 100.0 {
-        return;
-    }
-
-    let pressure_ratio = room.air_pressure / 100.0;
-    let pressure_force_factor = (1.0 - pressure_ratio).powf(2.0);
-    
-    let mut nearest_breach = room.breaches[0];
-    let mut min_distance = entity_pos.distance(nearest_breach);
-    
-    for &breach in room.breaches.iter() {
-        let distance = entity_pos.distance(breach);
-        if distance < min_distance {
-            min_distance = distance;
-            nearest_breach = breach;
-        }
-    }
-
-    let to_breach = nearest_breach - entity_pos;
-    let distance = to_breach.length();
-    
-    if distance < 1.0 {
-        return;
-    }
-    
-    let direction = to_breach.normalize();
-    let distance_factor = (1.0 / (distance / 100.0 + 1.0)).min(1.0);
-    let base_force = 50000.0;
-    let total_force = base_force * pressure_force_factor * distance_factor * force_multiplier;
-    let acceleration = direction * (total_force / mass);
-    
-    *velocity += acceleration * delta_time;
 }
 
 pub fn damage_player_from_low_pressure(

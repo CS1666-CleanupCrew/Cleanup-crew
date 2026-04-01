@@ -2,13 +2,11 @@ use crate::collidable::{Collidable, Collider};
 use crate::player::Player;
 use crate::reaper::Reaper;
 use bevy::prelude::*;
-use bevy::scene::ron::de;
 
 pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
 pub const ENEMY_ACCEL: f32 = 1800.;
 
-use crate::map::EnemySpawnPoints;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
 use crate::{GameEntity, GameState};
@@ -260,23 +258,6 @@ pub fn spawn_ranged_enemy_at(
 
     if active {
         e.insert(ActiveEnemy);
-    }
-}
-
-fn spawn_enemies_from_points(
-    mut commands: Commands,
-    enemy_res: Res<EnemyRes>,
-    ranged_res: Res<RangedEnemyRes>,
-    points: Res<EnemySpawnPoints>,
-) {
-    for (i, &p) in points.0.iter().enumerate() {
-        if i % 3 == 0 {
-            // every 3rd enemy is a ranger
-            spawn_ranged_enemy_at(&mut commands, &ranged_res, p, true, 1.0);
-        } else {
-            // others are standard chasers
-            spawn_enemy_at(&mut commands, &enemy_res, p, true, 1.0);
-        }
     }
 }
 
