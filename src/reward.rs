@@ -44,14 +44,14 @@ fn load_crates(
         atk_spd: asset_server.load("rewards/AtkSpdBox.png"),
         mov_spd: asset_server.load("rewards/MoveSpdBox.png"),
         armor: asset_server.load("rewards/ArmorBox.png"),
-        air_tank: asset_server.load("rewards/AirTankBox.png"),
-        drain_rate: asset_server.load("rewards/DrainRateBox.png"),
-        // new buffs — will use real sprites once assets are added
-        vacuum_res:  asset_server.load("rewards/VacuumResBox.png"),
-        regen:       asset_server.load("rewards/RegenBox.png"),
-        piercing:    asset_server.load("rewards/PiercingBox.png"),
-        damage_up:   asset_server.load("rewards/DamageUpBox.png"),
-        shield_burst: asset_server.load("rewards/ShieldBurstBox.png"),
+        // TODO: replace placeholders with real sprites
+        air_tank:     asset_server.load("rewards/HeartBox.png"),
+        drain_rate:   asset_server.load("rewards/HeartBox.png"),
+        vacuum_res:   asset_server.load("rewards/HeartBox.png"),
+        regen:        asset_server.load("rewards/HeartBox.png"),
+        piercing:     asset_server.load("rewards/HeartBox.png"),
+        damage_up:    asset_server.load("rewards/HeartBox.png"),
+        shield_burst: asset_server.load("rewards/HeartBox.png"),
     };
 
     commands.insert_resource(reward_tiles);
@@ -62,7 +62,7 @@ pub fn spawn_reward(
     pos: Vec3,
     box_sprite: &RewardRes,
 ){
-    let reward_type: usize = random_range(1..=12);
+    let reward_type: usize = random_range(1..=11);
     let reward_img = match reward_type
     {
         1  => box_sprite.max_hp.clone(),
