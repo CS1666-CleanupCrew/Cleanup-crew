@@ -41,22 +41,25 @@ type LeafRef = Rc<RefCell<Leaf>>;
 
 #[derive(Resource)]
 pub struct WindowConfig {
-    // Fraction of eligible wall tiles to convert to windows (0.0–1.0)
+    // Probability (0.0–1.0) that any given wall run gets a window burst
     pub density: f32,
-    // Hard minimum number of windows per room (if enough spots exist)
-    pub min_per_room: usize,
-    // Hard maximum number of windows per room
-    pub max_per_room: usize,
-    // distance around doors where we *won’t* place windows
+    // Minimum number of consecutive windows in a burst
+    pub min_burst: usize,
+    // Maximum number of consecutive windows in a burst
+    pub max_burst: usize,
+    // Max fraction of a wall run that can become windows (prevents full-wall coverage)
+    pub max_wall_fraction: f32,
+    // Distance around doors where we *won’t* place windows
     pub avoid_doors_radius: usize,
 }
 
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            density: 0.15,// 15% of eligible wall segments so we can tune how many windows appear
-            min_per_room: 5,
-            max_per_room: 5000,
+            density: 0.6,
+            min_burst: 2,
+            max_burst: 4,
+            max_wall_fraction: 0.5,
             avoid_doors_radius: 2,
         }
     }
@@ -237,9 +240,10 @@ impl Plugin for ProcGen {
                     .after(ProcgenSet::LoadRooms),
             );
             app.insert_resource(WindowConfig {
-                density: 0.25,
-                min_per_room: 10,
-                max_per_room: 5000,
+                density: 0.6,
+                min_burst: 2,
+                max_burst: 4,
+                max_wall_fraction: 0.5,
                 avoid_doors_radius: 0,
         });
     }
@@ -748,9 +752,27 @@ pub fn place_doors(map: &mut Vec<Vec<char>>, room_vec: &RoomVec) {
     }
 }
 
+fn extract_consecutive_runs(sorted: &[usize]) -> Vec<Vec<usize>> {
+    let mut runs: Vec<Vec<usize>> = Vec::new();
+    if sorted.is_empty() {
+        return runs;
+    }
+    let mut current = vec![sorted[0]];
+    for &v in &sorted[1..] {
+        if v == *current.last().unwrap() + 1 {
+            current.push(v);
+        } else {
+            runs.push(current.clone());
+            current = vec![v];
+        }
+    }
+    runs.push(current);
+    runs
+}
+
 pub fn place_windows<R: Rng>(
     map: &mut Vec<Vec<char>>,
-    room_vec: &RoomVec, // kept for signature compatibility, but unused now
+    room_vec: &RoomVec,
     cfg: &WindowConfig,
     rng: &mut R,
 ) {
@@ -762,38 +784,35 @@ pub fn place_windows<R: Rng>(
 
     let mut candidates: Vec<(usize, usize)> = Vec::new();
 
-    // Any hull wall: 'W' with at least one '#' neighbor and at least one '.' neighbor
-    for room in &room_vec.0{
+    // Hull walls: 'W' with at least one '#' neighbor and at least one '.' neighbor
+    for room in &room_vec.0 {
         let x1 = room.tile_top_left_corner.x as usize;
         let y1 = room.tile_top_left_corner.y as usize;
         let x2 = room.tile_bot_right_corner.x as usize;
         let y2 = room.tile_bot_right_corner.y as usize;
 
-        for y in y1..y2+1 {
-            for x in x1..x2+1 {
-                if y >= map.len(){
+        for y in y1..=y2 {
+            for x in x1..=x2 {
+                if y >= rows {
                     return;
                 }
-
                 if map[y][x] != 'W' {
                     continue;
                 }
 
                 let mut has_floor = false;
                 let mut has_empty = false;
-                
-                // 8 neighbors
+
                 for (dx, dy) in [
-                    (-1,-1),    (-1, 0),    (-1, 1),
-                    ( 0,-1),                ( 0, 1),
-                    ( 1,-1),    ( 1, 0),    ( 1, 1)
+                    (-1,-1), (-1, 0), (-1, 1),
+                    ( 0,-1),          ( 0, 1),
+                    ( 1,-1), ( 1, 0), ( 1, 1),
                 ] {
                     let nx = x as isize + dx;
                     let ny = y as isize + dy;
                     if nx < 0 || ny < 0 || nx >= cols as isize || ny >= rows as isize {
                         continue;
                     }
-
                     match map[ny as usize][nx as usize] {
                         '#' => has_floor = true,
                         '.' => has_empty = true,
@@ -806,12 +825,10 @@ pub fn place_windows<R: Rng>(
                 }
             }
         }
-
     }
-    
-        // Filter out candidates too close to doors
+
+    // Filter out candidates too close to doors
     if cfg.avoid_doors_radius > 0 {
-        // collect all doors
         let mut doors: Vec<(isize, isize)> = Vec::new();
         for y in 0..rows {
             for x in 0..cols {
@@ -820,7 +837,6 @@ pub fn place_windows<R: Rng>(
                 }
             }
         }
-
         candidates.retain(|&(cx, cy)| {
             doors.iter().all(|&(dx, dy)| {
                 let dist = (cx as isize - dx).abs() + (cy as isize - dy).abs();
@@ -829,30 +845,71 @@ pub fn place_windows<R: Rng>(
         });
     }
 
-    // if candidates.is_empty() {
-    //     info!("No candidate wall tiles for windows");
-    //     return;
-    // }
+    use std::collections::HashMap;
+    let candidate_set: HashSet<(usize, usize)> = candidates.iter().cloned().collect();
 
-    candidates.shuffle(rng);
+    // Group by row (horizontal runs) and by column (vertical runs)
+    let mut by_row: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut by_col: HashMap<usize, Vec<usize>> = HashMap::new();
+    for &(x, y) in &candidates {
+        by_row.entry(y).or_default().push(x);
+        by_col.entry(x).or_default().push(y);
+    }
+    for xs in by_row.values_mut() { xs.sort_unstable(); }
+    for ys in by_col.values_mut() { ys.sort_unstable(); }
 
-    // Decide how many windows globally (we reuse the same fields)
-    let total = candidates.len();
-    let mut desired = ((total as f32) * cfg.density).round() as usize;
-    if desired < cfg.min_per_room {
-        desired = cfg.min_per_room;
+    let mut placed: HashSet<(usize, usize)> = HashSet::new();
+
+    // Place bursts along horizontal runs
+    for (&y, xs) in &by_row {
+        for run in extract_consecutive_runs(xs) {
+            if run.len() < cfg.min_burst { continue; }
+            if rng.random::<f32>() > cfg.density { continue; }
+
+            let max_in_run = ((run.len() as f32 * cfg.max_wall_fraction) as usize)
+                .max(cfg.min_burst)
+                .min(run.len());
+            let burst_size = rng.random_range(cfg.min_burst..=cfg.max_burst.min(max_in_run));
+            let max_start = run.len() - burst_size;
+            let start = rng.random_range(0..=max_start);
+
+            for i in start..start + burst_size {
+                placed.insert((run[i], y));
+            }
+        }
     }
-    if desired > cfg.max_per_room {
-        desired = cfg.max_per_room;
+
+    // Place bursts along vertical runs (handles walls not covered horizontally)
+    for (&x, ys) in &by_col {
+        for run in extract_consecutive_runs(ys) {
+            if run.len() < cfg.min_burst { continue; }
+            if rng.random::<f32>() > cfg.density { continue; }
+
+            let max_in_run = ((run.len() as f32 * cfg.max_wall_fraction) as usize)
+                .max(cfg.min_burst)
+                .min(run.len());
+            let burst_size = rng.random_range(cfg.min_burst..=cfg.max_burst.min(max_in_run));
+            let max_start = run.len() - burst_size;
+            let start = rng.random_range(0..=max_start);
+
+            for i in start..start + burst_size {
+                placed.insert((x, run[i]));
+            }
+        }
     }
-    desired = desired.min(total);
+
+    let window_targets: Vec<(usize, usize)> = placed
+        .into_iter()
+        .filter(|p| candidate_set.contains(p))
+        .collect();
 
     debug!(
-        "Global windows: {} candidate hull walls, placing {} windows",
-        total, desired
+        "Global windows: {} candidate hull walls, placing {} windows in bursts",
+        candidates.len(),
+        window_targets.len()
     );
 
-    for &(x, y) in candidates.iter().take(desired) {
+    for (x, y) in window_targets {
         if map[y][x] == 'W' {
             map[y][x] = 'G';
         }
