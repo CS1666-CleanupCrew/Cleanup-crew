@@ -25,7 +25,6 @@ pub struct RewardRes{
     piercing: Handle<Image>,
     damage_up: Handle<Image>,
     shield_burst: Handle<Image>,
-    speed_up: Handle<Image>,
 }
 
 pub struct RewardPlugin;
@@ -53,7 +52,6 @@ fn load_crates(
         piercing:    asset_server.load("rewards/PiercingBox.png"),
         damage_up:   asset_server.load("rewards/DamageUpBox.png"),
         shield_burst: asset_server.load("rewards/ShieldBurstBox.png"),
-        speed_up:    asset_server.load("rewards/SpeedUpBox.png"),
     };
 
     commands.insert_resource(reward_tiles);
@@ -78,7 +76,6 @@ pub fn spawn_reward(
         9  => box_sprite.piercing.clone(),
         10 => box_sprite.damage_up.clone(),
         11 => box_sprite.shield_burst.clone(),
-        12 => box_sprite.speed_up.clone(),
         _ => panic!("How did we get here? Reward img error")
     };
 
@@ -166,10 +163,6 @@ pub fn player_pickup_reward(
                         // Shield Burst: gain +1 charge (max stacks without limit)
                         shield.max += 1.0;
                         shield.current = (shield.current + 1.0).min(shield.max);
-                    }
-                    12 => {
-                        // Speed Up: +20 move speed
-                        movspd.0 = (movspd.0 + 20.0).min(600.0);
                     }
                     _ => panic!("Reward Type Not Found"),
                 }
