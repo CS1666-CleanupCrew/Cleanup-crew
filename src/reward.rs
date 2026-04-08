@@ -8,6 +8,50 @@ use crate::fluiddynamics::PulledByFluid;
 use crate::weapon::Weapon;
 
 #[derive(Component)]
+pub struct RewardPopup {
+    timer: Timer,
+}
+
+fn reward_name(reward_type: usize) -> &'static str {
+    match reward_type {
+        1  => "Max HP Up",
+        2  => "Attack Speed Up",
+        3  => "Move Speed Up",
+        4  => "Armor Up",
+        5  => "Larger Air Tank",
+        6  => "Slower Air Drain",
+        7  => "Vacuum Resistance",
+        8  => "Regen",
+        9  => "Piercing Rounds",
+        10 => "Damage Up",
+        11 => "Shield Charge",
+        _  => "???",
+    }
+}
+
+pub fn tick_reward_popups(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut q: Query<(Entity, &mut Transform, &mut TextColor, &mut RewardPopup)>,
+) {
+    for (entity, mut tf, mut color, mut popup) in &mut q {
+        popup.timer.tick(time.delta());
+        let frac = popup.timer.fraction(); // 0.0 → 1.0 over lifetime
+
+        // Float upward
+        tf.translation.y += 40.0 * time.delta_secs();
+
+        // Fade out in the second half
+        let alpha = if frac < 0.5 { 1.0 } else { 1.0 - (frac - 0.5) * 2.0 };
+        color.0 = color.0.with_alpha(alpha);
+
+        if popup.timer.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+#[derive(Component)]
 pub struct Reward(pub usize);
 
 #[allow(dead_code)]
@@ -33,6 +77,14 @@ impl Plugin for RewardPlugin{
         app
             .add_systems(Startup, load_crates);
     }
+}
+
+#[derive(Resource)]
+pub struct RewardFont(pub Handle<Font>);
+
+pub fn load_reward_font(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let handle = asset_server.load("fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf");
+    commands.insert_resource(RewardFont(handle));
 }
 
 fn load_crates(
@@ -101,6 +153,7 @@ pub fn player_pickup_reward(
     ), With<Player>>,
     reward_query: Query<(Entity, &Transform, &Reward)>,
     mut player_weapon_q: Query<&mut Weapon, With<Player>>,
+    font: Res<RewardFont>,
 ) {
     let Ok((
         _player_entity, player_tf,
@@ -168,6 +221,16 @@ pub fn player_pickup_reward(
                 }
             }
             if let Ok(mut ec) = commands.get_entity(reward_entity) { ec.despawn(); }
+
+            // Floating text popup
+            commands.spawn((
+                Text2d::new(reward_name(reward_type.0)),
+                TextFont { font: font.0.clone(), font_size: 20.0, ..default() },
+                TextColor(Color::srgba(1.0, 1.0, 0.3, 1.0)),
+                Transform::from_translation(Vec3::new(reward_pos.x, reward_pos.y + TILE_SIZE, 10.0)),
+                RewardPopup { timer: Timer::from_seconds(1.5, TimerMode::Once) },
+                GameEntity,
+            ));
         }
     }
 }
