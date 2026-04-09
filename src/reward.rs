@@ -235,12 +235,7 @@ pub fn player_pickup_reward(
     }
 }
 
-// Buff	Effect	Fits the theme
-// Vacuum Resistance	Increases your PulledByFluid.mass — harder to suck toward breaches	Magnetic boots
-// Regen	Slowly regenerates HP over time	Life support module
-// Piercing Rounds	Bullets pass through enemies	Plasma cutter
-// Damage Up	Increases BulletDamage	Overcharged cell
-// Shield Burst	A one-time hit absorber that recharges between rooms	Emergency barrier
+
 // Speed Up	Increases MoveSpeed	Thrusters switch movement tech from broom to thrusters. dodge in direction of mouse
 // larger fuel tank for thusters
 // make broom go through tables you can take a lot of damage trying to repair through tables
