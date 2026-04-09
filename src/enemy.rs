@@ -249,7 +249,7 @@ pub fn spawn_ranged_enemy_at(
         },
         RangedEnemyAI {
             range: 400.0,
-            fire_cooldown: Timer::from_seconds(1.5, TimerMode::Repeating),
+            fire_cooldown: Timer::from_seconds(1.0, TimerMode::Repeating),
             projectile_speed: 600.0,
         },
         crate::fluiddynamics::PulledByFluid { mass: 10.0 },
