@@ -2,13 +2,11 @@ use crate::collidable::{Collidable, Collider};
 use crate::player::Player;
 use crate::reaper::Reaper;
 use bevy::prelude::*;
-use bevy::scene::ron::de;
 
 pub const ENEMY_SIZE: f32 = 32.;
 pub const ENEMY_SPEED: f32 = 200.;
 pub const ENEMY_ACCEL: f32 = 1800.;
 
-use crate::map::EnemySpawnPoints;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
 use crate::{GameEntity, GameState};
@@ -125,7 +123,8 @@ impl Plugin for EnemyPlugin {
                     move_enemy.after(ranged_enemy_ai),
                     move_reaper_freely.after(ranged_enemy_ai),
                     collide_enemies_with_enemies.after(move_enemy),
-                    wall_correction_for_enemies.after(collide_enemies_with_enemies),
+                    push_enemies_from_player.after(collide_enemies_with_enemies),
+                    wall_correction_for_enemies.after(push_enemies_from_player),
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -251,7 +250,7 @@ pub fn spawn_ranged_enemy_at(
         },
         RangedEnemyAI {
             range: 400.0,
-            fire_cooldown: Timer::from_seconds(1.5, TimerMode::Repeating),
+            fire_cooldown: Timer::from_seconds(1.0, TimerMode::Repeating),
             projectile_speed: 600.0,
         },
         crate::fluiddynamics::PulledByFluid { mass: 10.0 },
@@ -260,23 +259,6 @@ pub fn spawn_ranged_enemy_at(
 
     if active {
         e.insert(ActiveEnemy);
-    }
-}
-
-fn spawn_enemies_from_points(
-    mut commands: Commands,
-    enemy_res: Res<EnemyRes>,
-    ranged_res: Res<RangedEnemyRes>,
-    points: Res<EnemySpawnPoints>,
-) {
-    for (i, &p) in points.0.iter().enumerate() {
-        if i % 3 == 0 {
-            // every 3rd enemy is a ranger
-            spawn_ranged_enemy_at(&mut commands, &ranged_res, p, true, 1.0);
-        } else {
-            // others are standard chasers
-            spawn_enemy_at(&mut commands, &enemy_res, p, true, 1.0);
-        }
     }
 }
 
@@ -499,6 +481,40 @@ fn move_reaper_freely(
     let dt = time.delta_secs();
     for (mut tf, vel) in &mut query {
         tf.translation += (vel.velocity * dt).extend(0.0);
+    }
+}
+
+// Push enemies out of the player so the player cannot shove them through walls.
+// Runs after collide_enemies_with_enemies and before wall_correction_for_enemies.
+fn push_enemies_from_player(
+    player_query: Query<&Transform, With<Player>>,
+    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>, Without<Player>)>,
+) {
+    let Ok(player_tf) = player_query.single() else { return };
+    let player_pos = player_tf.translation.truncate();
+    let player_half = Vec2::new(crate::TILE_SIZE * 0.5, crate::TILE_SIZE * 1.0);
+    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+
+    for mut enemy_tf in &mut enemy_query {
+        let enemy_pos = enemy_tf.translation.truncate();
+
+        if crate::player::aabb_overlap(
+            player_pos.x, player_pos.y, player_half,
+            enemy_pos.x, enemy_pos.y, enemy_half,
+        ) {
+            let overlap_x = (player_half.x + enemy_half.x) - (player_pos.x - enemy_pos.x).abs();
+            let overlap_y = (player_half.y + enemy_half.y) - (player_pos.y - enemy_pos.y).abs();
+
+            if overlap_x < overlap_y {
+                // Push enemy on X axis
+                let sign = if enemy_pos.x > player_pos.x { 1.0 } else { -1.0 };
+                enemy_tf.translation.x += sign * overlap_x;
+            } else {
+                // Push enemy on Y axis
+                let sign = if enemy_pos.y > player_pos.y { 1.0 } else { -1.0 };
+                enemy_tf.translation.y += sign * overlap_y;
+            }
+        }
     }
 }
 

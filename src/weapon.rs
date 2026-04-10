@@ -1,6 +1,6 @@
 use bevy::prelude::*;
-use crate::{GameEntity, TILE_SIZE};
-use crate::bullet::{Bullet, BulletOwner, Velocity, AnimationTimer, AnimationFrameCount};
+use crate::GameEntity;
+use crate::bullet::{Bullet, BulletOwner, Velocity, AnimationTimer, AnimationFrameCount, Piercing};
 use crate::collidable::Collider;
 
 #[derive(Component, Clone)]
@@ -11,6 +11,7 @@ pub struct Weapon {
     pub damage: f32,
     pub bullet_size: f32,
     pub shoot_timer: Timer,
+    pub piercing: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -24,11 +25,12 @@ impl Weapon {
         match weapon_type {
             WeaponType::BasicLaser => Self {
                 weapon_type,
-                fire_rate: 0.5,
+                fire_rate: 0.7,
                 bullet_speed: 700.0,
                 damage: 25.0,
                 bullet_size: 0.25,
                 shoot_timer: Timer::from_seconds(0.5, TimerMode::Once),
+                piercing: false,
             },
             // Add more weapon types here:
             // WeaponType::RapidFire => Self { ... },
@@ -101,8 +103,8 @@ pub fn spawn_bullet(
     dir: Vec2,
 ) {
     let normalized_dir = dir.normalize_or_zero();
-    
-    commands.spawn((
+
+    let mut bullet = commands.spawn((
         Sprite::from_atlas_image(
             bullet_res.0.clone(),
             TextureAtlas {
@@ -117,7 +119,7 @@ pub fn spawn_bullet(
         },
         AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
         AnimationFrameCount(3),
-        Velocity(normalized_dir * weapon.bullet_speed),  // Use bullet::Velocity directly
+        Velocity(normalized_dir * weapon.bullet_speed),
         Bullet,
         BulletOwner::Player,
         Collider {
@@ -126,6 +128,9 @@ pub fn spawn_bullet(
         BulletDamage(weapon.damage),
         GameEntity,
     ));
+    if weapon.piercing {
+        bullet.insert(Piercing);
+    }
 }
 
 // New component to track bullet damage

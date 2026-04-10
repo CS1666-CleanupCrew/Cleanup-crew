@@ -2,17 +2,14 @@ use bevy::{prelude::*};
 
 use crate::collidable::{Collidable, Collider};
 use crate::table;
-use crate::window;
 use crate::broom::Broom;
 use crate::{ACCEL_RATE, GameState, GameEntity, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
 use crate::enemy::{Enemy, ENEMY_SIZE};
 use crate::enemy::HitAnimation;
 use crate::map::{LevelRes, MapGridMeta};
 use crate::fluiddynamics::PulledByFluid;
-use crate::bullet::{Bullet, BulletOwner, Velocity};
-use crate::weapon::{Weapon, WeaponType, spawn_bullet, BulletRes, WeaponSounds, BulletDamage,};
-
-const BULLET_SPD: f32 = 700.;
+use crate::bullet::{Bullet, Velocity};
+use crate::weapon::{Weapon, WeaponType, spawn_bullet, BulletRes, WeaponSounds};
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
 
 // #[derive(Resource)]
@@ -48,6 +45,38 @@ pub struct MoveSpeed(pub f32);
 /// 0 = no reduction, 100 = 50% reduction, 200 = 66% reduction (RoR2 formula).
 #[derive(Component)]
 pub struct Armor(pub f32);
+
+/// Internal oxygen reserve. Drains when room air pressure is low, giving the
+/// player a grace period before they start taking damage.
+#[derive(Component)]
+pub struct AirTank {
+    pub current: f32,      // current oxygen [0..max_capacity]
+    pub max_capacity: f32, // maximum oxygen
+    pub drain_rate: f32,   // units consumed per second in low-air environments
+}
+
+impl AirTank {
+    pub fn new(max_capacity: f32, drain_rate: f32) -> Self {
+        Self { current: max_capacity, max_capacity, drain_rate }
+    }
+}
+
+/// HP regenerated per second. Stacks with multiple pickups.
+#[derive(Component)]
+pub struct Regen(pub f32);
+
+/// One-time hit absorber. Each charge blocks one hit fully; recharges on room entry.
+#[derive(Component)]
+pub struct Shield {
+    pub current: f32,
+    pub max: f32,
+}
+
+impl Shield {
+    pub fn new(max: f32) -> Self {
+        Self { current: max, max }
+    }
+}
 
 
 // #[derive(Resource)]
@@ -116,18 +145,16 @@ impl Plugin for PlayerPlugin {
         app.add_systems(Startup, load_player)
             // .add_systems(Startup, load_bullet)
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
+            .add_systems(Update, regen_system.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
             .add_systems(Update, apply_breach_force_to_player.after(move_player).run_if(in_state(GameState::Playing)))
             // .add_systems(Update, move_bullet.run_if(in_state(GameState::Playing)))
             // .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             // .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
-            .add_systems(Update, bullet_hits_enemy.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, bullet_hits_table.run_if(in_state(GameState::Playing)))
             .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, bullet_hits_window.run_if(in_state(GameState::Playing)))
             .add_systems(Update, table_hits_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, wall_collision_correction.after(move_player).run_if(in_state(GameState::Playing)))
+            .add_systems(Update, wall_collision_correction.after(apply_breach_force_to_player).run_if(in_state(GameState::Playing)))
 
             ;
     }
@@ -205,19 +232,28 @@ fn spawn_player(
     let world_y = grid.y0 + (grid.rows as f32 - 1.0 - gy as f32) * TILE_SIZE + y_player_spawn_offset;
 
     // Apply saved buffs from previous station if continuing, otherwise use defaults
-    let (hp, max_hp, move_speed, fire_rate, num_cleared, armor) = if let Some(buffs) = &saved_buffs {
-        info!(
-            "Applying saved buffs: max_hp={}, hp={}, move_spd={}, fire_rate={}, cleared={}, armor={}",
-            buffs.max_health, buffs.health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared, buffs.armor
-        );
-        (buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate, buffs.num_cleared, buffs.armor)
-    } else {
-        (100.0, 100.0, 1.0, 0.5, 0, 0.0)
-    };
+    let (hp, max_hp, move_speed, fire_rate, num_cleared, armor, tank_max, tank_drain,
+         weapon_damage, piercing, regen_rate, shield_max, vacuum_mass) =
+        if let Some(buffs) = &saved_buffs {
+            info!(
+                "Applying saved buffs: max_hp={}, hp={}, move_spd={}, fire_rate={}, cleared={}, armor={}, tank_max={}, tank_drain={}",
+                buffs.max_health, buffs.health, buffs.move_speed, buffs.fire_rate,
+                buffs.num_cleared, buffs.armor, buffs.air_tank_max, buffs.air_tank_drain_rate
+            );
+            (
+                buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate,
+                buffs.num_cleared, buffs.armor, buffs.air_tank_max, buffs.air_tank_drain_rate,
+                buffs.weapon_damage, buffs.piercing, buffs.regen_rate, buffs.shield_max, buffs.vacuum_mass,
+            )
+        } else {
+            (100.0, 100.0, 1.0, 0.5, 0, 0.0, 5.0, 1.0, 25.0, false, 0.0, 0.0, 50.0)
+        };
 
     let mut weapon = Weapon::new(WeaponType::BasicLaser);
     weapon.fire_rate = fire_rate;
     weapon.shoot_timer = Timer::from_seconds(fire_rate, TimerMode::Once);
+    weapon.damage = weapon_damage;
+    weapon.piercing = piercing;
 
     commands.spawn((
         Sprite::from_atlas_image(
@@ -234,12 +270,12 @@ fn spawn_player(
         Health::new(hp),
         MaxHealth(max_hp),
         DamageTimer::new(1.0),
-        // grouped into a nested tuple to stay within Bevy's 15-element Bundle limit
-        (MoveSpeed(move_speed), Armor(armor), Collidable),
+        // grouped into nested tuples to stay within Bevy's 15-element Bundle limit
+        (MoveSpeed(move_speed), Armor(armor), Collidable, Regen(regen_rate), Shield::new(shield_max)),
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
         NumOfCleared(num_cleared),
-        PulledByFluid{mass: 50.0},
+        (PulledByFluid{mass: vacuum_mass}, AirTank::new(tank_max, tank_drain)),
         weapon,
         GameEntity,
     ));
@@ -374,21 +410,30 @@ fn move_player(
         let mut nx = pos.x + delta.x;
         let px = nx;
         let py = pos.y;
+        let mut hit_x = false;
 
         for (ct, c) in &colliders {
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
-                if delta.x > 0.0 {
-                    nx = cx - (player_half.x + c.half_extents.x);
+                let candidate = if delta.x > 0.0 {
+                    cx - (player_half.x + c.half_extents.x)
                 } else {
-                    nx = cx + (player_half.x + c.half_extents.x);
+                    cx + (player_half.x + c.half_extents.x)
+                };
+                // Keep the most restrictive (closest) wall, not the last one found.
+                if delta.x > 0.0 {
+                    nx = nx.min(candidate);
+                } else {
+                    nx = nx.max(candidate);
                 }
-                // wall friction
-                if dir.y != 0.0 {
-                    velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
-                }
-                velocity.x = 0.0;
+                hit_x = true;
             }
+        }
+        if hit_x {
+            if dir.y != 0.0 {
+                velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
+            }
+            velocity.x = 0.0;
         }
         pos.x = nx;
     }
@@ -398,21 +443,30 @@ fn move_player(
         let mut ny = pos.y + delta.y;
         let px = pos.x;
         let py = ny;
+        let mut hit_y = false;
 
         for (ct, c) in &colliders {
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
-                if delta.y > 0.0 {
-                    ny = cy - (player_half.y + c.half_extents.y);
+                let candidate = if delta.y > 0.0 {
+                    cy - (player_half.y + c.half_extents.y)
                 } else {
-                    ny = cy + (player_half.y + c.half_extents.y);
+                    cy + (player_half.y + c.half_extents.y)
+                };
+                // Keep the most restrictive (closest) wall.
+                if delta.y > 0.0 {
+                    ny = ny.min(candidate);
+                } else {
+                    ny = ny.max(candidate);
                 }
-                // wall friciton
-                if dir.x != 0.0 {
-                    velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
-                }
-                velocity.y = 0.0;
+                hit_y = true;
             }
+        }
+        if hit_y {
+            if dir.x != 0.0 {
+                velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
+            }
+            velocity.y = 0.0;
         }
         pos.y = ny;
     }
@@ -441,13 +495,13 @@ impl DamageTimer {
 
 fn enemy_hits_player(
     time: Res<Time>,
-    mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer, &Armor), With<crate::player::Player>>,
+    mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer, &Armor, &mut Shield), With<crate::player::Player>>,
     enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>,
     mut commands: Commands,
 ) {
     let player_half = Vec2::splat(32.0);
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
-    for (player_tf, mut health, mut damage_timer, armor) in &mut player_query {
+    for (player_tf, mut health, mut damage_timer, armor, mut shield) in &mut player_query {
 
         damage_timer.0.tick(time.delta());
 
@@ -468,7 +522,11 @@ fn enemy_hits_player(
                         "Player hit by entity {:?} at position {:?}",
                         enemy_entity, enemy_pos
                     );
-                    health.0 -= 15.0 * armor_factor(armor.0);
+                    if shield.current >= 1.0 {
+                        shield.current -= 1.0;
+                    } else {
+                        health.0 -= 15.0 * armor_factor(armor.0);
+                    }
                     damage_timer.0.reset();
                     
                
@@ -524,215 +582,25 @@ fn update_player_sprite(
 }
 //-------------------------------------------------------------------------------------------------------------
 
-/**
- * BULLET SECTION
- */
-
-// fn load_bullet(
-//     mut commands: Commands, 
-//     asset_server: Res<AssetServer>,
-//     mut texture_atlases: ResMut<Assets<TextureAtlasLayout>>,
-// ){  
-//     //Bullet look
-//     let bullet_animate_image: Handle<Image> = asset_server.load("bullet_animation.png");
-
-//     //Bullet size within image and layout
-//     let bullet_animate_layout = TextureAtlasLayout::from_grid(UVec2::splat(100), 3, 1, None, None);
-//     let bullet_animate_handle = texture_atlases.add(bullet_animate_layout);
-
-//     commands.insert_resource(BulletRes(bullet_animate_image, bullet_animate_handle));
-// }
-
-// fn spawn_bullet(
-//     commands: &mut Commands,
-//     bullet_animate: Res<BulletRes>,
-//     pos: Vec2,
-//     dir: Vec2,
-// ){
-
-//     commands.spawn((
-//         Sprite::from_atlas_image(
-//             bullet_animate.0.clone(),
-//             TextureAtlas { 
-//                 layout: bullet_animate.1.clone(),
-//                 index: 0, 
-//             },
-//         ),
-//         Transform{
-//             translation: Vec3::new(pos.x, pos.y, 910.),
-//             scale: Vec3::splat(0.25),
-//             ..Default::default()
-//         },
-//         AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
-//         AnimationFrameCount(3),
-//         Velocity::new_vec(dir.x, dir.y),
-//         Bullet,
-//         BulletOwner::Player,
-//         Collider {
-//             half_extents: Vec2::splat(5.0), // adjust to bullet size
-//         },
-//         GameEntity,
-//     ));
-// }
-
-// fn move_bullet(
-//     time: Res<Time>,
-//     mut bullet: Query<(&mut Transform, &mut Velocity), With<Bullet>>,
-// ){
-
-//     for (mut transform, b) in &mut bullet {
-//         let norm = b.normalize_or_zero();
-
-//         transform.translation.x += norm.x * BULLET_SPD * time.delta_secs();
-//         transform.translation.y += norm.y * BULLET_SPD * time.delta_secs();
-//     }
-// }
-
-// fn bullet_collision(
-//     mut commands: Commands,
-//     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-//     colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<crate::enemy::Enemy>, Without<table::Table>, Without<crate::reward::Reward>)>,
-// ) {
-//     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
-//         let bx = bullet_transform.translation.x;
-//         let by = bullet_transform.translation.y;
-//         let b_half = bullet_collider.half_extents;
-
-//         // Check collision with all collidable entities
-//         for (collider_transform, collider) in &colliders {
-//             let cx = collider_transform.translation.x;
-//             let cy = collider_transform.translation.y;
-//             let c_half = collider.half_extents;
-
-//             if aabb_overlap(bx, by, b_half, cx, cy, c_half) {
-//                 commands.entity(bullet_entity).despawn();
-//                 break;
-//             }
-//         }
-//     }
-// }
-
-// fn animate_bullet(
-//     time: Res<Time>,
-//     mut bullet: Query<
-//         (
-//             &mut Sprite,
-//             &mut AnimationTimer,
-//             &AnimationFrameCount,
-//         ),
-//         With<Bullet>,
-//     >,
-// ) {
-//     for (mut sprite, mut timer, frame_count) in &mut bullet{
-//         timer.tick(time.delta());
-
-//         if timer.just_finished() {
-//             if let Some(atlas) = &mut sprite.texture_atlas {
-//                 atlas.index = (atlas.index + 1) % **frame_count;
-//             }
-//         }
-//     }
-// }
-
-/**
- * This handles bullet enemy collision
-*/
-fn bullet_hits_enemy(
-    mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
-    bullet_query: Query<(&Transform, Entity, &BulletOwner, &BulletDamage), With<Bullet>>,
-    mut commands: Commands,
+fn regen_system(
+    time: Res<Time>,
+    mut player_query: Query<(&mut Health, &MaxHealth, &Regen), With<Player>>,
 ) {
-    let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
-    let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
-
-    for (bullet_tf, bullet_entity, owner, damage) in &bullet_query {
-        if !matches!(owner, BulletOwner::Player) {
-            continue;
-        }
-
-        let bullet_pos = bullet_tf.translation;
-        for (enemy_tf, mut health) in &mut enemy_query {
-            let enemy_pos = enemy_tf.translation;
-            if aabb_overlap(
-                bullet_pos.x, bullet_pos.y, bullet_half,
-                enemy_pos.x, enemy_pos.y, enemy_half,
-            ) {
-                health.0 -= damage.0;  // Use weapon damage instead of hardcoded 25.0
-                if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.despawn(); }
-                break;
-            }
-        }
+    let Ok((mut hp, max_hp, regen)) = player_query.single_mut() else { return; };
+    if regen.0 > 0.0 {
+        hp.0 = (hp.0 + regen.0 * time.delta_secs()).min(max_hp.0);
     }
 }
 
-fn bullet_hits_table(
-    mut commands: Commands,
-    mut table_query: Query<(&Transform, &mut table::Health, &table::TableState), With<table::Table>>,
-    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-) {
-    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
-    let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
-
-    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
-        let bullet_pos = bullet_tf.translation;
-        for (table_tf, mut health, state) in &mut table_query {
-            if *state == table::TableState::Intact{
-                let table_pos = table_tf.translation;
-                if aabb_overlap(
-                    bullet_pos.x,
-                    bullet_pos.y,
-                    bullet_half,
-                    table_pos.x,
-                    table_pos.y,
-                    table_half,
-                ) {
-                    health.0 -= 25.0; // Deal 25 damage
-                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.despawn(); } // Despawn bullet on hit
-                    continue 'bullet_loop; // Move to the next bullet
-                }
-            }
-        }
-    }
-}
-
-fn bullet_hits_window(
-    mut commands: Commands,
-    mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
-    bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-) {
-    let bullet_half = Vec2::splat(8.0); // Bullet's collider size
-    let window_half = Vec2::splat(TILE_SIZE * 0.5); // window's collider size
-
-    'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
-        let bullet_pos = bullet_tf.translation;
-        for (window_tf, mut health, state) in &mut window_query {
-            if *state == window::GlassState::Intact{
-                let window_pos = window_tf.translation;
-                if aabb_overlap(
-                    bullet_pos.x,
-                    bullet_pos.y,
-                    bullet_half,
-                    window_pos.x,
-                    window_pos.y,
-                    window_half,
-                ) {
-                    health.0 -= 25.0; // Deal 25 damage
-                    if let Ok(mut ec) = commands.get_entity(bullet_entity) { ec.despawn(); } // Despawn bullet on hit
-                    continue 'bullet_loop; // Move to the next bullet
-                }
-            }
-        }
-    }
-}
 
 fn table_hits_player(
     time: Res<Time>,
-    mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer, &Armor), With<Player>>,
+    mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer, &Armor, &mut Shield), With<Player>>,
     table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
 ) {
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
 
-    for (player_tf, mut health, mut dmg_timer, armor) in &mut player_query {
+    for (player_tf, mut health, mut dmg_timer, armor, mut shield) in &mut player_query {
         dmg_timer.0.tick(time.delta());
         let player_pos = player_tf.translation.truncate();
 
@@ -762,14 +630,18 @@ fn table_hits_player(
                 // Only damage the player if the table is actually moving fast enough
                 let threshold = 5.0;
                 if speed > threshold {
-                    // Damage scales with speed, reduced by armor
-                    let dmg = speed * 0.02 * armor_factor(armor.0);
-                    health.0 -= dmg;
+                    if shield.current >= 1.0 {
+                        shield.current -= 1.0;
+                    } else {
+                        // Damage scales with speed, reduced by armor
+                        let dmg = speed * 0.02 * armor_factor(armor.0);
+                        health.0 -= dmg;
+                    }
                     dmg_timer.0.reset();
 
                     debug!(
-                        "Player hit by TABLE at {:?}, speed={:.2}, damage={:.2}, player health now {:.2}",
-                        table_pos, speed, dmg, health.0
+                        "Player hit by TABLE at {:?}, speed={:.2}, player health now {:.2}",
+                        table_pos, speed, health.0
                     );
                 } else {
                     debug!(
@@ -836,8 +708,11 @@ fn apply_breach_force_to_player(
         let acceleration = total_force / pulled.mass;
         let deltat = time.delta_secs();
         velocity.0 += acceleration * deltat;
-        
-        
+
+        // Cap speed so the player can't tunnel through walls from breach suction.
+        // Anything above ~one tile per frame (32 / 0.016s ≈ 2000) causes tunneling;
+        // 900 is fast enough to feel pulled while staying safely below that threshold.
+        velocity.0 = velocity.0.clamp_length_max(900.0);
     }
 }
 

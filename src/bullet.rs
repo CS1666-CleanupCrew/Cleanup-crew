@@ -1,8 +1,7 @@
 use crate::Player;
 use crate::collidable::{Collidable, Collider};
 use crate::enemy::RangedEnemyShootEvent;
-use crate::player::{Health, MaxHealth, MoveSpeed};
-use crate::reaper::Reaper;
+use crate::player::{Health, MaxHealth, MoveSpeed, Shield};
 use crate::room::{LevelState, RoomVec};
 use crate::weapon::{BulletDamage, BulletRes, Weapon, WeaponSounds};
 use crate::window;
@@ -29,6 +28,10 @@ pub struct AnimationFrameCount(pub usize);
 
 #[derive(Component)]
 pub struct MarkedForDespawn;
+
+/// Marker: this bullet passes through enemies without despawning.
+#[derive(Component)]
+pub struct Piercing;
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Velocity(pub Vec2);
@@ -70,14 +73,11 @@ pub fn shoot_bullet_on_click(
     q_window: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     bullet_res: Res<BulletRes>,
-    time: Res<Time>,
     weapon_sounds: Res<WeaponSounds>,
 ) {
     let Ok((player_transform, mut weapon)) = q_player.single_mut() else {
         return;
     };
-
-    weapon.tick(time.delta());
 
     if buttons.pressed(MouseButton::Left) && weapon.can_shoot() {
         let window = match q_window.single() {
@@ -109,7 +109,7 @@ pub fn shoot_bullet_on_click(
         let spawn_pos = player_pos + dir_vec * shoot_offset;
 
         // Spawn bullet using weapon stats
-        commands.spawn((
+        let mut bullet_entity = commands.spawn((
             Sprite::from_atlas_image(
                 bullet_res.0.clone(),
                 TextureAtlas {
@@ -133,6 +133,9 @@ pub fn shoot_bullet_on_click(
             AnimationFrameCount(3),
             GameEntity,
         ));
+        if weapon.piercing {
+            bullet_entity.insert(Piercing);
+        }
 
         commands.spawn((
             AudioPlayer::new(weapon_sounds.laser.clone()),
@@ -227,7 +230,7 @@ fn animate_bullet(
 pub fn bullet_collision(
     mut commands: Commands,
     bullet_query: Query<
-        (Entity, &Transform, &BulletOwner, &BulletDamage),
+        (Entity, &Transform, &BulletOwner, &BulletDamage, Option<&Piercing>),
         (With<Bullet>, Without<MarkedForDespawn>),
     >,
     mut enemy_query: Query<
@@ -235,7 +238,7 @@ pub fn bullet_collision(
         (With<crate::enemy::Enemy>, Without<crate::reaper::Reaper>),
     >,
     mut player_query: Query<
-        (&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut crate::player::Armor),
+        (&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut crate::player::Armor, &mut Shield),
         With<Player>,
     >,
     mut table_query: Query<
@@ -255,13 +258,13 @@ pub fn bullet_collision(
 ) {
     let bullet_half = Vec2::splat(8.0);
 
-    let Ok((player_tf, mut hp, _maxhp, _movspd, mut armor)) = player_query.single_mut() else {
+    let Ok((player_tf, mut hp, _maxhp, _movspd, armor, mut shield)) = player_query.single_mut() else {
         return;
     };
 
-    let final_room = matches!(*lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1;
+    let _final_room = matches!(*lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1;
 
-    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage) in &bullet_query {
+    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, piercing) in &bullet_query {
         let bullet_pos = bullet_tf.translation;
 
         // Bullet hits enemy
@@ -277,9 +280,12 @@ pub fn bullet_collision(
                     enemy_pos.y,
                     enemy_half,
                 ) {
-                    health.0 -= damage.0; // Use bullet damage
-                    commands.entity(bullet_entity).try_insert(MarkedForDespawn);
-                    continue 'bullet_loop;
+                    health.0 -= damage.0;
+                    if piercing.is_none() {
+                        commands.entity(bullet_entity).try_insert(MarkedForDespawn);
+                        continue 'bullet_loop;
+                    }
+                    // piercing: keep going, hit remaining enemies this frame
                 }
             }
         }
@@ -296,7 +302,11 @@ pub fn bullet_collision(
                 player_pos.y,
                 player_half,
             ) {
-                hp.0 -= damage.0 * crate::player::armor_factor(armor.0);
+                if shield.current >= 1.0 {
+                    shield.current -= 1.0;
+                } else {
+                    hp.0 -= damage.0 * crate::player::armor_factor(armor.0);
+                }
                 commands.entity(bullet_entity).try_insert(MarkedForDespawn);
                 continue 'bullet_loop;
             }
@@ -375,7 +385,7 @@ fn cleanup_marked_bullets(world: &mut World) {
     }
 
     for entity in to_despawn {
-        if let Ok(mut entity_mut) = world.get_entity_mut(entity) {
+        if let Ok(entity_mut) = world.get_entity_mut(entity) {
             entity_mut.despawn();
         }
     }
@@ -385,200 +395,3 @@ pub fn aabb_overlap(ax: f32, ay: f32, a_half: Vec2, bx: f32, by: f32, b_half: Ve
     (ax - bx).abs() < (a_half.x + b_half.x) && (ay - by).abs() < (a_half.y + b_half.y)
 }
 
-// outdated functions beyond this point for reference only
-
-// fn bullet_collision(
-//     mut commands: Commands,
-//     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
-//     colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Window>, Without<Enemy>, Without<crate::enemy::Enemy>, Without<table::Table>, Without<reward::Reward>)>,
-// ) {
-//     for (bullet_entity, bullet_transform, bullet_collider) in &bullet_query {
-//         let bx = bullet_transform.translation.x;
-//         let by = bullet_transform.translation.y;
-//         let b_half = bullet_collider.half_extents;
-
-//         // Check collision with all collidable entities
-//         for (collider_transform, collider) in &colliders {
-//             let cx = collider_transform.translation.x;
-//             let cy = collider_transform.translation.y;
-//             let c_half = collider.half_extents;
-
-//             if aabb_overlap(bx, by, b_half, cx, cy, c_half) {
-//                 commands.entity(bullet_entity).despawn();
-//                 break;
-//             }
-//         }
-//     }
-// }
-
-// fn bullet_hits_enemy(
-//     mut enemy_query: Query<(&Transform, &mut crate::enemy::Health), With<crate::enemy::Enemy>>,
-//     bullet_query: Query<(&Transform, Entity, &BulletOwner), With<Bullet>>,
-//     mut commands: Commands,
-// ) {
-//     let bullet_half = Vec2::splat(TILE_SIZE * 0.5);
-//     let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
-
-//     for (bullet_tf, bullet_entity, owner) in &bullet_query {
-//         if !matches!(owner, BulletOwner::Player) {
-//             continue;
-//         }
-
-//         let bullet_pos = bullet_tf.translation;
-//         for (enemy_tf, mut health) in &mut enemy_query {
-//             let enemy_pos = enemy_tf.translation;
-//             if aabb_overlap(
-//                 bullet_pos.x, bullet_pos.y, bullet_half,
-//                 enemy_pos.x, enemy_pos.y, enemy_half,
-//             ) {
-//                 health.0 -= 25.0;
-//                 commands.entity(bullet_entity).despawn();
-//                 break;
-//             }
-//         }
-//     }
-// }
-
-// fn bullet_hits_player(
-//     mut player_q: Query<(&Transform, &mut crate::player::Health), With<crate::player::Player>>,
-//     bullet_q: Query<(Entity, &Transform, &BulletOwner), With<Bullet>>,
-//     mut commands: Commands,
-// ) {
-//     let bullet_half = Vec2::splat(8.0);         // same as other collisions
-//     let player_half = Vec2::splat(TILE_SIZE);   // tweak if your player collider is different
-
-//     let Ok((player_tf, mut health)) = player_q.single_mut() else {
-//         return;
-//     };
-//     let p = player_tf.translation;
-
-//     for (entity, b_tf, owner) in &bullet_q {
-//         // Only bullets fired by **enemies** hurt the player
-//         if !matches!(owner, BulletOwner::Enemy) {
-//             continue;
-//         }
-
-//         let b = b_tf.translation;
-//         if aabb_overlap(b.x, b.y, bullet_half, p.x, p.y, player_half) {
-//             health.0 -= 10.0;   // damage amount – tune as you like
-//             commands.entity(entity).despawn();
-//         }
-//     }
-// }
-
-// fn bullet_hits_table(
-//     mut commands: Commands,
-//     mut table_query: Query<(&Transform, &mut table::Health, &table::TableState), With<table::Table>>,
-//     bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-// ) {
-//     let bullet_half = Vec2::splat(8.0); // Bullet's collider size
-//     let table_half = Vec2::splat(TILE_SIZE * 0.5); // Table's collider size
-
-//     'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
-//         let bullet_pos = bullet_tf.translation;
-//         for (table_tf, mut health, state) in &mut table_query {
-//             if *state == table::TableState::Intact{
-//                 let table_pos = table_tf.translation;
-//                 if aabb_overlap(
-//                     bullet_pos.x,
-//                     bullet_pos.y,
-//                     bullet_half,
-//                     table_pos.x,
-//                     table_pos.y,
-//                     table_half,
-//                 ) {
-//                     health.0 -= 25.0; // Deal 25 damage
-//                     commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
-//                     continue 'bullet_loop; // Move to the next bullet
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// fn bullet_hits_window(
-//     mut commands: Commands,
-//     mut window_query: Query<(&Transform, &mut window::Health, &window::GlassState), With<window::Window>>,
-//     bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-// ) {
-//     let bullet_half = Vec2::splat(8.0); // Bullet's collider size
-//     let window_half = Vec2::splat(TILE_SIZE * 0.5); // window's collider size
-
-//     'bullet_loop: for (bullet_entity, bullet_tf) in &bullet_query {
-//         let bullet_pos = bullet_tf.translation;
-//         for (window_tf, mut health, state) in &mut window_query {
-//             if *state == window::GlassState::Intact{
-//                 let window_pos = window_tf.translation;
-//                 if aabb_overlap(
-//                     bullet_pos.x,
-//                     bullet_pos.y,
-//                     bullet_half,
-//                     window_pos.x,
-//                     window_pos.y,
-//                     window_half,
-//                 ) {
-//                     health.0 -= 25.0; // Deal 25 damage
-//                     commands.entity(bullet_entity).despawn(); // Despawn bullet on hit
-//                     continue 'bullet_loop; // Move to the next bullet
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// fn bullet_hits_reward(
-//     mut commands: Commands,
-//     reward_query: Query<(Entity, &Transform, &reward::Reward)>,
-//     bullet_query: Query<(Entity, &Transform), With<Bullet>>,
-//     player: Single<(&mut Health, &mut MaxHealth, &mut MoveSpeed, )>,
-//     mut shoot_timer: ResMut<ShootTimer>,
-// ) {
-//     let bullet_half = Vec2::splat(12.5); // Bullet's collider size
-//     let reward_half = Vec2::splat(TILE_SIZE * 0.5); // Rewards's collider size
-
-//     let (mut hp, mut maxhp, mut movspd) = player.into_inner();
-
-//      let bullet_count = bullet_query.iter().count();
-//     let reward_count = reward_query.iter().count();
-
-//     for (bullet_entity, bullet_tf) in &bullet_query {
-//         let bullet_pos = bullet_tf.translation;
-
-//         for (reward_entity, reward_tf, reward_type) in & reward_query
-//         {
-//             let reward_pos = reward_tf.translation;
-
-//             if aabb_overlap(
-//                 bullet_pos.x,
-//                 bullet_pos.y,
-//                 bullet_half,
-//                 reward_pos.x,
-//                 reward_pos.y,
-//                 reward_half,
-//             ) {
-//                 println!("Collision Detected");
-//                 commands.entity(bullet_entity).despawn();
-
-// match reward_type.0{
-//     1 => {
-//         let increase_hp = random_range(5..=20) as f32;
-//         maxhp.0 += increase_hp;
-//         hp.0 += increase_hp;
-//     }
-//     2 => {
-//         let mut atkspd = shoot_timer.0.duration();
-//         atkspd = (atkspd - Duration::from_secs_f32(0.03)).max(Duration::from_secs_f32(0.1));
-//         shoot_timer.0.set_duration(atkspd);
-//     }
-//     3 => {
-//         movspd.0 = (movspd.0 + 20.0).min(600.0);
-//     }
-//     _ => panic!("Reward Type Not Found")
-// }
-
-//                 commands.entity(reward_entity).despawn();
-//             }
-
-//         }
-//     }
-// }

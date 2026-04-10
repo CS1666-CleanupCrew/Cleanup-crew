@@ -1,11 +1,8 @@
-use bevy::log::Level;
 use bevy::prelude::*;
 use rand::seq::SliceRandom;
 use rand::{SeedableRng};
 use rand::rngs::StdRng;
-// use core::num;
 use std::collections::HashSet;
-use std::time::Instant;
 use bevy::time::Time;
 use crate::collidable::{Collidable, Collider};
 use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
@@ -71,20 +68,26 @@ pub struct RoomPlugin;
 #[derive(Component)]
 pub struct AirPressureUI;
 
+#[derive(Component)]
+pub struct AirTankUI;
+
 impl Plugin for RoomPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(GameState::Loading), setup)
-            .add_systems(OnEnter(GameState::Playing), setup_air_pressure_ui)
-            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, entered_room.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, playing_room.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, track_window_breaches.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, update_room_air_pressure.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, apply_breach_forces_to_entities.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, damage_player_from_low_pressure.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, update_air_pressure_ui.run_if(in_state(GameState::Playing)))
-            ;
+            .add_systems(OnEnter(GameState::Playing), (setup_air_pressure_ui, spawn_all_tables))
+            .add_systems(Update, (
+                sync_active_room,
+                track_rooms,
+                entered_room,
+                playing_room,
+                track_window_breaches,
+                update_room_air_pressure,
+                apply_breach_forces_to_entities,
+                damage_player_from_low_pressure,
+                update_air_pressure_ui,
+                update_air_tank_ui,
+            ).run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -93,6 +96,57 @@ fn setup(
 ){
     commands.insert_resource(LevelState::NotRoom);
     commands.insert_resource(EnemyPosition(HashSet::new()));
+}
+
+/// Keeps ActiveRoom in sync with LevelState so table physics can filter by room.
+fn sync_active_room(
+    lvlstate: Res<LevelState>,
+    mut active: ResMut<table::ActiveRoom>,
+) {
+    if !lvlstate.is_changed() { return; }
+    match *lvlstate {
+        LevelState::EnteredRoom(i) | LevelState::InRoom(i, _) => {
+            active.0 = Some(i);
+        }
+        LevelState::NotRoom => {} // keep last known room so tables settle naturally
+    }
+}
+
+/// Spawn every table for every room up-front, tagged with their room index.
+/// Physics systems ignore tables outside the active room, so this costs nothing at runtime.
+fn spawn_all_tables(
+    mut commands: Commands,
+    table_positions: Res<TablePositions>,
+    tiles: Res<TileRes>,
+    rooms: Res<RoomVec>,
+) {
+    let table_batch: Vec<_> = table_positions.0.iter().filter_map(|&pos| {
+        let check = pos.truncate();
+        let room_idx = rooms.0.iter().enumerate()
+            .find(|(_, r)| r.bounds_check(check))
+            .map(|(i, _)| i)?;
+
+        let mut sprite = Sprite::from_image(tiles.table.clone());
+        sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+        Some((
+            sprite,
+            Transform {
+                translation: pos,
+                scale: Vec3::new(0.5, 1.0, 1.0),
+                ..Default::default()
+            },
+            Collidable,
+            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+            Name::new("Table"),
+            table::Table,
+            table::TableRoom(room_idx),
+            table::Health(50.0),
+            table::TableState::Intact,
+            GameEntity,
+        ))
+    }).collect();
+
+    commands.spawn_batch(table_batch);
 }
 
 pub fn create_room(
@@ -164,37 +218,27 @@ pub fn entered_room(
     enemy_res: Res<EnemyRes>,
     ranged_res: Res<RangedEnemyRes>,
     play_query: Single<&NumOfCleared, With<Player>>,
-    table_positions: Res<TablePositions>,
-    tables: Query<Entity, With<table::Table>>,
     station_level: Res<crate::StationLevel>,
-
+    mut shield_query: Query<&mut crate::player::Shield, With<Player>>,
 ){
     match *lvlstate
     {
         LevelState::EnteredRoom(index) =>
         {
-            let mut count = 0;
+            // Recharge shield on room entry
+            if let Ok(mut shield) = shield_query.single_mut() {
+                shield.current = shield.max;
+            }
+
             for door in rooms.0[index].doors.iter(){
                 commands.entity(*door).insert(Collidable);
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
             }
-            for room in rooms.0.iter(){
-                if room.cleared{
-                    count+=1;
-                }
-            }
-            if count == rooms.0.len()-1{
-                for table in tables {
-                    commands.entity(table).despawn();
-                }
-            }
-            generate_tables_in_room(&table_positions, &mut commands, &tiles, &rooms, &lvlstate);
-            
+
             if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query, station_level.0){
                 *lvlstate = LevelState::InRoom(index, pos);
             }
-            
         }
         _ => {}
     }
@@ -377,47 +421,6 @@ pub fn generate_enemies_in_room(
     // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }
 
-fn generate_tables_in_room(
-    table_positions: &TablePositions,
-    commands: &mut Commands, 
-    tiles: &TileRes,
-    rooms: &RoomVec,
-    lvlstate: &LevelState,
-){
-    
-    if let LevelState::EnteredRoom(i) = *lvlstate{
-
-        let table_batch: Vec<_> = table_positions.0.iter().filter_map(|&pos| {
-
-            let check = pos.truncate();
-
-            if !rooms.0[i].bounds_check(check){
-
-                return None;
-            }
-            let mut sprite = Sprite::from_image(tiles.table.clone());
-            sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
-            Some((
-                sprite,
-                Transform {
-                    translation: pos,
-                    scale: Vec3::new(0.5, 1.0, 1.0),
-                    ..Default::default()
-                },
-                Collidable,
-                Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                Name::new("Table"),
-                table::Table,
-                table::Health(50.0),
-                table::TableState::Intact,
-                GameEntity,
-            ))
-        }).collect();
-
-        commands.spawn_batch(table_batch);
-    }
-    
-}
 
 
 
@@ -466,21 +469,30 @@ pub fn update_room_air_pressure(
     time: Res<Time>,
     mut rooms: ResMut<RoomVec>,
 ) {
+    let refill_rate = 5.0; // %/sec when all windows are sealed
+
     for (idx, room) in rooms.0.iter_mut().enumerate() {
         if room.breaches.is_empty() {
+            if room.air_pressure < 100.0 {
+                let old_pressure = room.air_pressure;
+                room.air_pressure = (room.air_pressure + refill_rate * time.delta_secs()).min(100.0);
+                if (old_pressure / 10.0).floor() != (room.air_pressure / 10.0).floor() {
+                    debug!("Room {} refilling: {:.1}%", idx, room.air_pressure);
+                }
+            }
             continue;
         }
 
         let base_escape_rate = 2.5;
         let total_escape_rate = base_escape_rate * room.breaches.len() as f32;
-        
+
         let old_pressure = room.air_pressure;
-        
+
         room.air_pressure -= total_escape_rate * time.delta_secs();
         room.air_pressure = room.air_pressure.max(0.0);
-        
+
         if (old_pressure / 10.0).floor() != (room.air_pressure / 10.0).floor() {
-            debug!("Room {} pressure: {:.1}% (escaping at {:.1}%/sec)", 
+            debug!("Room {} pressure: {:.1}% (escaping at {:.1}%/sec)",
                   idx, room.air_pressure, total_escape_rate);
         }
     }
@@ -596,78 +608,18 @@ pub fn apply_breach_forces_to_entities(
     }
 }
 
-fn apply_breach_force_to_entity(
-    rooms: &RoomVec,
-    entity_pos: Vec2,
-    velocity: &mut Vec2,
-    mass: f32,
-    delta_time: f32,
-    force_multiplier: f32,
-) {
-    let mut current_room: Option<&Room> = None;
-    for room in rooms.0.iter() {
-        if room.bounds_check(entity_pos) {
-            current_room = Some(room);
-            break;
-        }
-    }
-
-    let Some(room) = current_room else {
-        return;
-    };
-
-    if room.cleared {
-        return;
-    }
-
-    if room.breaches.is_empty() || room.air_pressure >= 100.0 {
-        return;
-    }
-
-    let pressure_ratio = room.air_pressure / 100.0;
-    let pressure_force_factor = (1.0 - pressure_ratio).powf(2.0);
-    
-    let mut nearest_breach = room.breaches[0];
-    let mut min_distance = entity_pos.distance(nearest_breach);
-    
-    for &breach in room.breaches.iter() {
-        let distance = entity_pos.distance(breach);
-        if distance < min_distance {
-            min_distance = distance;
-            nearest_breach = breach;
-        }
-    }
-
-    let to_breach = nearest_breach - entity_pos;
-    let distance = to_breach.length();
-    
-    if distance < 1.0 {
-        return;
-    }
-    
-    let direction = to_breach.normalize();
-    let distance_factor = (1.0 / (distance / 100.0 + 1.0)).min(1.0);
-    let base_force = 50000.0;
-    let total_force = base_force * pressure_force_factor * distance_factor * force_multiplier;
-    let acceleration = direction * (total_force / mass);
-    
-    *velocity += acceleration * delta_time;
-}
-
 pub fn damage_player_from_low_pressure(
     time: Res<Time>,
     rooms: Res<RoomVec>,
-    mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer), With<crate::player::Player>>,
+    mut player: Query<(&Transform, &mut crate::player::Health, &mut crate::player::DamageTimer, &mut crate::player::AirTank), With<crate::player::Player>>,
 ) {
-
-    let Ok((transform, mut health, mut damage_timer)) = player.single_mut() else {
-
+    let Ok((transform, mut health, mut damage_timer, mut tank)) = player.single_mut() else {
         return;
     };
 
     let player_pos = transform.translation.truncate();
     let mut current_room: Option<&Room> = None;
-    
+
     for room in rooms.0.iter() {
         if room.bounds_check(player_pos) {
             current_room = Some(room);
@@ -680,19 +632,25 @@ pub fn damage_player_from_low_pressure(
     };
 
     let pressure_threshold = 20.0;
-    
+
     if room.air_pressure < pressure_threshold {
-        damage_timer.tick(time.delta());
-        
-        if damage_timer.finished() {
-            let damage = 5.0;
-            health.0 -= damage;
-            damage_timer.reset();
-            
-            debug!(
-                "Player taking pressure damage! Room pressure: {:.1}% - HP: {:.1}",
-                room.air_pressure, health.0
-            );
+        // Low air: drain the tank
+        tank.current = (tank.current - tank.drain_rate * time.delta_secs()).max(0.0);
+
+        // Only damage the player once the tank is fully depleted
+        if tank.current <= 0.0 {
+            damage_timer.tick(time.delta());
+
+            if damage_timer.finished() {
+                let damage = 5.0;
+                health.0 -= damage;
+                damage_timer.reset();
+
+                debug!(
+                    "Player taking pressure damage! Room pressure: {:.1}% - HP: {:.1}",
+                    room.air_pressure, health.0
+                );
+            }
         }
     }
 }
@@ -722,6 +680,24 @@ fn setup_air_pressure_ui(
         AirPressureUI,
         GameEntity,
     ));
+
+    commands.spawn((
+        Text::new("Tank: 100%"),
+        TextFont {
+            font,
+            font_size: 24.0,
+            ..default()
+        },
+        TextColor(Color::srgb(0.2, 1.0, 0.5)),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(38.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        AirTankUI,
+        GameEntity,
+    ));
 }
 
 fn update_air_pressure_ui(
@@ -739,7 +715,7 @@ fn update_air_pressure_ui(
 
     let player_pos = player_transform.translation.truncate();
     let mut current_pressure = 100.0;
-    
+
     for room in rooms.0.iter() {
         if room.bounds_check(player_pos) {
             current_pressure = room.air_pressure;
@@ -755,5 +731,37 @@ fn update_air_pressure_ui(
         Color::srgb(1.0, 1.0, 0.0)
     } else {
         Color::srgb(0.0, 1.0, 0.0)
+    };
+}
+
+fn update_air_tank_ui(
+    player: Query<(&Transform, &crate::player::AirTank), With<Player>>,
+    rooms: Res<RoomVec>,
+    mut ui_query: Query<(&mut Text, &mut TextColor), With<AirTankUI>>,
+) {
+    let Ok((transform, tank)) = player.single() else {
+        return;
+    };
+    let Ok((mut text, mut color)) = ui_query.single_mut() else {
+        return;
+    };
+
+    let player_pos = transform.translation.truncate();
+    let in_low_air_room = rooms.0.iter()
+        .find(|r| r.bounds_check(player_pos))
+        .map(|r| r.air_pressure < 20.0)
+        .unwrap_or(false);
+
+    let pct = (tank.current / tank.max_capacity * 100.0).clamp(0.0, 100.0);
+    **text = format!("Tank: {:.0}%", pct);
+
+    color.0 = if tank.current <= 0.0 {
+        Color::srgb(1.0, 0.1, 0.1)
+    } else if in_low_air_room {
+        // Draining — fade orange to red as tank depletes
+        let t = pct / 100.0;
+        Color::srgb(1.0, t * 0.6, 0.1)
+    } else {
+        Color::srgb(0.2, 1.0, 0.5)
     };
 }

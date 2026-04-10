@@ -5,6 +5,8 @@ use crate::player::{Player, Facing, FacingDirection};
 use crate::collidable::Collider;
 use crate::enemy::Enemy;
 use crate::window::{Health, GlassState, Window};
+use crate::table::Table;
+use crate::enemy::Velocity;
 
 #[derive(Component)]
 pub struct Broom;
@@ -24,17 +26,10 @@ impl Plugin for BroomPlugin {
         app.add_systems(Update, broom_input.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_swing_system.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_hit_enemies_system.run_if(in_state(GameState::Playing)))
+           .add_systems(Update, broom_push_tables_system.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_fix_window.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_hit_bullets_system.run_if(in_state(GameState::Playing)));
     }
-}
-
-fn distance_point_to_segment(p: Vec2, a: Vec2, b: Vec2) -> f32 {
-    let ab = b - a;
-    let t = (p - a).dot(ab) / ab.length_squared();
-    let t = t.clamp(0.0, 1.0);
-    let proj = a + ab * t;
-    p.distance(proj)
 }
 
 pub fn broom_hit_bullets_system(
@@ -42,7 +37,7 @@ pub fn broom_hit_bullets_system(
     broom_query: Query<(&Transform, &Collider), With<Broom>>,
     bullet_query: Query<(Entity, &Transform, &Collider), With<Bullet>>,
 ) {
-    let (broom_transform, broom_collider) = match broom_query.get_single() {
+    let (broom_transform, broom_collider) = match broom_query.single() {
         Ok(b) => b,
         Err(_) => return, // No broom active
     };
@@ -63,29 +58,6 @@ pub fn broom_hit_bullets_system(
         }
     }
 }
-
-fn aabb_capsule_hit(
-    aabb_center: Vec2,
-    aabb_half: Vec2,
-    seg_a: Vec2,
-    seg_b: Vec2,
-    radius: f32,
-) -> bool {
-    // Broad phase
-    let seg_min = seg_a.min(seg_b) - Vec2::splat(radius) - aabb_half;
-    let seg_max = seg_a.max(seg_b) + Vec2::splat(radius) + aabb_half;
-
-    if aabb_center.x < seg_min.x || aabb_center.x > seg_max.x ||
-       aabb_center.y < seg_min.y || aabb_center.y > seg_max.y {
-        return false;
-    }
-
-    // Precise
-    let dist = distance_point_to_segment(aabb_center, seg_a, seg_b);
-    dist <= radius + aabb_half.length() * 0.5
-}
-
-
 
 fn broom_input(
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -217,6 +189,43 @@ pub fn broom_hit_enemies_system(
 
 
 
+
+fn broom_push_tables_system(
+    broom_query: Query<(&Transform, &Collider), With<Broom>>,
+    player_query: Query<&Facing, With<Player>>,
+    mut table_query: Query<(&Transform, &Collider, &mut Velocity), With<Table>>,
+) {
+    let (broom_tf, broom_col) = match broom_query.single() {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    let facing = match player_query.single() {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+
+    // Direction the broom swing sends tables flying
+    let push_dir = match facing.0 {
+        FacingDirection::Up        => Vec2::new( 0.0,  1.0),
+        FacingDirection::Down      => Vec2::new( 0.0, -1.0),
+        FacingDirection::Left      => Vec2::new(-1.0,  0.0),
+        FacingDirection::Right     => Vec2::new( 1.0,  0.0),
+        FacingDirection::UpRight   => Vec2::new( 1.0,  1.0).normalize(),
+        FacingDirection::UpLeft    => Vec2::new(-1.0,  1.0).normalize(),
+        FacingDirection::DownRight => Vec2::new( 1.0, -1.0).normalize(),
+        FacingDirection::DownLeft  => Vec2::new(-1.0, -1.0).normalize(),
+    };
+
+    let table_half = Vec2::splat(TILE_SIZE * 0.5);
+    for (table_tf, _table_col, mut vel) in table_query.iter_mut() {
+        if aabb_overlap(
+            broom_tf.translation.x, broom_tf.translation.y, broom_col.half_extents,
+            table_tf.translation.x,  table_tf.translation.y,  table_half,
+        ) {
+            vel.velocity = push_dir * 450.0;
+        }
+    }
+}
 
 pub fn broom_fix_window(
     mut window_query: Query<(&mut Health, &mut GlassState, &Transform, &crate::collidable::Collider), (With<Window>, Without<Broom>)>,
