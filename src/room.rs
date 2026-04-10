@@ -75,17 +75,19 @@ impl Plugin for RoomPlugin {
     fn build(&self, app: &mut App) {
         app
             .add_systems(OnEnter(GameState::Loading), setup)
-            .add_systems(OnEnter(GameState::Playing), setup_air_pressure_ui)
-            .add_systems(Update, track_rooms.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, entered_room.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, playing_room.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, track_window_breaches.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, update_room_air_pressure.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, apply_breach_forces_to_entities.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, damage_player_from_low_pressure.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, update_air_pressure_ui.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, update_air_tank_ui.run_if(in_state(GameState::Playing)))
-            ;
+            .add_systems(OnEnter(GameState::Playing), (setup_air_pressure_ui, spawn_all_tables))
+            .add_systems(Update, (
+                sync_active_room,
+                track_rooms,
+                entered_room,
+                playing_room,
+                track_window_breaches,
+                update_room_air_pressure,
+                apply_breach_forces_to_entities,
+                damage_player_from_low_pressure,
+                update_air_pressure_ui,
+                update_air_tank_ui,
+            ).run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -94,6 +96,57 @@ fn setup(
 ){
     commands.insert_resource(LevelState::NotRoom);
     commands.insert_resource(EnemyPosition(HashSet::new()));
+}
+
+/// Keeps ActiveRoom in sync with LevelState so table physics can filter by room.
+fn sync_active_room(
+    lvlstate: Res<LevelState>,
+    mut active: ResMut<table::ActiveRoom>,
+) {
+    if !lvlstate.is_changed() { return; }
+    match *lvlstate {
+        LevelState::EnteredRoom(i) | LevelState::InRoom(i, _) => {
+            active.0 = Some(i);
+        }
+        LevelState::NotRoom => {} // keep last known room so tables settle naturally
+    }
+}
+
+/// Spawn every table for every room up-front, tagged with their room index.
+/// Physics systems ignore tables outside the active room, so this costs nothing at runtime.
+fn spawn_all_tables(
+    mut commands: Commands,
+    table_positions: Res<TablePositions>,
+    tiles: Res<TileRes>,
+    rooms: Res<RoomVec>,
+) {
+    let table_batch: Vec<_> = table_positions.0.iter().filter_map(|&pos| {
+        let check = pos.truncate();
+        let room_idx = rooms.0.iter().enumerate()
+            .find(|(_, r)| r.bounds_check(check))
+            .map(|(i, _)| i)?;
+
+        let mut sprite = Sprite::from_image(tiles.table.clone());
+        sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
+        Some((
+            sprite,
+            Transform {
+                translation: pos,
+                scale: Vec3::new(0.5, 1.0, 1.0),
+                ..Default::default()
+            },
+            Collidable,
+            Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+            Name::new("Table"),
+            table::Table,
+            table::TableRoom(room_idx),
+            table::Health(50.0),
+            table::TableState::Intact,
+            GameEntity,
+        ))
+    }).collect();
+
+    commands.spawn_batch(table_batch);
 }
 
 pub fn create_room(
@@ -165,8 +218,6 @@ pub fn entered_room(
     enemy_res: Res<EnemyRes>,
     ranged_res: Res<RangedEnemyRes>,
     play_query: Single<&NumOfCleared, With<Player>>,
-    table_positions: Res<TablePositions>,
-    tables: Query<Entity, With<table::Table>>,
     station_level: Res<crate::StationLevel>,
     mut shield_query: Query<&mut crate::player::Shield, With<Player>>,
 ){
@@ -179,28 +230,15 @@ pub fn entered_room(
                 shield.current = shield.max;
             }
 
-            let mut count = 0;
             for door in rooms.0[index].doors.iter(){
                 commands.entity(*door).insert(Collidable);
                 commands.entity(*door).insert(Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },);
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
             }
-            for room in rooms.0.iter(){
-                if room.cleared{
-                    count+=1;
-                }
-            }
-            if count == rooms.0.len()-1{
-                for table in tables {
-                    commands.entity(table).despawn();
-                }
-            }
-            generate_tables_in_room(&table_positions, &mut commands, &tiles, &rooms, &lvlstate);
-            
+
             if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query, station_level.0){
                 *lvlstate = LevelState::InRoom(index, pos);
             }
-            
         }
         _ => {}
     }
@@ -383,47 +421,6 @@ pub fn generate_enemies_in_room(
     // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }
 
-fn generate_tables_in_room(
-    table_positions: &TablePositions,
-    commands: &mut Commands, 
-    tiles: &TileRes,
-    rooms: &RoomVec,
-    lvlstate: &LevelState,
-){
-    
-    if let LevelState::EnteredRoom(i) = *lvlstate{
-
-        let table_batch: Vec<_> = table_positions.0.iter().filter_map(|&pos| {
-
-            let check = pos.truncate();
-
-            if !rooms.0[i].bounds_check(check){
-
-                return None;
-            }
-            let mut sprite = Sprite::from_image(tiles.table.clone());
-            sprite.custom_size = Some(Vec2::splat(TILE_SIZE * 2.0));
-            Some((
-                sprite,
-                Transform {
-                    translation: pos,
-                    scale: Vec3::new(0.5, 1.0, 1.0),
-                    ..Default::default()
-                },
-                Collidable,
-                Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
-                Name::new("Table"),
-                table::Table,
-                table::Health(50.0),
-                table::TableState::Intact,
-                GameEntity,
-            ))
-        }).collect();
-
-        commands.spawn_batch(table_batch);
-    }
-    
-}
 
 
 

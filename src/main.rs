@@ -166,7 +166,7 @@ fn main() {
             reaper::ReaperPlugin,
             weapon::WeaponPlugin,
         ))
-        .add_systems(Startup, setup_camera)
+        .add_systems(Startup, (setup_camera, reward::load_reward_font))
         .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
@@ -221,7 +221,10 @@ fn main() {
         )
         .add_systems(
             Update,
-            reward::player_pickup_reward.run_if(in_state(GameState::Playing)),
+            (
+                reward::player_pickup_reward,
+                reward::tick_reward_popups,
+            ).run_if(in_state(GameState::Playing)),
         )
         
         .insert_resource(DamageCooldown(Timer::from_seconds(0.5, TimerMode::Once)))

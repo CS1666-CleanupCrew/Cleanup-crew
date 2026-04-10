@@ -8,6 +8,50 @@ use crate::fluiddynamics::PulledByFluid;
 use crate::weapon::Weapon;
 
 #[derive(Component)]
+pub struct RewardPopup {
+    timer: Timer,
+}
+
+fn reward_name(reward_type: usize) -> &'static str {
+    match reward_type {
+        1  => "Max HP Up",
+        2  => "Attack Speed Up",
+        3  => "Move Speed Up",
+        4  => "Armor Up",
+        5  => "Larger Air Tank",
+        6  => "Slower Air Drain",
+        7  => "Vacuum Resistance",
+        8  => "Regen",
+        9  => "Piercing Rounds",
+        10 => "Damage Up",
+        11 => "Shield Charge",
+        _  => "???",
+    }
+}
+
+pub fn tick_reward_popups(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut q: Query<(Entity, &mut Transform, &mut TextColor, &mut RewardPopup)>,
+) {
+    for (entity, mut tf, mut color, mut popup) in &mut q {
+        popup.timer.tick(time.delta());
+        let frac = popup.timer.fraction(); // 0.0 → 1.0 over lifetime
+
+        // Float upward
+        tf.translation.y += 40.0 * time.delta_secs();
+
+        // Fade out in the second half
+        let alpha = if frac < 0.5 { 1.0 } else { 1.0 - (frac - 0.5) * 2.0 };
+        color.0 = color.0.with_alpha(alpha);
+
+        if popup.timer.finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+#[derive(Component)]
 pub struct Reward(pub usize);
 
 #[allow(dead_code)]
@@ -25,7 +69,6 @@ pub struct RewardRes{
     piercing: Handle<Image>,
     damage_up: Handle<Image>,
     shield_burst: Handle<Image>,
-    speed_up: Handle<Image>,
 }
 
 pub struct RewardPlugin;
@@ -34,6 +77,14 @@ impl Plugin for RewardPlugin{
         app
             .add_systems(Startup, load_crates);
     }
+}
+
+#[derive(Resource)]
+pub struct RewardFont(pub Handle<Font>);
+
+pub fn load_reward_font(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let handle = asset_server.load("fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf");
+    commands.insert_resource(RewardFont(handle));
 }
 
 fn load_crates(
@@ -45,15 +96,14 @@ fn load_crates(
         atk_spd: asset_server.load("rewards/AtkSpdBox.png"),
         mov_spd: asset_server.load("rewards/MoveSpdBox.png"),
         armor: asset_server.load("rewards/ArmorBox.png"),
-        air_tank: asset_server.load("rewards/AirTankBox.png"),
-        drain_rate: asset_server.load("rewards/DrainRateBox.png"),
-        // new buffs — will use real sprites once assets are added
-        vacuum_res:  asset_server.load("rewards/VacuumResBox.png"),
-        regen:       asset_server.load("rewards/RegenBox.png"),
-        piercing:    asset_server.load("rewards/PiercingBox.png"),
-        damage_up:   asset_server.load("rewards/DamageUpBox.png"),
-        shield_burst: asset_server.load("rewards/ShieldBurstBox.png"),
-        speed_up:    asset_server.load("rewards/SpeedUpBox.png"),
+        // TODO: replace placeholders with real sprites
+        air_tank:     asset_server.load("rewards/HeartBox.png"),
+        drain_rate:   asset_server.load("rewards/HeartBox.png"),
+        vacuum_res:   asset_server.load("rewards/HeartBox.png"),
+        regen:        asset_server.load("rewards/HeartBox.png"),
+        piercing:     asset_server.load("rewards/HeartBox.png"),
+        damage_up:    asset_server.load("rewards/HeartBox.png"),
+        shield_burst: asset_server.load("rewards/HeartBox.png"),
     };
 
     commands.insert_resource(reward_tiles);
@@ -64,7 +114,7 @@ pub fn spawn_reward(
     pos: Vec3,
     box_sprite: &RewardRes,
 ){
-    let reward_type: usize = random_range(1..=12);
+    let reward_type: usize = random_range(1..=11);
     let reward_img = match reward_type
     {
         1  => box_sprite.max_hp.clone(),
@@ -78,7 +128,6 @@ pub fn spawn_reward(
         9  => box_sprite.piercing.clone(),
         10 => box_sprite.damage_up.clone(),
         11 => box_sprite.shield_burst.clone(),
-        12 => box_sprite.speed_up.clone(),
         _ => panic!("How did we get here? Reward img error")
     };
 
@@ -104,6 +153,7 @@ pub fn player_pickup_reward(
     ), With<Player>>,
     reward_query: Query<(Entity, &Transform, &Reward)>,
     mut player_weapon_q: Query<&mut Weapon, With<Player>>,
+    font: Res<RewardFont>,
 ) {
     let Ok((
         _player_entity, player_tf,
@@ -167,24 +217,25 @@ pub fn player_pickup_reward(
                         shield.max += 1.0;
                         shield.current = (shield.current + 1.0).min(shield.max);
                     }
-                    12 => {
-                        // Speed Up: +20 move speed
-                        movspd.0 = (movspd.0 + 20.0).min(600.0);
-                    }
                     _ => panic!("Reward Type Not Found"),
                 }
             }
             if let Ok(mut ec) = commands.get_entity(reward_entity) { ec.despawn(); }
+
+            // Floating text popup
+            commands.spawn((
+                Text2d::new(reward_name(reward_type.0)),
+                TextFont { font: font.0.clone(), font_size: 20.0, ..default() },
+                TextColor(Color::srgba(1.0, 1.0, 0.3, 1.0)),
+                Transform::from_translation(Vec3::new(reward_pos.x, reward_pos.y + TILE_SIZE, 10.0)),
+                RewardPopup { timer: Timer::from_seconds(1.5, TimerMode::Once) },
+                GameEntity,
+            ));
         }
     }
 }
 
-// Buff	Effect	Fits the theme
-// Vacuum Resistance	Increases your PulledByFluid.mass — harder to suck toward breaches	Magnetic boots
-// Regen	Slowly regenerates HP over time	Life support module
-// Piercing Rounds	Bullets pass through enemies	Plasma cutter
-// Damage Up	Increases BulletDamage	Overcharged cell
-// Shield Burst	A one-time hit absorber that recharges between rooms	Emergency barrier
+
 // Speed Up	Increases MoveSpeed	Thrusters switch movement tech from broom to thrusters. dodge in direction of mouse
 // larger fuel tank for thusters
 // make broom go through tables you can take a lot of damage trying to repair through tables
