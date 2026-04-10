@@ -25,7 +25,7 @@ impl Weapon {
         match weapon_type {
             WeaponType::BasicLaser => Self {
                 weapon_type,
-                fire_rate: 0.5,
+                fire_rate: 0.7,
                 bullet_speed: 700.0,
                 damage: 25.0,
                 bullet_size: 0.25,

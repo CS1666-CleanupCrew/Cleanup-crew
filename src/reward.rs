@@ -188,8 +188,6 @@ pub fn player_pickup_reward(
 // Speed Up	Increases MoveSpeed	Thrusters switch movement tech from broom to thrusters. dodge in direction of mouse
 // larger fuel tank for thusters
 // make broom go through tables you can take a lot of damage trying to repair through tables
-// internal oxygen tank that gives you time to repair windows after they break
-// make window generation better
 // table need to stop moving when you fix the window
 // air need to slowly fill back up
 // reaper not going through walls anymore?

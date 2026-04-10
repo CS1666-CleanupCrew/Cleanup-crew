@@ -123,7 +123,8 @@ impl Plugin for EnemyPlugin {
                     move_enemy.after(ranged_enemy_ai),
                     move_reaper_freely.after(ranged_enemy_ai),
                     collide_enemies_with_enemies.after(move_enemy),
-                    wall_correction_for_enemies.after(collide_enemies_with_enemies),
+                    push_enemies_from_player.after(collide_enemies_with_enemies),
+                    wall_correction_for_enemies.after(push_enemies_from_player),
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -480,6 +481,40 @@ fn move_reaper_freely(
     let dt = time.delta_secs();
     for (mut tf, vel) in &mut query {
         tf.translation += (vel.velocity * dt).extend(0.0);
+    }
+}
+
+// Push enemies out of the player so the player cannot shove them through walls.
+// Runs after collide_enemies_with_enemies and before wall_correction_for_enemies.
+fn push_enemies_from_player(
+    player_query: Query<&Transform, With<Player>>,
+    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>, Without<Player>)>,
+) {
+    let Ok(player_tf) = player_query.single() else { return };
+    let player_pos = player_tf.translation.truncate();
+    let player_half = Vec2::new(crate::TILE_SIZE * 0.5, crate::TILE_SIZE * 1.0);
+    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+
+    for mut enemy_tf in &mut enemy_query {
+        let enemy_pos = enemy_tf.translation.truncate();
+
+        if crate::player::aabb_overlap(
+            player_pos.x, player_pos.y, player_half,
+            enemy_pos.x, enemy_pos.y, enemy_half,
+        ) {
+            let overlap_x = (player_half.x + enemy_half.x) - (player_pos.x - enemy_pos.x).abs();
+            let overlap_y = (player_half.y + enemy_half.y) - (player_pos.y - enemy_pos.y).abs();
+
+            if overlap_x < overlap_y {
+                // Push enemy on X axis
+                let sign = if enemy_pos.x > player_pos.x { 1.0 } else { -1.0 };
+                enemy_tf.translation.x += sign * overlap_x;
+            } else {
+                // Push enemy on Y axis
+                let sign = if enemy_pos.y > player_pos.y { 1.0 } else { -1.0 };
+                enemy_tf.translation.y += sign * overlap_y;
+            }
+        }
     }
 }
 
