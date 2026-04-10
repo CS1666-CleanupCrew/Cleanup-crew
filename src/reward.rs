@@ -101,8 +101,8 @@ fn load_crates(
         drain_rate:   asset_server.load("rewards/HeartBox.png"),
         vacuum_res:   asset_server.load("rewards/HeartBox.png"),
         regen:        asset_server.load("rewards/HeartBox.png"),
-        piercing:     asset_server.load("rewards/HeartBox.png"),
-        damage_up:    asset_server.load("rewards/HeartBox.png"),
+        piercing:     asset_server.load("rewards/Piercing.png"),
+        damage_up:    asset_server.load("rewards/DamageUp.png"),
         shield_burst: asset_server.load("rewards/HeartBox.png"),
     };
 
