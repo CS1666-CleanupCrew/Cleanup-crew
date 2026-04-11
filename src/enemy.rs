@@ -476,11 +476,54 @@ fn move_enemy(
 
 fn move_reaper_freely(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &Velocity), With<crate::reaper::Reaper>>,
+    mut query: Query<(&mut Transform, &mut Velocity), With<crate::reaper::Reaper>>,
+    wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Enemy>, Without<Player>, Without<crate::reaper::Reaper>)>,
 ) {
     let dt = time.delta_secs();
-    for (mut tf, vel) in &mut query {
-        tf.translation += (vel.velocity * dt).extend(0.0);
+    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+
+    let walls: Vec<(Vec2, Vec2)> = wall_query
+        .iter()
+        .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
+        .collect();
+
+    for (mut tf, mut vel) in &mut query {
+        let change = vel.velocity * dt;
+        let mut pos = tf.translation;
+
+        // X axis
+        if change.x != 0.0 {
+            let mut nx = pos.x + change.x;
+            for &(wall_pos, wall_half) in &walls {
+                if crate::player::aabb_overlap(nx, pos.y, enemy_half, wall_pos.x, wall_pos.y, wall_half) {
+                    nx = if change.x > 0.0 {
+                        wall_pos.x - (enemy_half.x + wall_half.x)
+                    } else {
+                        wall_pos.x + (enemy_half.x + wall_half.x)
+                    };
+                    vel.velocity.x = 0.0;
+                }
+            }
+            pos.x = nx;
+        }
+
+        // Y axis
+        if change.y != 0.0 {
+            let mut ny = pos.y + change.y;
+            for &(wall_pos, wall_half) in &walls {
+                if crate::player::aabb_overlap(pos.x, ny, enemy_half, wall_pos.x, wall_pos.y, wall_half) {
+                    ny = if change.y > 0.0 {
+                        wall_pos.y - (enemy_half.y + wall_half.y)
+                    } else {
+                        wall_pos.y + (enemy_half.y + wall_half.y)
+                    };
+                    vel.velocity.y = 0.0;
+                }
+            }
+            pos.y = ny;
+        }
+
+        tf.translation = pos;
     }
 }
 

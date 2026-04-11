@@ -1,4 +1,4 @@
-use bevy::{prelude::*};
+use bevy::{prelude::*, window::PrimaryWindow};
 
 use crate::collidable::{Collidable, Collider};
 use crate::table;
@@ -78,6 +78,12 @@ impl Shield {
     }
 }
 
+/// Thruster fuel for the dodge dash. Gained via Speed Up pickups.
+#[derive(Component)]
+pub struct ThrusterFuel {
+    pub current: f32,
+    pub max: f32,
+}
 
 // #[derive(Resource)]
 // pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
@@ -146,6 +152,8 @@ impl Plugin for PlayerPlugin {
             // .add_systems(Startup, load_bullet)
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
             .add_systems(Update, regen_system.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, thruster_regen_system.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, thruster_dodge_system.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
             .add_systems(Update, apply_breach_force_to_player.after(move_player).run_if(in_state(GameState::Playing)))
@@ -275,7 +283,7 @@ fn spawn_player(
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
         NumOfCleared(num_cleared),
-        (PulledByFluid{mass: vacuum_mass}, AirTank::new(tank_max, tank_drain)),
+        (PulledByFluid{mass: vacuum_mass}, AirTank::new(tank_max, tank_drain), ThrusterFuel { current: 0.0, max: 0.0 }),
         weapon,
         GameEntity,
     ));
@@ -291,7 +299,8 @@ fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     mut player: Query<(&mut Transform, &mut Velocity, &mut Facing, &MoveSpeed, &mut Weapon), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>)>,
+    colliders: Query<(&Transform, &Collider, Option<&table::Table>), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>)>,
+    broom_q: Query<(), With<Broom>>,
     mut commands: Commands,
     bullet_res: Res<BulletRes>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
@@ -404,6 +413,7 @@ fn move_player(
     let mut pos = transform.translation;
     let delta = change; // Vec2
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
+    let broom_active = !broom_q.is_empty();
 
     // ---- X axis ----
     if delta.x != 0.0 {
@@ -412,7 +422,8 @@ fn move_player(
         let py = pos.y;
         let mut hit_x = false;
 
-        for (ct, c) in &colliders {
+        for (ct, c, table_opt) in &colliders {
+            if table_opt.is_some() && broom_active { continue; }
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
                 let candidate = if delta.x > 0.0 {
@@ -445,7 +456,8 @@ fn move_player(
         let py = ny;
         let mut hit_y = false;
 
-        for (ct, c) in &colliders {
+        for (ct, c, table_opt) in &colliders {
+            if table_opt.is_some() && broom_active { continue; }
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
                 let candidate = if delta.y > 0.0 {
@@ -753,4 +765,38 @@ fn wall_collision_correction(
 
     player_tf.translation.x = player_pos.x;
     player_tf.translation.y = player_pos.y;
+}
+
+fn thruster_regen_system(
+    time: Res<Time>,
+    mut q: Query<&mut ThrusterFuel, With<Player>>,
+) {
+    let Ok(mut fuel) = q.single_mut() else { return; };
+    if fuel.max > 0.0 {
+        fuel.current = (fuel.current + 0.5 * time.delta_secs()).min(fuel.max);
+    }
+}
+
+fn thruster_dodge_system(
+    input: Res<ButtonInput<KeyCode>>,
+    mut q_player: Query<(&Transform, &mut Velocity, &mut ThrusterFuel), With<Player>>,
+    q_window: Query<&Window, With<PrimaryWindow>>,
+    q_camera: Query<(&Camera, &GlobalTransform)>,
+) {
+    if !input.just_pressed(KeyCode::ShiftLeft) { return; }
+
+    let Ok((player_tf, mut velocity, mut fuel)) = q_player.single_mut() else { return; };
+    if fuel.max <= 0.0 || fuel.current < 1.0 { return; }
+
+    let Ok(window) = q_window.single() else { return; };
+    let Some(cursor_pos) = window.cursor_position() else { return; };
+    let Ok((camera, cam_transform)) = q_camera.single() else { return; };
+    let Some(world_pos) = camera.viewport_to_world_2d(cam_transform, cursor_pos).ok() else { return; };
+
+    let player_pos = player_tf.translation.truncate();
+    let dir = (world_pos - player_pos).normalize_or_zero();
+    if dir == Vec2::ZERO { return; }
+
+    velocity.0 = dir * 800.0;
+    fuel.current -= 1.0;
 }

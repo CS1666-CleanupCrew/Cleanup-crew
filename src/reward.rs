@@ -3,7 +3,7 @@ use rand::random_range;
 use std::time::Duration;
 use crate::{TILE_SIZE, GameEntity};
 use crate::Player;
-use crate::player::{Health, MaxHealth, MoveSpeed, Armor, AirTank, Regen, Shield, aabb_overlap};
+use crate::player::{Health, MaxHealth, MoveSpeed, Armor, AirTank, Regen, Shield, ThrusterFuel, aabb_overlap};
 use crate::fluiddynamics::PulledByFluid;
 use crate::weapon::Weapon;
 
@@ -149,7 +149,7 @@ pub fn player_pickup_reward(
     mut player_query: Query<(
         Entity, &Transform,
         &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut Armor, &mut AirTank,
-        &mut Regen, &mut Shield, &mut PulledByFluid,
+        &mut Regen, &mut Shield, &mut PulledByFluid, &mut ThrusterFuel,
     ), With<Player>>,
     reward_query: Query<(Entity, &Transform, &Reward)>,
     mut player_weapon_q: Query<&mut Weapon, With<Player>>,
@@ -158,7 +158,7 @@ pub fn player_pickup_reward(
     let Ok((
         _player_entity, player_tf,
         mut hp, mut maxhp, mut movspd, mut armor, mut tank,
-        mut regen, mut shield, mut pull,
+        mut regen, mut shield, mut pull, mut fuel,
     )) = player_query.single_mut() else {
         return;
     };
@@ -183,6 +183,11 @@ pub fn player_pickup_reward(
                     }
                     3 => {
                         movspd.0 = (movspd.0 + 20.0).min(600.0);
+                        // Each Speed Up also extends the thruster fuel tank (max 10 charges)
+                        let new_max = (fuel.max + 3.0).min(10.0);
+                        let added = new_max - fuel.max;
+                        fuel.max = new_max;
+                        fuel.current = (fuel.current + added).min(fuel.max);
                     }
                     4 => {
                         armor.0 += 20.0;
@@ -236,13 +241,4 @@ pub fn player_pickup_reward(
 }
 
 
-// Speed Up	Increases MoveSpeed	Thrusters switch movement tech from broom to thrusters. dodge in direction of mouse
-// larger fuel tank for thusters
-// make broom go through tables you can take a lot of damage trying to repair through tables
-// table need to stop moving when you fix the window
-// air need to slowly fill back up
-// reaper not going through walls anymore?
-// better visual when it
-// better feedback in general
-// broken tables shouldnt damage you
-// the tables are so fucked
+// TODO: better visual feedback when picking up rewards
