@@ -594,14 +594,14 @@ fn regen_system(
 
 
 fn table_hits_player(
-    time: Res<Time>,
+    _time: Res<Time>,
     mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer, &Armor, &mut Shield), With<Player>>,
     table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
 ) {
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
 
     for (player_tf, mut health, mut dmg_timer, armor, mut shield) in &mut player_query {
-        dmg_timer.0.tick(time.delta());
+        // DamageTimer is already ticked by enemy_hits_player; do not tick again here.
         let player_pos = player_tf.translation.truncate();
 
         // cannot damage again until timer finished

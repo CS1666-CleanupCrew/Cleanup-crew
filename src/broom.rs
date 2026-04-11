@@ -18,6 +18,7 @@ pub struct BroomSwing {
 }
 
 use crate::bullet::Bullet;
+use crate::GameEntity;
 
 pub struct BroomPlugin;
 
@@ -117,6 +118,7 @@ fn broom_input(
                 // Collider kept for bullet-deflect size query; Collidable intentionally
                 // omitted so the sweeping broom is NOT treated as a wall by collision systems.
                 Collider::from_size(Vec2::new(broom_length, broom_width)),
+                GameEntity,
             ));
         }
     }
