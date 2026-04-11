@@ -74,7 +74,7 @@ impl Plugin for FluidSimPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_fluid_grid)
             .add_systems(
-                Update, 
+                Update,
                 (
                     collision_step,
                     streaming_step,
@@ -83,7 +83,20 @@ impl Plugin for FluidSimPlugin {
                 )
                     .chain()
                     .run_if(in_state(crate::GameState::Playing))
+            )
+            .add_systems(
+                bevy::prelude::OnExit(crate::GameState::Playing),
+                reset_fluid_grid,
             );
+    }
+}
+
+/// Clear all breaches and reinitialize the fluid distribution when leaving the Playing state,
+/// so stale breach positions from a previous run don't carry over into the next game.
+fn reset_fluid_grid(mut query: Query<&mut FluidGrid>) {
+    for mut grid in &mut query {
+        grid.breaches.clear();
+        grid.initialize_with_perlin(42);
     }
 }
 
