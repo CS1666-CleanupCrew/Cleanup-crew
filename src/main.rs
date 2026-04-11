@@ -252,13 +252,16 @@ fn check_win(
 
     if count == rooms.0.len(){
         // Save player buffs before transitioning (player will be despawned on exit)
-        if let Ok((health, max_hp, move_spd, weapon, num_cleared, armor, tank, regen, shield, pull)) = player_q.single() {
+        if let Ok((health, max_hp, move_spd, weapon, _num_cleared, armor, tank, regen, shield, pull)) = player_q.single() {
             commands.insert_resource(SavedPlayerBuffs {
                 max_health: max_hp.0,
                 health: health.0,
                 move_speed: move_spd.0,
                 fire_rate: weapon.fire_rate,
-                num_cleared: num_cleared.0,
+                // Reset to 0 so the per-station enemy scaling formula
+                // (1 * rooms_cleared + base + station_bonus) starts fresh next station.
+                // The station_bonus on StationLevel already handles inter-station difficulty.
+                num_cleared: 0,
                 armor: armor.0,
                 air_tank_max: tank.max_capacity,
                 air_tank_drain_rate: tank.drain_rate,
@@ -658,7 +661,7 @@ fn handle_end_screen_buttons(
         }
         match which {
             EndScreenButtons::Continue => {
-                // Increment station level — buffs are already saved in SavedPlayerBuffs
+                // Increment station level — buffs are already saved in SavedPlayerBuffs.
                 station_level.0 += 1;
                 info!("Continuing to station {} (difficulty increased)", station_level.0 + 1);
                 next_state.set(GameState::Loading);

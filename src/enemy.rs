@@ -386,6 +386,14 @@ fn move_enemy(
     if let Ok(player_transform) = player_query.single() {
         let deltat = time.delta_secs();
         let accel = ENEMY_ACCEL * deltat;
+        let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
+
+        // Collect walls once outside the enemy loop — avoids O(n_enemies × n_walls)
+        // re-iteration of the query for every individual enemy.
+        let walls: Vec<(Vec2, Vec2)> = wall_query
+            .iter()
+            .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
+            .collect();
 
         for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt) in &mut enemy_query {
             let mut effective_accel = accel;
@@ -415,28 +423,18 @@ fn move_enemy(
 
             let change = **enemy_velocity * deltat;
             let mut pos = enemy_transform.translation;
-            let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
             // X axis
             if change.x != 0.0 {
                 let mut nx = pos.x + change.x;
-                let px = nx;
                 let py = pos.y;
-                for (wall_tf, wall_collider) in &wall_query {
-                    let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
-                    if crate::player::aabb_overlap(
-                        px,
-                        py,
-                        enemy_half,
-                        wx,
-                        wy,
-                        wall_collider.half_extents,
-                    ) {
-                        if change.x > 0.0 {
-                            nx = wx - (enemy_half.x + wall_collider.half_extents.x);
+                for &(wall_pos, wall_half) in &walls {
+                    if crate::player::aabb_overlap(nx, py, enemy_half, wall_pos.x, wall_pos.y, wall_half) {
+                        nx = if change.x > 0.0 {
+                            wall_pos.x - (enemy_half.x + wall_half.x)
                         } else {
-                            nx = wx + (enemy_half.x + wall_collider.half_extents.x);
-                        }
+                            wall_pos.x + (enemy_half.x + wall_half.x)
+                        };
                         enemy_velocity.velocity.x = 0.0;
                     }
                 }
@@ -447,22 +445,13 @@ fn move_enemy(
             if change.y != 0.0 {
                 let mut ny = pos.y + change.y;
                 let px = pos.x;
-                let py = ny;
-                for (wall_tf, wall_collider) in &wall_query {
-                    let (wx, wy) = (wall_tf.translation.x, wall_tf.translation.y);
-                    if crate::player::aabb_overlap(
-                        px,
-                        py,
-                        enemy_half,
-                        wx,
-                        wy,
-                        wall_collider.half_extents,
-                    ) {
-                        if change.y > 0.0 {
-                            ny = wy - (enemy_half.y + wall_collider.half_extents.y);
+                for &(wall_pos, wall_half) in &walls {
+                    if crate::player::aabb_overlap(px, ny, enemy_half, wall_pos.x, wall_pos.y, wall_half) {
+                        ny = if change.y > 0.0 {
+                            wall_pos.y - (enemy_half.y + wall_half.y)
                         } else {
-                            ny = wy + (enemy_half.y + wall_collider.half_extents.y);
-                        }
+                            wall_pos.y + (enemy_half.y + wall_half.y)
+                        };
                         enemy_velocity.velocity.y = 0.0;
                     }
                 }
