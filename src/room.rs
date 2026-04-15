@@ -27,10 +27,11 @@ pub struct RoomVec(pub Vec<Room>);
 
 pub struct Room{
     pub cleared: bool,
+    pub visited: bool,
     pub doors:Vec<Entity>,
     pub numofenemies: usize,
-    top_left_corner: Vec2,
-    bot_right_corner: Vec2,
+    pub top_left_corner: Vec2,
+    pub bot_right_corner: Vec2,
     pub tile_top_left_corner: Vec2,
     pub tile_bot_right_corner: Vec2,
     layout: Vec<String>,
@@ -42,6 +43,7 @@ impl Room{
     pub fn new(tlc: Vec2, brc: Vec2, tile_tlc: Vec2, tile_brc: Vec2, room_layout: Vec<String>) -> Self{
         Self{
             cleared: false,
+            visited: false,
             doors:Vec::new(),
             numofenemies: 0,
             top_left_corner: tlc.clone(),
@@ -193,17 +195,25 @@ pub fn track_rooms(
     mut rooms: ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
 ){
-    match *lvlstate
-    {
-        LevelState::EnteredRoom(_) => {}
-        LevelState::InRoom(_, _)=> {}
-        _ =>
-        {
-            let pos = player.into_inner();
-            for (index, room )in rooms.0.iter_mut().enumerate(){
-                if !room.cleared && room.within_bounds_check(Vec2::new(pos.translation.x, pos.translation.y)){
-                    println!("Entered Room");
+    let pos = player.into_inner();
+    let player_pos = Vec2::new(pos.translation.x, pos.translation.y);
+
+    // Mark rooms visited as soon as the player steps inside their bounds,
+    // regardless of current level state (so cleared rooms stay visible on minimap).
+    for room in rooms.0.iter_mut() {
+        if !room.visited && room.bounds_check(player_pos) {
+            room.visited = true;
+        }
+    }
+
+    // Only look for a new room trigger when we are not already processing one.
+    match *lvlstate {
+        LevelState::EnteredRoom(_) | LevelState::InRoom(_, _) => {}
+        LevelState::NotRoom => {
+            for (index, room) in rooms.0.iter_mut().enumerate() {
+                if !room.cleared && room.within_bounds_check(player_pos) {
                     *lvlstate = LevelState::EnteredRoom(index);
+                    break;
                 }
             }
         }
@@ -238,6 +248,16 @@ pub fn entered_room(
 
             if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query, station_level.0){
                 *lvlstate = LevelState::InRoom(index, pos);
+            } else {
+                // Room is too small/tight to place any enemies — clear it immediately
+                // and reopen the doors so the player is never locked in.
+                rooms.0[index].cleared = true;
+                for door in rooms.0[index].doors.iter() {
+                    commands.entity(*door).remove::<Collidable>();
+                    commands.entity(*door).remove::<Collider>();
+                    commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
+                }
+                *lvlstate = LevelState::NotRoom;
             }
         }
         _ => {}

@@ -1,6 +1,6 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
-use bevy::{prelude::*, window::PresentMode};
+use bevy::{prelude::*, window::PresentMode, winit::WinitWindows};
 use bevy::audio::Volume;
 use crate::air::{init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break};
 use crate::room::RoomVec;
@@ -25,6 +25,7 @@ pub mod reward;
 pub mod heart;
 pub mod reaper;
 pub mod weapon;
+pub mod minimap;
 
 
 
@@ -134,7 +135,6 @@ fn main() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: TITLE.into(),
-                        resolution: (WIN_W, WIN_H).into(),
                         present_mode: PresentMode::AutoVsync,
                         ..default()
                     }),
@@ -165,8 +165,9 @@ fn main() {
             heart::HeartPlugin,
             reaper::ReaperPlugin,
             weapon::WeaponPlugin,
+            minimap::MinimapPlugin,
         ))
-        .add_systems(Startup, (setup_camera, reward::load_reward_font))
+        .add_systems(Startup, (setup_camera, reward::load_reward_font, maximize_window))
         .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
@@ -497,6 +498,15 @@ fn setup_game_over_screen(mut commands: Commands, asset_server: Res<AssetServer>
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn((Camera2d, MainCamera));
+}
+
+fn maximize_window(
+    windows: Query<Entity, With<bevy::window::PrimaryWindow>>,
+    winit_windows: NonSend<WinitWindows>,
+) {
+    let Ok(entity) = windows.single() else { return };
+    let Some(window) = winit_windows.get_window(entity) else { return };
+    window.set_maximized(true);
 }
 
 fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>, station_level: Res<StationLevel>) {
