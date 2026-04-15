@@ -1,13 +1,13 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
-use bevy::{prelude::*, window::PresentMode};
+use bevy::{prelude::*, window::PresentMode, winit::WinitWindows};
 use bevy::audio::Volume;
 use crate::air::{init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break};
 use crate::room::RoomVec;
 
 pub mod collidable;
 pub mod endcredits;
-pub mod enemy;
+pub mod enemies;
 pub mod player;
 pub mod table;
 pub mod window;
@@ -21,10 +21,10 @@ pub mod menu;
 pub mod room;
 pub mod bullet;
 pub mod broom;
-pub mod reward;
+pub mod rewards;
 pub mod heart;
-pub mod reaper;
 pub mod weapon;
+pub mod minimap;
 
 
 
@@ -99,7 +99,7 @@ pub struct SavedPlayerBuffs {
     pub air_tank_max: f32,
     pub air_tank_drain_rate: f32,
     pub weapon_damage: f32,
-    pub piercing: bool,
+    pub piercing_pickups: u32,
     pub regen_rate: f32,
     pub shield_max: f32,
     pub vacuum_mass: f32,
@@ -134,7 +134,6 @@ fn main() {
                 .set(WindowPlugin {
                     primary_window: Some(Window {
                         title: TITLE.into(),
-                        resolution: (WIN_W, WIN_H).into(),
                         present_mode: PresentMode::AutoVsync,
                         ..default()
                     }),
@@ -151,7 +150,7 @@ fn main() {
             map::MapPlugin,
             player::PlayerPlugin,
             endcredits::EndCreditPlugin,
-            enemy::EnemyPlugin,
+            enemies::EnemyPlugin,
             table::TablePlugin,
             fluiddynamics::FluidSimPlugin,
             window::WindowPlugin,
@@ -161,12 +160,13 @@ fn main() {
             bullet::BulletPlugin,
             room::RoomPlugin,
             broom::BroomPlugin,
-            reward::RewardPlugin,
+            rewards::RewardPlugin,
             heart::HeartPlugin,
-            reaper::ReaperPlugin,
+            enemies::reaper::ReaperPlugin,
             weapon::WeaponPlugin,
+            minimap::MinimapPlugin,
         ))
-        .add_systems(Startup, (setup_camera, reward::load_reward_font))
+        .add_systems(Startup, (setup_camera, rewards::load_reward_font, maximize_window))
         .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
@@ -222,8 +222,8 @@ fn main() {
         .add_systems(
             Update,
             (
-                reward::player_pickup_reward,
-                reward::tick_reward_popups,
+                rewards::player_pickup_reward,
+                rewards::tick_reward_popups,
             ).run_if(in_state(GameState::Playing)),
         )
         
@@ -241,6 +241,7 @@ fn check_win(
         &player::NumOfCleared, &player::Armor, &player::AirTank,
         &player::Regen, &player::Shield, &fluiddynamics::PulledByFluid,
     ), With<Player>>,
+    reaper_q: Query<(), With<enemies::Reaper>>,
 ){
     let mut count = 0;
 
@@ -250,20 +251,24 @@ fn check_win(
         }
     }
 
-    if count == rooms.0.len(){
+    // All rooms cleared AND the reaper is dead (or never spawned)
+    if count == rooms.0.len() && reaper_q.is_empty() {
         // Save player buffs before transitioning (player will be despawned on exit)
-        if let Ok((health, max_hp, move_spd, weapon, num_cleared, armor, tank, regen, shield, pull)) = player_q.single() {
+        if let Ok((health, max_hp, move_spd, weapon, _num_cleared, armor, tank, regen, shield, pull)) = player_q.single() {
             commands.insert_resource(SavedPlayerBuffs {
                 max_health: max_hp.0,
                 health: health.0,
                 move_speed: move_spd.0,
                 fire_rate: weapon.fire_rate,
-                num_cleared: num_cleared.0,
+                // Reset to 0 so the per-station enemy scaling formula
+                // (1 * rooms_cleared + base + station_bonus) starts fresh next station.
+                // The station_bonus on StationLevel already handles inter-station difficulty.
+                num_cleared: 0,
                 armor: armor.0,
                 air_tank_max: tank.max_capacity,
                 air_tank_drain_rate: tank.drain_rate,
                 weapon_damage: weapon.damage,
-                piercing: weapon.piercing,
+                piercing_pickups: weapon.piercing_pickups,
                 regen_rate: regen.0,
                 shield_max: shield.max,
                 vacuum_mass: pull.mass,
@@ -496,6 +501,15 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((Camera2d, MainCamera));
 }
 
+fn maximize_window(
+    windows: Query<Entity, With<bevy::window::PrimaryWindow>>,
+    winit_windows: NonSend<WinitWindows>,
+) {
+    let Ok(entity) = windows.single() else { return };
+    let Some(window) = winit_windows.get_window(entity) else { return };
+    window.set_maximized(true);
+}
+
 fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>, station_level: Res<StationLevel>) {
     let font: Handle<Font> = asset_server.load("fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf");
     commands.spawn((
@@ -658,7 +672,7 @@ fn handle_end_screen_buttons(
         }
         match which {
             EndScreenButtons::Continue => {
-                // Increment station level — buffs are already saved in SavedPlayerBuffs
+                // Increment station level — buffs are already saved in SavedPlayerBuffs.
                 station_level.0 += 1;
                 info!("Continuing to station {} (difficulty increased)", station_level.0 + 1);
                 next_state.set(GameState::Loading);

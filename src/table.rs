@@ -32,7 +32,7 @@ struct TableGraphics {
 }
 
 pub struct TablePlugin;
-use crate::enemy::Velocity;
+use crate::enemies::Velocity;
 use crate::fluiddynamics::PulledByFluid;
 
 impl Plugin for TablePlugin {
@@ -82,6 +82,7 @@ fn check_for_broken_tables(
             sprite.image = table_graphics.broken.clone();
             commands
                 .entity(entity)
+                .remove::<Collidable>()
                 .insert(BrokenTimer(Timer::from_seconds(1.5, TimerMode::Once)))
                 .insert(PulledByFluid { mass: 30.0 })
                 .insert(Velocity::new());
@@ -92,11 +93,13 @@ fn check_for_broken_tables(
 fn animate_broken_tables(
     mut commands: Commands,
     time: Res<Time>,
-    mut query: Query<(Entity, &mut BrokenTimer), (With<Table>, With<Collidable>)>,
+    mut query: Query<(Entity, &mut BrokenTimer), With<Table>>,
 ) {
     for (entity, mut timer) in query.iter_mut() {
         timer.0.tick(time.delta());
-        commands.entity(entity).remove::<Collidable>();
+        if timer.0.finished() {
+            commands.entity(entity).despawn();
+        }
     }
 }
 

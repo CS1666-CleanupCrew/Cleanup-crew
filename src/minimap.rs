@@ -1,0 +1,259 @@
+use bevy::prelude::*;
+use crate::map::MapGridMeta;
+use crate::player::Player;
+use crate::room::{LevelState, RoomVec};
+use crate::{GameEntity, GameState, TILE_SIZE};
+
+const MINIMAP_W: f32 = 420.0;
+const MINIMAP_H: f32 = 420.0;
+
+// Components
+
+#[derive(Component)]
+struct MinimapRoot;
+
+#[derive(Component)]
+struct MinimapRoomNode {
+    room_index: usize,
+}
+
+#[derive(Component)]
+struct MinimapPlayerDot;
+
+// Resource
+
+#[derive(Resource, Default)]
+pub struct MinimapVisible(pub bool);
+
+// Plugin 
+
+pub struct MinimapPlugin;
+
+impl Plugin for MinimapPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<MinimapVisible>()
+            .add_systems(OnEnter(GameState::Playing), setup_minimap)
+            .add_systems(
+                Update,
+                toggle_minimap.run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                update_minimap
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(|vis: Res<MinimapVisible>| vis.0),
+            );
+    }
+}
+
+// Setup 
+
+fn setup_minimap(
+    mut commands: Commands,
+    rooms: Res<RoomVec>,
+    grid: Res<MapGridMeta>,
+    asset_server: Res<AssetServer>,
+) {
+    let map_px_w = grid.cols as f32 * TILE_SIZE;
+    let map_px_h = grid.rows as f32 * TILE_SIZE;
+    let world_min_x = -map_px_w * 0.5;
+    let world_max_y = map_px_h * 0.5;
+
+    let font: Handle<Font> = asset_server.load(
+        "fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf",
+    );
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(10.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.78)),
+            Visibility::Hidden,
+            ZIndex(50),
+            MinimapRoot,
+            GameEntity,
+        ))
+        .with_children(|root| {
+            // Title
+            root.spawn((
+                Text::new("MINIMAP   [TAB] to close"),
+                TextFont { font, font_size: 18.0, ..default() },
+                TextColor(Color::srgb(0.65, 0.65, 0.65)),
+            ));
+
+            // Legend row
+            root.spawn((
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(18.0),
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+            ))
+            .with_children(|leg| {
+                legend_item(leg, Color::srgba(0.2, 0.2, 0.2, 0.6),  "Unexplored");
+                legend_item(leg, Color::srgb(1.0, 0.9, 0.0),         "Current");
+                legend_item(leg, Color::srgb(0.15, 0.65, 0.15),      "Cleared");
+            });
+
+            // Map panel — rooms are absolutely positioned inside this
+            root.spawn((
+                Node {
+                    width: Val::Px(MINIMAP_W),
+                    height: Val::Px(MINIMAP_H),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.04, 0.04, 0.12, 1.0)),
+            ))
+            .with_children(|panel| {
+                for (i, room) in rooms.0.iter().enumerate() {
+                    let mini_x = (room.top_left_corner.x - world_min_x) / map_px_w * MINIMAP_W;
+                    let mini_y =
+                        (world_max_y - room.top_left_corner.y) / map_px_h * MINIMAP_H;
+                    let mini_w =
+                        ((room.bot_right_corner.x - room.top_left_corner.x).abs()
+                            / map_px_w
+                            * MINIMAP_W)
+                            .max(6.0);
+                    let mini_h =
+                        ((room.top_left_corner.y - room.bot_right_corner.y).abs()
+                            / map_px_h
+                            * MINIMAP_H)
+                            .max(6.0);
+
+                    panel.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(mini_x),
+                            top: Val::Px(mini_y),
+                            width: Val::Px(mini_w),
+                            height: Val::Px(mini_h),
+                            ..default()
+                        },
+                        // Fog-of-war colour until visited
+                        BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.5)),
+                        MinimapRoomNode { room_index: i },
+                    ));
+                }
+
+                // Player dot — left/top updated every frame
+                panel.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(0.0),
+                        top: Val::Px(0.0),
+                        width: Val::Px(8.0),
+                        height: Val::Px(8.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(1.0, 1.0, 0.0)),
+                    ZIndex(1),
+                    MinimapPlayerDot,
+                ));
+            });
+        });
+}
+
+/// Small coloured square + label used in the legend row.
+fn legend_item(parent: &mut ChildSpawnerCommands, color: Color, label: &str) {
+    parent
+        .spawn((Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(4.0),
+            ..default()
+        },))
+        .with_children(|row| {
+            row.spawn((
+                Node {
+                    width: Val::Px(12.0),
+                    height: Val::Px(12.0),
+                    ..default()
+                },
+                BackgroundColor(color),
+            ));
+            row.spawn((
+                Text::new(label),
+                TextFont { font_size: 13.0, ..default() },
+                TextColor(Color::srgb(0.75, 0.75, 0.75)),
+            ));
+        });
+}
+
+// Systems
+
+fn toggle_minimap(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut visible: ResMut<MinimapVisible>,
+    mut root_q: Query<&mut Visibility, With<MinimapRoot>>,
+) {
+    if !keys.just_pressed(KeyCode::Tab) {
+        return;
+    }
+    visible.0 = !visible.0;
+    if let Ok(mut vis) = root_q.single_mut() {
+        *vis = if visible.0 {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+}
+
+fn update_minimap(
+    rooms: Res<RoomVec>,
+    player_q: Query<&Transform, With<Player>>,
+    grid: Res<MapGridMeta>,
+    lvlstate: Res<LevelState>,
+    mut room_nodes: Query<(&MinimapRoomNode, &mut BackgroundColor)>,
+    mut player_dot: Query<&mut Node, With<MinimapPlayerDot>>,
+) {
+    let map_px_w = grid.cols as f32 * TILE_SIZE;
+    let map_px_h = grid.rows as f32 * TILE_SIZE;
+    let world_min_x = -map_px_w * 0.5;
+    let world_max_y = map_px_h * 0.5;
+
+    let current_room = match *lvlstate {
+        LevelState::InRoom(i, _) | LevelState::EnteredRoom(i) => Some(i),
+        LevelState::NotRoom => None,
+    };
+
+    for (node, mut bg) in &mut room_nodes {
+        let Some(room) = rooms.0.get(node.room_index) else {
+            continue;
+        };
+        bg.0 = if current_room == Some(node.room_index) {
+            Color::srgba(1.0, 0.9, 0.0, 1.0)       // current room: bright yellow
+        } else if !room.visited {
+            Color::srgba(0.04, 0.04, 0.12, 1.0)        // fog of war
+        } else if room.cleared {
+            Color::srgba(0.15, 0.65, 0.15, 0.9)     // cleared: green
+        } else {
+            Color::srgba(0.04, 0.04, 0.12, 1.0)       // default color
+        };
+    }
+
+    let Ok(player_tf) = player_q.single() else {
+        return;
+    };
+    let px = player_tf.translation.x;
+    let py = player_tf.translation.y;
+
+    let dot_x =
+        ((px - world_min_x) / map_px_w * MINIMAP_W - 4.0).clamp(0.0, MINIMAP_W - 8.0);
+    let dot_y =
+        ((world_max_y - py) / map_px_h * MINIMAP_H - 4.0).clamp(0.0, MINIMAP_H - 8.0);
+
+    if let Ok(mut node) = player_dot.single_mut() {
+        node.left = Val::Px(dot_x);
+        node.top = Val::Px(dot_y);
+    }
+}

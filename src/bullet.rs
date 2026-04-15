@@ -1,6 +1,6 @@
 use crate::Player;
-use crate::collidable::{Collidable, Collider};
-use crate::enemy::RangedEnemyShootEvent;
+use crate::collidable::Collider;
+use crate::enemies::RangedEnemyShootEvent;
 use crate::player::{Health, MaxHealth, MoveSpeed, Shield};
 use crate::room::{LevelState, RoomVec};
 use crate::weapon::{BulletDamage, BulletRes, Weapon, WeaponSounds};
@@ -29,9 +29,10 @@ pub struct AnimationFrameCount(pub usize);
 #[derive(Component)]
 pub struct MarkedForDespawn;
 
-/// Marker: this bullet passes through enemies without despawning.
+/// Remaining pierce slots — each enemy hit consumes one slot.
+/// When it reaches 0 the bullet despawns on the next hit.
 #[derive(Component)]
-pub struct Piercing;
+pub struct Piercing(pub u32);
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Velocity(pub Vec2);
@@ -133,8 +134,9 @@ pub fn shoot_bullet_on_click(
             AnimationFrameCount(3),
             GameEntity,
         ));
-        if weapon.piercing {
-            bullet_entity.insert(Piercing);
+        let pierce = weapon.effective_pierce_count();
+        if pierce > 0 {
+            bullet_entity.insert(Piercing(pierce));
         }
 
         commands.spawn((
@@ -229,13 +231,13 @@ fn animate_bullet(
 
 pub fn bullet_collision(
     mut commands: Commands,
-    bullet_query: Query<
-        (Entity, &Transform, &BulletOwner, &BulletDamage, Option<&Piercing>),
+    mut bullet_query: Query<
+        (Entity, &Transform, &BulletOwner, &BulletDamage, Option<&mut Piercing>),
         (With<Bullet>, Without<MarkedForDespawn>),
     >,
     mut enemy_query: Query<
-        (&Transform, &mut crate::enemy::Health),
-        (With<crate::enemy::Enemy>, Without<crate::reaper::Reaper>),
+        (&Transform, &mut crate::enemies::Health),
+        (With<crate::enemies::Enemy>, Without<crate::enemies::Reaper>),
     >,
     mut player_query: Query<
         (&Transform, &mut Health, &mut MaxHealth, &mut MoveSpeed, &mut crate::player::Armor, &mut Shield),
@@ -249,10 +251,7 @@ pub fn bullet_collision(
         (&Transform, &mut window::Health, &window::GlassState),
         With<window::Window>,
     >,
-    wall_query: Query<
-        (&Transform, &Collider),
-        (With<Collidable>, Without<Player>, Without<Bullet>),
-    >,
+    wall_grid: Res<crate::map::WallGrid>,
     lvlstate: Res<LevelState>,
     rooms: Res<RoomVec>,
 ) {
@@ -264,14 +263,14 @@ pub fn bullet_collision(
 
     let _final_room = matches!(*lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1;
 
-    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, piercing) in &bullet_query {
+    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, mut piercing) in &mut bullet_query {
         let bullet_pos = bullet_tf.translation;
 
         // Bullet hits enemy
         if matches!(owner, BulletOwner::Player) {
             for (enemy_tf, mut health) in &mut enemy_query {
                 let enemy_pos = enemy_tf.translation;
-                let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+                let enemy_half = Vec2::splat(crate::enemies::ENEMY_SIZE * 0.5);
                 if aabb_overlap(
                     bullet_pos.x,
                     bullet_pos.y,
@@ -281,11 +280,22 @@ pub fn bullet_collision(
                     enemy_half,
                 ) {
                     health.0 -= damage.0;
-                    if piercing.is_none() {
-                        commands.entity(bullet_entity).try_insert(MarkedForDespawn);
-                        continue 'bullet_loop;
+                    match &mut piercing {
+                        None => {
+                            // Non-piercing bullet: stop on first hit
+                            commands.entity(bullet_entity).try_insert(MarkedForDespawn);
+                            continue 'bullet_loop;
+                        }
+                        Some(p) if p.0 == 0 => {
+                            // Used up all pierce slots: stop on this hit
+                            commands.entity(bullet_entity).try_insert(MarkedForDespawn);
+                            continue 'bullet_loop;
+                        }
+                        Some(p) => {
+                            // Consume one pierce slot and keep going
+                            p.0 -= 1;
+                        }
                     }
-                    // piercing: keep going, hit remaining enemies this frame
                 }
             }
         }
@@ -359,15 +369,14 @@ pub fn bullet_collision(
         }
 
 
-        for (wall_tf, wall_col) in &wall_query {
-            let wall_pos = wall_tf.translation;
+        for (wall_pos, wall_half) in wall_grid.nearby(bullet_pos.truncate(), 2) {
             if aabb_overlap(
                 bullet_pos.x,
                 bullet_pos.y,
                 bullet_half,
                 wall_pos.x,
                 wall_pos.y,
-                wall_col.half_extents,
+                wall_half,
             ) {
                 commands.entity(bullet_entity).try_insert(MarkedForDespawn);
                 continue 'bullet_loop;

@@ -1,11 +1,11 @@
-use bevy::{prelude::*};
+use bevy::{prelude::*, window::PrimaryWindow};
 
 use crate::collidable::{Collidable, Collider};
 use crate::table;
 use crate::broom::Broom;
 use crate::{ACCEL_RATE, GameState, GameEntity, LEVEL_LEN, PLAYER_SPEED, TILE_SIZE, WIN_H, WIN_W};
-use crate::enemy::{Enemy, ENEMY_SIZE};
-use crate::enemy::HitAnimation;
+use crate::enemies::{Enemy, ENEMY_SIZE};
+use crate::enemies::HitAnimation;
 use crate::map::{LevelRes, MapGridMeta};
 use crate::fluiddynamics::PulledByFluid;
 use crate::bullet::{Bullet, Velocity};
@@ -78,6 +78,12 @@ impl Shield {
     }
 }
 
+/// Thruster fuel for the dodge dash. Gained via Speed Up pickups.
+#[derive(Component)]
+pub struct ThrusterFuel {
+    pub current: f32,
+    pub max: f32,
+}
 
 // #[derive(Resource)]
 // pub struct BulletRes(Handle<Image>, Handle<TextureAtlasLayout>);
@@ -146,6 +152,8 @@ impl Plugin for PlayerPlugin {
             // .add_systems(Startup, load_bullet)
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
             .add_systems(Update, regen_system.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, thruster_regen_system.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, thruster_dodge_system.run_if(in_state(GameState::Playing)))
             .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
             .add_systems(Update, apply_breach_force_to_player.after(move_player).run_if(in_state(GameState::Playing)))
@@ -243,17 +251,17 @@ fn spawn_player(
             (
                 buffs.health, buffs.max_health, buffs.move_speed, buffs.fire_rate,
                 buffs.num_cleared, buffs.armor, buffs.air_tank_max, buffs.air_tank_drain_rate,
-                buffs.weapon_damage, buffs.piercing, buffs.regen_rate, buffs.shield_max, buffs.vacuum_mass,
+                buffs.weapon_damage, buffs.piercing_pickups, buffs.regen_rate, buffs.shield_max, buffs.vacuum_mass,
             )
         } else {
-            (100.0, 100.0, 1.0, 0.5, 0, 0.0, 5.0, 1.0, 25.0, false, 0.0, 0.0, 50.0)
+            (100.0, 100.0, 1.0, 0.5, 0, 0.0, 5.0, 1.0, 25.0, 0u32, 0.0, 0.0, 50.0)
         };
 
     let mut weapon = Weapon::new(WeaponType::BasicLaser);
     weapon.fire_rate = fire_rate;
     weapon.shoot_timer = Timer::from_seconds(fire_rate, TimerMode::Once);
     weapon.damage = weapon_damage;
-    weapon.piercing = piercing;
+    weapon.piercing_pickups = piercing;
 
     commands.spawn((
         Sprite::from_atlas_image(
@@ -275,7 +283,7 @@ fn spawn_player(
         Collider { half_extents: Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0) },
         Facing(FacingDirection::Down),
         NumOfCleared(num_cleared),
-        (PulledByFluid{mass: vacuum_mass}, AirTank::new(tank_max, tank_drain)),
+        (PulledByFluid{mass: vacuum_mass}, AirTank::new(tank_max, tank_drain), ThrusterFuel { current: 0.0, max: 0.0 }),
         weapon,
         GameEntity,
     ));
@@ -291,7 +299,10 @@ fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     mut player: Query<(&mut Transform, &mut Velocity, &mut Facing, &MoveSpeed, &mut Weapon), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
-    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>)>,
+    // Excludes permanent wall tiles — those are handled by WallGrid below.
+    colliders: Query<(&Transform, &Collider, Option<&table::Table>), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>, Without<crate::map::WallTile>)>,
+    wall_grid: Res<crate::map::WallGrid>,
+    broom_q: Query<(), With<Broom>>,
     mut commands: Commands,
     bullet_res: Res<BulletRes>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
@@ -404,35 +415,42 @@ fn move_player(
     let mut pos = transform.translation;
     let delta = change; // Vec2
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
+    let broom_active = !broom_q.is_empty();
 
     // ---- X axis ----
     if delta.x != 0.0 {
         let mut nx = pos.x + delta.x;
-        let px = nx;
         let py = pos.y;
         let mut hit_x = false;
 
-        for (ct, c) in &colliders {
+        // Check permanent wall tiles via spatial hash (O(1) neighbourhood).
+        for (wall_pos, wall_half) in wall_grid.nearby(Vec2::new(nx, py), 3) {
+            if aabb_overlap(nx, py, player_half, wall_pos.x, wall_pos.y, wall_half) {
+                let candidate = if delta.x > 0.0 {
+                    wall_pos.x - (player_half.x + wall_half.x)
+                } else {
+                    wall_pos.x + (player_half.x + wall_half.x)
+                };
+                if delta.x > 0.0 { nx = nx.min(candidate); } else { nx = nx.max(candidate); }
+                hit_x = true;
+            }
+        }
+        // Check dynamic collidables (glass, doors, tables).
+        for (ct, c, table_opt) in &colliders {
+            if table_opt.is_some() && broom_active { continue; }
             let (cx, cy) = (ct.translation.x, ct.translation.y);
-            if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
+            if aabb_overlap(nx, py, player_half, cx, cy, c.half_extents) {
                 let candidate = if delta.x > 0.0 {
                     cx - (player_half.x + c.half_extents.x)
                 } else {
                     cx + (player_half.x + c.half_extents.x)
                 };
-                // Keep the most restrictive (closest) wall, not the last one found.
-                if delta.x > 0.0 {
-                    nx = nx.min(candidate);
-                } else {
-                    nx = nx.max(candidate);
-                }
+                if delta.x > 0.0 { nx = nx.min(candidate); } else { nx = nx.max(candidate); }
                 hit_x = true;
             }
         }
         if hit_x {
-            if dir.y != 0.0 {
-                velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
-            }
+            if dir.y != 0.0 { velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER; }
             velocity.x = 0.0;
         }
         pos.x = nx;
@@ -442,30 +460,36 @@ fn move_player(
     if delta.y != 0.0 {
         let mut ny = pos.y + delta.y;
         let px = pos.x;
-        let py = ny;
         let mut hit_y = false;
 
-        for (ct, c) in &colliders {
+        // Check permanent wall tiles via spatial hash.
+        for (wall_pos, wall_half) in wall_grid.nearby(Vec2::new(px, ny), 3) {
+            if aabb_overlap(px, ny, player_half, wall_pos.x, wall_pos.y, wall_half) {
+                let candidate = if delta.y > 0.0 {
+                    wall_pos.y - (player_half.y + wall_half.y)
+                } else {
+                    wall_pos.y + (player_half.y + wall_half.y)
+                };
+                if delta.y > 0.0 { ny = ny.min(candidate); } else { ny = ny.max(candidate); }
+                hit_y = true;
+            }
+        }
+        // Check dynamic collidables (glass, doors, tables).
+        for (ct, c, table_opt) in &colliders {
+            if table_opt.is_some() && broom_active { continue; }
             let (cx, cy) = (ct.translation.x, ct.translation.y);
-            if aabb_overlap(px, py, player_half, cx, cy, c.half_extents) {
+            if aabb_overlap(px, ny, player_half, cx, cy, c.half_extents) {
                 let candidate = if delta.y > 0.0 {
                     cy - (player_half.y + c.half_extents.y)
                 } else {
                     cy + (player_half.y + c.half_extents.y)
                 };
-                // Keep the most restrictive (closest) wall.
-                if delta.y > 0.0 {
-                    ny = ny.min(candidate);
-                } else {
-                    ny = ny.max(candidate);
-                }
+                if delta.y > 0.0 { ny = ny.min(candidate); } else { ny = ny.max(candidate); }
                 hit_y = true;
             }
         }
         if hit_y {
-            if dir.x != 0.0 {
-                velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
-            }
+            if dir.x != 0.0 { velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER; }
             velocity.y = 0.0;
         }
         pos.y = ny;
@@ -496,7 +520,7 @@ impl DamageTimer {
 fn enemy_hits_player(
     time: Res<Time>,
     mut player_query: Query<(&Transform, &mut crate::player::Health, &mut DamageTimer, &Armor, &mut Shield), With<crate::player::Player>>,
-    enemy_query: Query<(Entity, &Transform, &crate::enemy::Health), With<Enemy>>,
+    enemy_query: Query<(Entity, &Transform, &crate::enemies::Health), With<Enemy>>,
     mut commands: Commands,
 ) {
     let player_half = Vec2::splat(32.0);
@@ -594,14 +618,14 @@ fn regen_system(
 
 
 fn table_hits_player(
-    time: Res<Time>,
+    _time: Res<Time>,
     mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer, &Armor, &mut Shield), With<Player>>,
-    table_query: Query<(&Transform, &Collider, Option<&crate::enemy::Velocity>), With<table::Table>>,
+    table_query: Query<(&Transform, &Collider, Option<&crate::enemies::Velocity>), With<table::Table>>,
 ) {
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
 
     for (player_tf, mut health, mut dmg_timer, armor, mut shield) in &mut player_query {
-        dmg_timer.0.tick(time.delta());
+        // DamageTimer is already ticked by enemy_hits_player; do not tick again here.
         let player_pos = player_tf.translation.truncate();
 
         // cannot damage again until timer finished
@@ -624,7 +648,7 @@ fn table_hits_player(
                 table_pos.y,
                 table_half,
             ) {
-                // Get speed from crate::enemy::Velocity (which stores Vec2 in `.velocity`)
+                // Get speed from crate::enemies::Velocity (which stores Vec2 in `.velocity`)
                 let speed = vel_opt.map(|v| v.velocity.length()).unwrap_or(0.0);
 
                 // Only damage the player if the table is actually moving fast enough
@@ -733,24 +757,58 @@ fn wall_correction(pos: &mut Vec2, player_half: Vec2, walls: &[(Vec2, Vec2)]) {
 
 fn wall_collision_correction(
     mut player_q: Query<&mut Transform, With<Player>>,
-    wall_q: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>)>,
+    wall_grid: Res<crate::map::WallGrid>,
+    dynamic_q: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<crate::map::WallTile>)>,
 ) {
     let Ok(mut player_tf) = player_q.single_mut() else { return };
 
-    // Must match the hitbox used in move_player and the spawned Collider component.
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
     let mut player_pos = player_tf.translation.truncate();
 
-    let walls: Vec<(Vec2, Vec2)> = wall_q
-        .iter()
-        .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
-        .collect();
+    // Collect only nearby walls from the spatial hash + any dynamic obstacles.
+    let mut walls: Vec<(Vec2, Vec2)> = wall_grid.nearby(player_pos, 4);
+    for (tf, col) in &dynamic_q {
+        walls.push((tf.translation.truncate(), col.half_extents));
+    }
 
-    // Two passes: a single pass can fail in corners where pushing out of wall A
-    // moves the player into wall B, which is only caught on the next pass.
+    // Two passes handle corner cases where pushing out of wall A moves into wall B.
     wall_correction(&mut player_pos, player_half, &walls);
     wall_correction(&mut player_pos, player_half, &walls);
 
     player_tf.translation.x = player_pos.x;
     player_tf.translation.y = player_pos.y;
+}
+
+fn thruster_regen_system(
+    time: Res<Time>,
+    mut q: Query<&mut ThrusterFuel, With<Player>>,
+) {
+    let Ok(mut fuel) = q.single_mut() else { return; };
+    if fuel.max > 0.0 {
+        fuel.current = (fuel.current + 0.5 * time.delta_secs()).min(fuel.max);
+    }
+}
+
+fn thruster_dodge_system(
+    input: Res<ButtonInput<KeyCode>>,
+    mut q_player: Query<(&Transform, &mut Velocity, &mut ThrusterFuel), With<Player>>,
+    q_window: Query<&Window, With<PrimaryWindow>>,
+    q_camera: Query<(&Camera, &GlobalTransform)>,
+) {
+    if !input.just_pressed(KeyCode::ShiftLeft) { return; }
+
+    let Ok((player_tf, mut velocity, mut fuel)) = q_player.single_mut() else { return; };
+    if fuel.max <= 0.0 || fuel.current < 1.0 { return; }
+
+    let Ok(window) = q_window.single() else { return; };
+    let Some(cursor_pos) = window.cursor_position() else { return; };
+    let Ok((camera, cam_transform)) = q_camera.single() else { return; };
+    let Some(world_pos) = camera.viewport_to_world_2d(cam_transform, cursor_pos).ok() else { return; };
+
+    let player_pos = player_tf.translation.truncate();
+    let dir = (world_pos - player_pos).normalize_or_zero();
+    if dir == Vec2::ZERO { return; }
+
+    velocity.0 = dir * 800.0;
+    fuel.current -= 1.0;
 }

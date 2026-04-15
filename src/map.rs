@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
@@ -70,6 +70,61 @@ pub struct MapGridMeta {
     pub y0: f32,
     pub cols: usize,
     pub rows: usize,
+}
+
+/// Marker for permanent wall tile entities — used to exclude them from
+/// dynamic ECS collision queries (they live in WallGrid instead).
+#[derive(Component)]
+pub struct WallTile;
+
+/// Spatial hash of permanent wall tile positions built at level load.
+/// Replaces O(all_walls) ECS iteration with an O(1) neighbourhood lookup.
+#[derive(Resource)]
+pub struct WallGrid {
+    /// (col, row) in tile-space → half-extents of that wall cell.
+    cells: HashMap<(i32, i32), Vec2>,
+    pub cell_size: f32,
+    pub x0: f32,
+    pub y0: f32,
+}
+
+impl WallGrid {
+    fn world_to_key(&self, pos: Vec2) -> (i32, i32) {
+        (
+            ((pos.x - self.x0) / self.cell_size).round() as i32,
+            ((pos.y - self.y0) / self.cell_size).round() as i32,
+        )
+    }
+
+    fn key_to_world(&self, col: i32, row: i32) -> Vec2 {
+        Vec2::new(
+            self.x0 + col as f32 * self.cell_size,
+            self.y0 + row as f32 * self.cell_size,
+        )
+    }
+
+    /// Returns (world_pos, half_extents) for every wall cell within
+    /// `radius` tiles of `pos`.  With radius=3 this checks at most 49
+    /// cells rather than every wall in the entire level.
+    pub fn nearby(&self, pos: Vec2, radius: i32) -> Vec<(Vec2, Vec2)> {
+        let (cx, cy) = self.world_to_key(pos);
+        let mut out = Vec::with_capacity(((radius * 2 + 1) * (radius * 2 + 1)) as usize);
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let key = (cx + dx, cy + dy);
+                if let Some(&half) = self.cells.get(&key) {
+                    out.push((self.key_to_world(key.0, key.1), half));
+                }
+            }
+        }
+        out
+    }
+
+    /// Remove a cell when a breakable tile (e.g. glass) is destroyed.
+    pub fn remove(&mut self, pos: Vec2) {
+        let key = self.world_to_key(pos);
+        self.cells.remove(&key);
+    }
 }
 
 #[derive(Resource, Default)]
@@ -285,8 +340,24 @@ pub fn setup_tilemap(
     }).collect();
     commands.spawn_batch(floor_batch);
 
+    // Build wall spatial hash — O(1) neighbourhood lookup replaces
+    // the O(n_walls) linear scan done every frame in collision systems.
+    let mut wall_cells = HashMap::new();
+    for &pos in &wall_positions {
+        let key = (
+            ((pos.x - x0) / TILE_SIZE).round() as i32,
+            ((pos.y - y0) / TILE_SIZE).round() as i32,
+        );
+        wall_cells.insert(key, Vec2::splat(TILE_SIZE * 0.5));
+    }
+    commands.insert_resource(WallGrid {
+        cells: wall_cells,
+        cell_size: TILE_SIZE,
+        x0,
+        y0,
+    });
+
     // Batch spawn walls
-    
     let wall_batch: Vec<_> = wall_positions.iter().map(|&pos| {
         let mut sprite = Sprite::from_image(tiles.wall.clone());
         sprite.custom_size = Some(Vec2::new(TILE_SIZE,TILE_SIZE*1.5625));
@@ -299,6 +370,7 @@ pub fn setup_tilemap(
             },
             Collidable,
             Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
+            WallTile,
             Name::new("Wall"),
             GameEntity,
         )

@@ -11,7 +11,9 @@ pub struct Weapon {
     pub damage: f32,
     pub bullet_size: f32,
     pub shoot_timer: Timer,
-    pub piercing: bool,
+    /// Raw count of piercing-round pickups collected.
+    /// Use `effective_pierce_count()` to get the actual pierce level.
+    pub piercing_pickups: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -30,7 +32,7 @@ impl Weapon {
                 damage: 25.0,
                 bullet_size: 0.25,
                 shoot_timer: Timer::from_seconds(0.5, TimerMode::Once),
-                piercing: false,
+                piercing_pickups: 0,
             },
             // Add more weapon types here:
             // WeaponType::RapidFire => Self { ... },
@@ -47,6 +49,14 @@ impl Weapon {
 
     pub fn tick(&mut self, delta: std::time::Duration) {
         self.shoot_timer.tick(delta);
+    }
+
+    /// Returns how many enemies a bullet can pass through before stopping.
+    /// Linear 1:1 for the first 4 pickups; every 2 pickups beyond that
+    /// grant one additional pierce level.
+    pub fn effective_pierce_count(&self) -> u32 {
+        let p = self.piercing_pickups;
+        if p <= 4 { p } else { 4 + (p - 4) / 2 }
     }
 }
 
@@ -128,8 +138,9 @@ pub fn spawn_bullet(
         BulletDamage(weapon.damage),
         GameEntity,
     ));
-    if weapon.piercing {
-        bullet.insert(Piercing);
+    let pierce = weapon.effective_pierce_count();
+    if pierce > 0 {
+        bullet.insert(Piercing(pierce));
     }
 }
 

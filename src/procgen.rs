@@ -294,11 +294,11 @@ pub fn build_full_level(
     mut room_vec: ResMut<RoomVec>,
     window_cfg: Res<WindowConfig>,
 ) {
-    // +40 and +20 are padding
-    const MAP_W: usize = 250 + 40;
-    const MAP_H: usize = 250 + 20;
-    const MIN_LEAF_SIZE: usize = 60;
-    const MIN_ROOM_SIZE: usize = 50;
+    // +40 and +20 are edge padding kept clear for wall generation
+    const MAP_W: usize = 200 + 40;
+    const MAP_H: usize = 200 + 20;
+    const MIN_LEAF_SIZE: usize = 35;
+    const MIN_ROOM_SIZE: usize = 24;
     let seed: u64 = random_range(0..u64::MAX);
 
     // full map of '.'
@@ -371,58 +371,66 @@ fn bsp_generate_level(
         &mut terminals,
     );
 
-    // place rooms inside each terminal leaf
+    // Place a room inside each terminal leaf.  Preset rooms are used when they
+    // fit inside the leaf's reserved area; otherwise a random rectangle fills it.
     for terminal in terminals.iter() {
         let mut leaf = terminal.borrow_mut();
-        if let Some(room_rect) = &leaf.room {
-            let choice = rng.random_range(1..=8);
-            if choice <= 6 {
-                // preset room from set of 6w
-                let preset_room: &RoomLayout = match choice {
-                    1 => rooms.room(1),
-                    2 => rooms.room(2),
-                    3 => rooms.room(3),
-                    4 => rooms.room(4),
-                    5 => rooms.room(5),
-                    6 => rooms.room(6),
-                    _ => unreachable!(),
-                };
-                let top_left_x = room_rect.x + (room_rect.w.saturating_sub(preset_room.layout[0].len())) / 2;
-                let top_left_y = room_rect.y + (room_rect.h.saturating_sub(preset_room.layout.len())) / 2;
+        // Clone to own the rect — avoids borrow conflicts when we later write leaf.room.
+        if leaf.room.is_none() { continue; }
+
+        let choice = rng.random_range(1..=8);
+
+        // Try a preset room first; fall back to random if it doesn't fit.
+        let placed_preset = if choice <= 6 {
+            let preset_room: &RoomLayout = match choice {
+                1 => rooms.room(1),
+                2 => rooms.room(2),
+                3 => rooms.room(3),
+                4 => rooms.room(4),
+                5 => rooms.room(5),
+                6 => rooms.room(6),
+                _ => unreachable!(),
+            };
+            let preset_w = preset_room.layout[0].len();
+            let preset_h = preset_room.layout.len();
+            if preset_w + 2 <= leaf.rect.w && preset_h + 2 <= leaf.rect.h {
+                let top_left_x = leaf.rect.x + (leaf.rect.w - preset_w) / 2;
+                let top_left_y = leaf.rect.y + (leaf.rect.h - preset_h) / 2;
                 write_room(map, preset_room, top_left_x, top_left_y, room_vec);
-                leaf.room = Some(Rect { x: top_left_x, y: top_left_y, w: preset_room.layout[0].len(), h: preset_room.layout.len() });
+                leaf.room = Some(Rect { x: top_left_x, y: top_left_y, w: preset_w, h: preset_h });
+                true
             } else {
-                // create a random rectangle inside leaf
-                let room_w = rng.random_range(min_room_size/2..=leaf.rect.w - 5);
-                let room_h = rng.random_range(min_room_size/2..=leaf.rect.h - 5);
-                let room_x = rng.random_range(leaf.rect.x..=leaf.rect.x + leaf.rect.w - room_w);
-                let room_y = rng.random_range(leaf.rect.y..=leaf.rect.y + leaf.rect.h - room_h);
-
-                // create a "RoomLayout" for this random room
-                let mut random_layout = vec![String::new(); room_h];
-                for y in 0..room_h {
-                    if y == 0 || y == room_h-1{
-                        random_layout[y] = ".".repeat(room_w);
-                    }
-                    else{
-                        random_layout[y] = "#".repeat(room_w);
-                        random_layout[y].insert(0, '.');
-                        random_layout[y].push_str( ".");
-                    }
-                }
-                let random_room = RoomLayout {
-                    layout: random_layout,
-                    width: room_w as f32 + 2.0,
-                    height: room_h as f32,
-                };
-
-                // write the random room into the map using the same function as presets
-                write_room(map, &random_room, room_x-1, room_y-1, room_vec);
-
-                // update the leaf's room rect (needed for hallway connections)
-                leaf.room = Some(Rect { x: room_x, y: room_y, w: room_w, h: room_h });
-
+                false
             }
+        } else {
+            false
+        };
+
+        if !placed_preset {
+            // Random rectangle sized to fit inside the full leaf boundary.
+            let room_w = rng.random_range(min_room_size / 2..=leaf.rect.w - 5);
+            let room_h = rng.random_range(min_room_size / 2..=leaf.rect.h - 5);
+            let room_x = rng.random_range(leaf.rect.x..=leaf.rect.x + leaf.rect.w - room_w);
+            let room_y = rng.random_range(leaf.rect.y..=leaf.rect.y + leaf.rect.h - room_h);
+
+            let mut random_layout = vec![String::new(); room_h];
+            for y in 0..room_h {
+                if y == 0 || y == room_h - 1 {
+                    random_layout[y] = ".".repeat(room_w);
+                } else {
+                    random_layout[y] = "#".repeat(room_w);
+                    random_layout[y].insert(0, '.');
+                    random_layout[y].push_str(".");
+                }
+            }
+            let random_room = RoomLayout {
+                layout: random_layout,
+                width: room_w as f32 + 2.0,
+                height: room_h as f32,
+            };
+
+            write_room(map, &random_room, room_x - 1, room_y - 1, room_vec);
+            leaf.room = Some(Rect { x: room_x, y: room_y, w: room_w, h: room_h });
         }
     }
 

@@ -9,7 +9,7 @@ use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::{Door, TablePositions};
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
-use crate::enemy::{EnemyRes, LastKillPos, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
+use crate::enemies::{EnemyRes, LastKillPos, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
 use crate::table;
 
 #[derive(Resource)]
@@ -27,10 +27,11 @@ pub struct RoomVec(pub Vec<Room>);
 
 pub struct Room{
     pub cleared: bool,
+    pub visited: bool,
     pub doors:Vec<Entity>,
     pub numofenemies: usize,
-    top_left_corner: Vec2,
-    bot_right_corner: Vec2,
+    pub top_left_corner: Vec2,
+    pub bot_right_corner: Vec2,
     pub tile_top_left_corner: Vec2,
     pub tile_bot_right_corner: Vec2,
     layout: Vec<String>,
@@ -42,6 +43,7 @@ impl Room{
     pub fn new(tlc: Vec2, brc: Vec2, tile_tlc: Vec2, tile_brc: Vec2, room_layout: Vec<String>) -> Self{
         Self{
             cleared: false,
+            visited: false,
             doors:Vec::new(),
             numofenemies: 0,
             top_left_corner: tlc.clone(),
@@ -193,17 +195,25 @@ pub fn track_rooms(
     mut rooms: ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
 ){
-    match *lvlstate
-    {
-        LevelState::EnteredRoom(_) => {}
-        LevelState::InRoom(_, _)=> {}
-        _ =>
-        {
-            let pos = player.into_inner();
-            for (index, room )in rooms.0.iter_mut().enumerate(){
-                if !room.cleared && room.within_bounds_check(Vec2::new(pos.translation.x, pos.translation.y)){
-                    println!("Entered Room");
+    let pos = player.into_inner();
+    let player_pos = Vec2::new(pos.translation.x, pos.translation.y);
+
+    // Mark rooms visited as soon as the player steps inside their bounds,
+    // regardless of current level state (so cleared rooms stay visible on minimap).
+    for room in rooms.0.iter_mut() {
+        if !room.visited && room.bounds_check(player_pos) {
+            room.visited = true;
+        }
+    }
+
+    // Only look for a new room trigger when we are not already processing one.
+    match *lvlstate {
+        LevelState::EnteredRoom(_) | LevelState::InRoom(_, _) => {}
+        LevelState::NotRoom => {
+            for (index, room) in rooms.0.iter_mut().enumerate() {
+                if !room.cleared && room.within_bounds_check(player_pos) {
                     *lvlstate = LevelState::EnteredRoom(index);
+                    break;
                 }
             }
         }
@@ -238,6 +248,16 @@ pub fn entered_room(
 
             if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query, station_level.0){
                 *lvlstate = LevelState::InRoom(index, pos);
+            } else {
+                // Room is too small/tight to place any enemies — clear it immediately
+                // and reopen the doors so the player is never locked in.
+                rooms.0[index].cleared = true;
+                for door in rooms.0[index].doors.iter() {
+                    commands.entity(*door).remove::<Collidable>();
+                    commands.entity(*door).remove::<Collider>();
+                    commands.entity(*door).insert(Sprite::from_image(tiles.open_door.clone()));
+                }
+                *lvlstate = LevelState::NotRoom;
             }
         }
         _ => {}
@@ -251,7 +271,7 @@ pub fn playing_room(
     tiles: Res<TileRes>,
     mut player: Single<&mut NumOfCleared, With<Player>>,
     heart_res: Res<crate::heart::HeartRes>,
-    reward_res: Res<crate::reward::RewardRes>,
+    reward_res: Res<crate::rewards::RewardRes>,
     last_kill_pos: Res<LastKillPos>,
 ){
     match *lvlstate
@@ -262,7 +282,7 @@ pub fn playing_room(
                 debug!("All enemies defeated");
 
                 crate::heart::spawn_heart(&mut commands, &heart_res, last_kill_pos.0);
-                crate::reward::spawn_reward(&mut commands, reward_pos, &reward_res);
+                crate::rewards::spawn_reward(&mut commands, reward_pos, &reward_res);
 
                 for door in rooms.0[index].doors.iter(){
                     commands.entity(*door).remove::<Collidable>();
@@ -542,9 +562,9 @@ pub fn track_window_breaches(
 pub fn apply_breach_forces_to_entities(
     time: Res<Time>,
     rooms: Res<RoomVec>,
-    mut tables: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
+    mut tables: Query<(&Transform, &mut crate::enemies::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
     mut player: Query<(&Transform, &mut crate::bullet::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::player::Player>, Without<crate::table::Table>)>,  // Changed to bullet::Velocity
-    mut enemies: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::enemy::Enemy>, Without<crate::player::Player>, Without<crate::table::Table>)>,
+    mut enemies: Query<(&Transform, &mut crate::enemies::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::enemies::Enemy>, Without<crate::player::Player>, Without<crate::table::Table>)>,
 ) {
     // Determine which room the player is in
     let player_room = if let Ok((player_transform, _, _)) = player.single() {
