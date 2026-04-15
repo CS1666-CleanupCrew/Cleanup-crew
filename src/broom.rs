@@ -234,7 +234,7 @@ fn broom_push_tables_system(
             let side = rel.dot(right);
             // Push the table sideways to clear the path; if exactly centered, default right
             let push_dir = if side >= 0.0 { right } else { -right };
-            vel.velocity = push_dir * 500.0;
+            vel.velocity = push_dir * 450.0;
         }
     }
 }
