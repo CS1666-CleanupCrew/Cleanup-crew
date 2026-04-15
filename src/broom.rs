@@ -194,20 +194,20 @@ pub fn broom_hit_enemies_system(
 
 fn broom_push_tables_system(
     broom_query: Query<(&Transform, &Collider), With<Broom>>,
-    player_query: Query<&Facing, With<Player>>,
+    player_query: Query<(&Transform, &Facing), With<Player>>,
     mut table_query: Query<(&Transform, &Collider, &mut Velocity), With<Table>>,
 ) {
     let (broom_tf, broom_col) = match broom_query.single() {
         Ok(b) => b,
         Err(_) => return,
     };
-    let facing = match player_query.single() {
+    let (player_tf, facing) = match player_query.single() {
         Ok(f) => f,
         Err(_) => return,
     };
 
-    // Direction the broom swing sends tables flying
-    let push_dir = match facing.0 {
+    // Forward vector for the current facing direction
+    let forward = match facing.0 {
         FacingDirection::Up        => Vec2::new( 0.0,  1.0),
         FacingDirection::Down      => Vec2::new( 0.0, -1.0),
         FacingDirection::Left      => Vec2::new(-1.0,  0.0),
@@ -218,13 +218,23 @@ fn broom_push_tables_system(
         FacingDirection::DownLeft  => Vec2::new(-1.0, -1.0).normalize(),
     };
 
+    // Perpendicular (90° clockwise): tables to the right go right, left go left
+    let right = Vec2::new(forward.y, -forward.x);
+
+    let player_pos = player_tf.translation.truncate();
     let table_half = Vec2::splat(TILE_SIZE * 0.5);
+
     for (table_tf, _table_col, mut vel) in table_query.iter_mut() {
         if aabb_overlap(
             broom_tf.translation.x, broom_tf.translation.y, broom_col.half_extents,
             table_tf.translation.x,  table_tf.translation.y,  table_half,
         ) {
-            vel.velocity = push_dir * 450.0;
+            // Determine which side of the forward axis the table is on
+            let rel = table_tf.translation.truncate() - player_pos;
+            let side = rel.dot(right);
+            // Push the table sideways to clear the path; if exactly centered, default right
+            let push_dir = if side >= 0.0 { right } else { -right };
+            vel.velocity = push_dir * 500.0;
         }
     }
 }
