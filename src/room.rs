@@ -9,7 +9,7 @@ use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::{Door, TablePositions};
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
-use crate::enemy::{EnemyRes, LastKillPos, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
+use crate::enemies::{EnemyRes, LastKillPos, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
 use crate::table;
 
 #[derive(Resource)]
@@ -271,7 +271,7 @@ pub fn playing_room(
     tiles: Res<TileRes>,
     mut player: Single<&mut NumOfCleared, With<Player>>,
     heart_res: Res<crate::heart::HeartRes>,
-    reward_res: Res<crate::reward::RewardRes>,
+    reward_res: Res<crate::rewards::RewardRes>,
     last_kill_pos: Res<LastKillPos>,
 ){
     match *lvlstate
@@ -282,7 +282,7 @@ pub fn playing_room(
                 debug!("All enemies defeated");
 
                 crate::heart::spawn_heart(&mut commands, &heart_res, last_kill_pos.0);
-                crate::reward::spawn_reward(&mut commands, reward_pos, &reward_res);
+                crate::rewards::spawn_reward(&mut commands, reward_pos, &reward_res);
 
                 for door in rooms.0[index].doors.iter(){
                     commands.entity(*door).remove::<Collidable>();
@@ -562,9 +562,9 @@ pub fn track_window_breaches(
 pub fn apply_breach_forces_to_entities(
     time: Res<Time>,
     rooms: Res<RoomVec>,
-    mut tables: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
+    mut tables: Query<(&Transform, &mut crate::enemies::Velocity, &crate::fluiddynamics::PulledByFluid), With<crate::table::Table>>,
     mut player: Query<(&Transform, &mut crate::bullet::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::player::Player>, Without<crate::table::Table>)>,  // Changed to bullet::Velocity
-    mut enemies: Query<(&Transform, &mut crate::enemy::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::enemy::Enemy>, Without<crate::player::Player>, Without<crate::table::Table>)>,
+    mut enemies: Query<(&Transform, &mut crate::enemies::Velocity, &crate::fluiddynamics::PulledByFluid), (With<crate::enemies::Enemy>, Without<crate::player::Player>, Without<crate::table::Table>)>,
 ) {
     // Determine which room the player is in
     let player_room = if let Ok((player_transform, _, _)) = player.single() {

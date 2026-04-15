@@ -366,7 +366,7 @@ fn apply_breach_forces(mut query: Query<&mut FluidGrid>) {
 fn pull_objects_toward_breaches(
     rooms: Res<RoomVec>,
     grid_query: Query<&FluidGrid>,
-    mut objects: Query<(&Transform, &mut crate::enemy::Velocity, &PulledByFluid), Without<crate::player::Player>>,
+    mut objects: Query<(&Transform, &mut crate::enemies::Velocity, &PulledByFluid), Without<crate::player::Player>>,
     time: Res<Time>,
 ) {
     let Ok(grid) = grid_query.single() else {

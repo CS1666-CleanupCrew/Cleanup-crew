@@ -59,7 +59,7 @@ fn check_for_broken_windows(
     mut query: Query<(Entity, &Health, &mut Sprite, &mut GlassState, &Transform), (With<Window>, Changed<Health>)>,
     mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     window_graphics: Res<WindowGraphics>,
-    mut table_q: Query<&mut crate::enemy::Velocity, With<crate::table::Table>>,
+    mut table_q: Query<&mut crate::enemies::Velocity, With<crate::table::Table>>,
 ) {
     for (entity, health, mut sprite, mut state, transform) in query.iter_mut() {
         if health.0 <= 0.0 && *state == GlassState::Intact {

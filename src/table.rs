@@ -32,7 +32,7 @@ struct TableGraphics {
 }
 
 pub struct TablePlugin;
-use crate::enemy::Velocity;
+use crate::enemies::Velocity;
 use crate::fluiddynamics::PulledByFluid;
 
 impl Plugin for TablePlugin {

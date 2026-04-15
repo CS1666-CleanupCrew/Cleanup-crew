@@ -3,10 +3,10 @@ use crate::bullet::aabb_overlap;
 use crate::{TILE_SIZE, GameState};
 use crate::player::{Player, Facing, FacingDirection};
 use crate::collidable::Collider;
-use crate::enemy::Enemy;
+use crate::enemies::Enemy;
 use crate::window::{Health, GlassState, Window};
 use crate::table::Table;
-use crate::enemy::Velocity;
+use crate::enemies::Velocity;
 
 #[derive(Component)]
 pub struct Broom;
@@ -170,7 +170,7 @@ pub fn broom_hit_enemies_system(
     mut enemies: Query<(&mut Health, &Transform), (With<Enemy>, Without<Broom>)>,
     broom_query: Query<(&Transform, &Collider), (With<Broom>, Without<Enemy>)>,
 ) {
-    let enemy_half = Vec2::splat(crate::enemy::ENEMY_SIZE * 0.5);
+    let enemy_half = Vec2::splat(crate::enemies::ENEMY_SIZE * 0.5);
     if let Some((broom_tf, broom_col)) = broom_query.iter().next() {
         for (mut health, enemy_tf) in enemies.iter_mut() {
             if aabb_overlap(

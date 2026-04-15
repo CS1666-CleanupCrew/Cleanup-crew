@@ -7,7 +7,7 @@ use crate::room::RoomVec;
 
 pub mod collidable;
 pub mod endcredits;
-pub mod enemy;
+pub mod enemies;
 pub mod player;
 pub mod table;
 pub mod window;
@@ -21,9 +21,8 @@ pub mod menu;
 pub mod room;
 pub mod bullet;
 pub mod broom;
-pub mod reward;
+pub mod rewards;
 pub mod heart;
-pub mod reaper;
 pub mod weapon;
 pub mod minimap;
 
@@ -100,7 +99,7 @@ pub struct SavedPlayerBuffs {
     pub air_tank_max: f32,
     pub air_tank_drain_rate: f32,
     pub weapon_damage: f32,
-    pub piercing: bool,
+    pub piercing_pickups: u32,
     pub regen_rate: f32,
     pub shield_max: f32,
     pub vacuum_mass: f32,
@@ -151,7 +150,7 @@ fn main() {
             map::MapPlugin,
             player::PlayerPlugin,
             endcredits::EndCreditPlugin,
-            enemy::EnemyPlugin,
+            enemies::EnemyPlugin,
             table::TablePlugin,
             fluiddynamics::FluidSimPlugin,
             window::WindowPlugin,
@@ -161,13 +160,13 @@ fn main() {
             bullet::BulletPlugin,
             room::RoomPlugin,
             broom::BroomPlugin,
-            reward::RewardPlugin,
+            rewards::RewardPlugin,
             heart::HeartPlugin,
-            reaper::ReaperPlugin,
+            enemies::reaper::ReaperPlugin,
             weapon::WeaponPlugin,
             minimap::MinimapPlugin,
         ))
-        .add_systems(Startup, (setup_camera, reward::load_reward_font, maximize_window))
+        .add_systems(Startup, (setup_camera, rewards::load_reward_font, maximize_window))
         .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
@@ -223,8 +222,8 @@ fn main() {
         .add_systems(
             Update,
             (
-                reward::player_pickup_reward,
-                reward::tick_reward_popups,
+                rewards::player_pickup_reward,
+                rewards::tick_reward_popups,
             ).run_if(in_state(GameState::Playing)),
         )
         
@@ -242,6 +241,7 @@ fn check_win(
         &player::NumOfCleared, &player::Armor, &player::AirTank,
         &player::Regen, &player::Shield, &fluiddynamics::PulledByFluid,
     ), With<Player>>,
+    reaper_q: Query<(), With<enemies::Reaper>>,
 ){
     let mut count = 0;
 
@@ -251,7 +251,8 @@ fn check_win(
         }
     }
 
-    if count == rooms.0.len(){
+    // All rooms cleared AND the reaper is dead (or never spawned)
+    if count == rooms.0.len() && reaper_q.is_empty() {
         // Save player buffs before transitioning (player will be despawned on exit)
         if let Ok((health, max_hp, move_spd, weapon, _num_cleared, armor, tank, regen, shield, pull)) = player_q.single() {
             commands.insert_resource(SavedPlayerBuffs {
@@ -267,7 +268,7 @@ fn check_win(
                 air_tank_max: tank.max_capacity,
                 air_tank_drain_rate: tank.drain_rate,
                 weapon_damage: weapon.damage,
-                piercing: weapon.piercing,
+                piercing_pickups: weapon.piercing_pickups,
                 regen_rate: regen.0,
                 shield_max: shield.max,
                 vacuum_mass: pull.mass,
