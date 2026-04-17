@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use crate::collidable::{Collidable, Collider};
+use crate::GameState;
 
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.7;
 
@@ -45,9 +46,14 @@ impl Plugin for TablePlugin {
                     ensure_tables_have_pull_components,
                     check_for_broken_tables,
                     animate_broken_tables,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     apply_table_velocity,
                     collide_tables_with_tables.after(apply_table_velocity),
-                ),
+                ).run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -107,26 +113,17 @@ fn apply_table_velocity(
     time: Res<Time>,
     active_room: Res<ActiveRoom>,
     mut table_query: Query<(&mut Transform, &mut Velocity, &Collider, &TableRoom), With<Table>>,
-    wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Table>)>,
+    wall_grid: Res<crate::map::WallGrid>,
 ) {
     let Some(active) = active_room.0 else { return; };
 
     // Cap delta so a lag spike can't cause a huge jump
     let delta = time.delta_secs().min(0.05);
 
-    let walls: Vec<(Vec2, Vec2)> = wall_query
-        .iter()
-        .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
-        .collect();
-
     for (mut transform, mut velocity, table_collider, room) in &mut table_query {
-        // Only simulate physics for the current active room
         if room.0 != active { continue; }
-
         if velocity.velocity.length_squared() < 0.01 { continue; }
 
-        // Velocity cap: a table can't move more than its own half-extent in one frame,
-        // which guarantees it can never tunnel through a same-size or larger wall.
         let max_speed = table_collider.half_extents.x.min(table_collider.half_extents.y) / delta;
         let speed = velocity.velocity.length();
         if speed > max_speed {
@@ -140,14 +137,12 @@ fn apply_table_velocity(
         // ---- X axis ----
         if change.x != 0.0 {
             let mut nx = pos.x + change.x;
-            let py = pos.y;
-            for &(wall_pos, wall_half) in &walls {
-                let (wx, wy) = (wall_pos.x, wall_pos.y);
-                if crate::player::aabb_overlap(nx, py, table_half, wx, wy, wall_half) {
+            for (wall_pos, wall_half) in wall_grid.nearby(Vec2::new(nx, pos.y), 3) {
+                if crate::player::aabb_overlap(nx, pos.y, table_half, wall_pos.x, wall_pos.y, wall_half) {
                     nx = if change.x > 0.0 {
-                        wx - (table_half.x + wall_half.x)
+                        wall_pos.x - (table_half.x + wall_half.x)
                     } else {
-                        wx + (table_half.x + wall_half.x)
+                        wall_pos.x + (table_half.x + wall_half.x)
                     };
                     if velocity.velocity.y.abs() > 0.01 {
                         velocity.velocity.y *= WALL_SLIDE_FRICTION_MULTIPLIER;
@@ -161,14 +156,12 @@ fn apply_table_velocity(
         // ---- Y axis ----
         if change.y != 0.0 {
             let mut ny = pos.y + change.y;
-            let px = pos.x;
-            for &(wall_pos, wall_half) in &walls {
-                let (wx, wy) = (wall_pos.x, wall_pos.y);
-                if crate::player::aabb_overlap(px, ny, table_half, wx, wy, wall_half) {
+            for (wall_pos, wall_half) in wall_grid.nearby(Vec2::new(pos.x, ny), 3) {
+                if crate::player::aabb_overlap(pos.x, ny, table_half, wall_pos.x, wall_pos.y, wall_half) {
                     ny = if change.y > 0.0 {
-                        wy - (table_half.y + wall_half.y)
+                        wall_pos.y - (table_half.y + wall_half.y)
                     } else {
-                        wy + (table_half.y + wall_half.y)
+                        wall_pos.y + (table_half.y + wall_half.y)
                     };
                     if velocity.velocity.x.abs() > 0.01 {
                         velocity.velocity.x *= WALL_SLIDE_FRICTION_MULTIPLIER;
@@ -183,15 +176,14 @@ fn apply_table_velocity(
     }
 }
 
-/// Push `pos` out of any wall it overlaps with.
-fn snap_out_of_walls(pos: &mut Vec3, half: Vec2, walls: &[(Vec2, Vec2)]) {
-    for &(wp, wh) in walls {
+/// Push `pos` out of nearby walls using the spatial hash.
+fn snap_out_of_walls(pos: &mut Vec3, half: Vec2, wall_grid: &crate::map::WallGrid) {
+    for (wp, wh) in wall_grid.nearby(pos.truncate(), 3) {
         let dx = pos.x - wp.x;
         let dy = pos.y - wp.y;
         let overlap_x = half.x + wh.x - dx.abs();
         let overlap_y = half.y + wh.y - dy.abs();
         if overlap_x > 0.0 && overlap_y > 0.0 {
-            // Resolve along the axis with the smallest penetration depth
             if overlap_x < overlap_y {
                 pos.x += if dx >= 0.0 { overlap_x } else { -overlap_x };
             } else {
@@ -202,59 +194,56 @@ fn snap_out_of_walls(pos: &mut Vec3, half: Vec2, walls: &[(Vec2, Vec2)]) {
 }
 
 fn collide_tables_with_tables(
-    mut table_query: Query<(&mut Transform, &Collider, &Velocity, &TableRoom), With<Table>>,
-    wall_query: Query<(&Transform, &Collider), (With<Collidable>, Without<Table>)>,
+    mut table_query: Query<(Entity, &mut Transform, &Collider, &Velocity, &TableRoom), With<Table>>,
+    wall_grid: Res<crate::map::WallGrid>,
     active_room: Res<ActiveRoom>,
 ) {
     let Some(active) = active_room.0 else { return; };
 
-    let walls: Vec<(Vec2, Vec2)> = wall_query
-        .iter()
-        .map(|(tf, col)| (tf.translation.truncate(), col.half_extents))
+    // Collect only the active-room entities to avoid O(all_tables²) pair iteration.
+    let active_entities: Vec<Entity> = table_query.iter()
+        .filter_map(|(e, _, _, _, room)| if room.0 == active { Some(e) } else { None })
         .collect();
 
-    let mut combinations = table_query.iter_combinations_mut();
-    while let Some([
-        (mut t1_transform, c1, v1, r1),
-        (mut t2_transform, c2, v2, r2),
-    ]) = combinations.fetch_next()
-    {
-        // Skip tables outside the active room entirely
-        if r1.0 != active || r2.0 != active { continue; }
+    for i in 0..active_entities.len() {
+        for j in (i + 1)..active_entities.len() {
+            let Ok([(mut t1_tf, c1, v1, _), (mut t2_tf, c2, v2, _)]) =
+                table_query.get_many_mut([active_entities[i], active_entities[j]])
+                    .map(|arr| arr.map(|(_, tf, c, v, r)| (tf, c, v, r)))
+            else { continue; };
 
-        let v1_sq = v1.velocity.length_squared();
-        let v2_sq = v2.velocity.length_squared();
-        if v1_sq < 0.01 && v2_sq < 0.01 { continue; }
+            let v1_sq = v1.velocity.length_squared();
+            let v2_sq = v2.velocity.length_squared();
+            if v1_sq < 0.01 && v2_sq < 0.01 { continue; }
 
-        let (p1, h1) = (t1_transform.translation.truncate(), c1.half_extents);
-        let (p2, h2) = (t2_transform.translation.truncate(), c2.half_extents);
+            let (p1, h1) = (t1_tf.translation.truncate(), c1.half_extents);
+            let (p2, h2) = (t2_tf.translation.truncate(), c2.half_extents);
 
-        let diff = p1 - p2;
-        if diff.x.abs() >= h1.x + h2.x || diff.y.abs() >= h1.y + h2.y { continue; }
+            let diff = p1 - p2;
+            if diff.x.abs() >= h1.x + h2.x || diff.y.abs() >= h1.y + h2.y { continue; }
 
-        if crate::player::aabb_overlap(p1.x, p1.y, h1, p2.x, p2.y, h2) {
-            let overlap_x = (h1.x + h2.x) - (p1.x - p2.x).abs();
-            let overlap_y = (h1.y + h2.y) - (p1.y - p2.y).abs();
+            if crate::player::aabb_overlap(p1.x, p1.y, h1, p2.x, p2.y, h2) {
+                let overlap_x = (h1.x + h2.x) - (p1.x - p2.x).abs();
+                let overlap_y = (h1.y + h2.y) - (p1.y - p2.y).abs();
 
-            if overlap_x < overlap_y {
-                let sign = if p1.x > p2.x { 1.0 } else { -1.0 };
-                // Only push the faster (or only moving) table to prevent
-                // launching a stationary table into a wall.
-                if v1_sq >= v2_sq {
-                    t1_transform.translation.x += sign * overlap_x;
-                    snap_out_of_walls(&mut t1_transform.translation, h1, &walls);
+                if overlap_x < overlap_y {
+                    let sign = if p1.x > p2.x { 1.0 } else { -1.0 };
+                    if v1_sq >= v2_sq {
+                        t1_tf.translation.x += sign * overlap_x;
+                        snap_out_of_walls(&mut t1_tf.translation, h1, &wall_grid);
+                    } else {
+                        t2_tf.translation.x -= sign * overlap_x;
+                        snap_out_of_walls(&mut t2_tf.translation, h2, &wall_grid);
+                    }
                 } else {
-                    t2_transform.translation.x -= sign * overlap_x;
-                    snap_out_of_walls(&mut t2_transform.translation, h2, &walls);
-                }
-            } else {
-                let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
-                if v1_sq >= v2_sq {
-                    t1_transform.translation.y += sign * overlap_y;
-                    snap_out_of_walls(&mut t1_transform.translation, h1, &walls);
-                } else {
-                    t2_transform.translation.y -= sign * overlap_y;
-                    snap_out_of_walls(&mut t2_transform.translation, h2, &walls);
+                    let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
+                    if v1_sq >= v2_sq {
+                        t1_tf.translation.y += sign * overlap_y;
+                        snap_out_of_walls(&mut t1_tf.translation, h1, &wall_grid);
+                    } else {
+                        t2_tf.translation.y -= sign * overlap_y;
+                        snap_out_of_walls(&mut t2_tf.translation, h2, &wall_grid);
+                    }
                 }
             }
         }

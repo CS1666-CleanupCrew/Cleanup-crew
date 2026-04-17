@@ -36,7 +36,6 @@ const PLAYER_SPEED: f32 = 500.;
 
 const ACCEL_RATE: f32 = 5000.;
 const TILE_SIZE: f32 = 32.;
-const BG_WORLD: f32 = 2048.0;
 const LEVEL_LEN: f32 = 1280.;
 
 pub const Z_FLOOR: f32 = -100.0;
@@ -73,10 +72,20 @@ pub enum EndScreenButtons{
     PlayAgain,
     MainMenu,
     Continue,
+    Leave,
 }
 
 #[derive(Component)]
 pub struct GameEntity;
+
+/// Set when all station rooms are cleared and the reaper is dead.
+/// The player must physically return to the airlock before the win screen appears.
+#[derive(Resource)]
+pub struct LevelComplete;
+
+/// Marker for the "Return to your ship" hint banner shown after LevelComplete.
+#[derive(Component)]
+pub struct ReturnHintUI;
 
 /// Tracks which station iteration the player is on (0 = first station).
 /// Each subsequent station has harder enemies.
@@ -140,6 +149,7 @@ fn main() {
                     ..default()
                 }),
         )
+        .insert_resource(bevy::render::camera::ClearColor(Color::srgb(0.02, 0.02, 0.06)))
         //Initial GameState
         .init_state::<GameState>()
         //Calls the plugin
@@ -186,6 +196,7 @@ fn main() {
 
         .add_systems(OnExit(GameState::Playing), clean_game)
         .add_systems(OnExit(GameState::Playing), stop_game_music)
+        .add_systems(OnExit(GameState::Playing), remove_level_complete)
         .add_systems(Update, handle_end_screen_buttons.run_if(in_state(GameState::GameOver)))
         .add_systems(Update, handle_end_screen_buttons.run_if(in_state(GameState::Win)))
         .add_systems(OnExit(GameState::GameOver), clean_end_screen)
@@ -207,6 +218,7 @@ fn main() {
                 damage_on_collision,
                 check_game_over,
                 check_win,
+                check_return_to_airlock,
             )
                 .run_if(in_state(GameState::Playing)),
         )
@@ -234,48 +246,92 @@ fn main() {
 
 fn check_win(
     mut commands: Commands,
+    rooms: Res<RoomVec>,
+    reaper_q: Query<(), With<enemies::Reaper>>,
+    level_complete: Option<Res<LevelComplete>>,
+    asset_server: Res<AssetServer>,
+){
+    // Only fire once.
+    if level_complete.is_some() { return; }
+
+    let cleared = rooms.0.iter().filter(|r| r.cleared).count();
+
+    // All rooms cleared AND the reaper is dead (or never spawned).
+    // The airlock is pre-cleared so it counts toward both sides equally.
+    if cleared == rooms.0.len() && reaper_q.is_empty() {
+        commands.insert_resource(LevelComplete);
+
+        // Show a hint banner telling the player to return to their ship.
+        let font: Handle<Font> = asset_server.load(
+            "fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf",
+        );
+        commands.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.0),
+                bottom: Val::Px(40.0),
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            ZIndex(15),
+            ReturnHintUI,
+            GameEntity,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Station cleared! Return to your ship."),
+                TextFont { font, font_size: 30.0, ..default() },
+                TextColor(Color::srgb(1.0, 1.0, 0.3)),
+            ));
+        });
+    }
+}
+
+/// Once LevelComplete is set, wait for the player to physically walk back
+/// into the airlock room before showing the win screen.
+fn check_return_to_airlock(
+    mut commands: Commands,
     mut next_state: ResMut<NextState<GameState>>,
     rooms: Res<RoomVec>,
     player_q: Query<(
         &Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon,
         &player::NumOfCleared, &player::Armor, &player::AirTank,
         &player::Regen, &player::Shield, &fluiddynamics::PulledByFluid,
+        &Transform,
     ), With<Player>>,
-    reaper_q: Query<(), With<enemies::Reaper>>,
-){
-    let mut count = 0;
+    level_complete: Option<Res<LevelComplete>>,
+) {
+    if level_complete.is_none() { return; }
 
-    for room in rooms.0.iter(){
-        if room.cleared{
-            count += 1;
-        }
-    }
+    let Ok((health, max_hp, move_spd, weapon, _num_cleared, armor, tank, regen, shield, pull, transform))
+        = player_q.single() else { return; };
 
-    // All rooms cleared AND the reaper is dead (or never spawned)
-    if count == rooms.0.len() && reaper_q.is_empty() {
-        // Save player buffs before transitioning (player will be despawned on exit)
-        if let Ok((health, max_hp, move_spd, weapon, _num_cleared, armor, tank, regen, shield, pull)) = player_q.single() {
-            commands.insert_resource(SavedPlayerBuffs {
-                max_health: max_hp.0,
-                health: health.0,
-                move_speed: move_spd.0,
-                fire_rate: weapon.fire_rate,
-                // Reset to 0 so the per-station enemy scaling formula
-                // (1 * rooms_cleared + base + station_bonus) starts fresh next station.
-                // The station_bonus on StationLevel already handles inter-station difficulty.
-                num_cleared: 0,
-                armor: armor.0,
-                air_tank_max: tank.max_capacity,
-                air_tank_drain_rate: tank.drain_rate,
-                weapon_damage: weapon.damage,
-                piercing_pickups: weapon.piercing_pickups,
-                regen_rate: regen.0,
-                shield_max: shield.max,
-                vacuum_mass: pull.mass,
-            });
-        }
-        next_state.set(GameState::Win);
-    }
+    let player_pos = transform.translation.truncate();
+    let in_airlock = rooms.0.iter().any(|r| r.is_airlock && r.bounds_check(player_pos));
+    if !in_airlock { return; }
+
+    // Player is back on their ship — save buffs and open the win screen.
+    commands.insert_resource(SavedPlayerBuffs {
+        max_health: max_hp.0,
+        health: health.0,
+        move_speed: move_spd.0,
+        fire_rate: weapon.fire_rate,
+        // Reset cleared count so per-station scaling starts fresh.
+        num_cleared: 0,
+        armor: armor.0,
+        air_tank_max: tank.max_capacity,
+        air_tank_drain_rate: tank.drain_rate,
+        weapon_damage: weapon.damage,
+        piercing_pickups: weapon.piercing_pickups,
+        regen_rate: regen.0,
+        shield_max: shield.max,
+        vacuum_mass: pull.mass,
+    });
+    next_state.set(GameState::Win);
+}
+
+fn remove_level_complete(mut commands: Commands) {
+    commands.remove_resource::<LevelComplete>();
 }
 
 fn load_win(
@@ -330,7 +386,7 @@ fn load_win(
             ));
         });
 
-        // Button column
+        // Button column — just two choices from the airlock
         root.spawn((
             Node {
                 width: Val::Percent(100.0),
@@ -347,7 +403,7 @@ fn load_win(
             },
         ))
         .with_children(|col|{
-            // Continue button (new station, keep buffs)
+            // Continue — board the next station, keep buffs
             col.spawn((
                 Button,
                 EndScreenButtons::Continue,
@@ -371,10 +427,10 @@ fn load_win(
                 ));
             });
 
-            // Play Again (full restart)
+            // Leave — fly home, return to main menu
             col.spawn((
                 Button,
-                EndScreenButtons::PlayAgain,
+                EndScreenButtons::Leave,
                 Node {
                     width: Val::Px(420.0),
                     height: Val::Px(60.0),
@@ -383,37 +439,13 @@ fn load_win(
                     padding: UiRect::all(Val::Px(8.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.7)),
-                BorderColor(Color::srgba(1.0, 1.0, 1.0, 0.4)),
+                BackgroundColor(Color::srgba(0.4, 0.05, 0.05, 0.85)),
+                BorderColor(Color::srgba(1.0, 0.3, 0.3, 0.8)),
                 BorderRadius::all(Val::Px(6.0)),
             ))
             .with_children(|b| {
                 b.spawn((
-                    Text::new("Restart (New Game)"),
-                    TextFont { font: font.clone(), font_size: 28.0, ..default() },
-                    TextColor(Color::WHITE),
-                ));
-            });
-
-            // Main Menu
-            col.spawn((
-                Button,
-                EndScreenButtons::MainMenu,
-                Node {
-                    width: Val::Px(420.0),
-                    height: Val::Px(60.0),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::Center,
-                    padding: UiRect::all(Val::Px(8.0)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.15, 0.15, 0.2, 0.7)),
-                BorderColor(Color::srgba(1.0, 1.0, 1.0, 0.4)),
-                BorderRadius::all(Val::Px(6.0)),
-            ))
-            .with_children(|b| {
-                b.spawn((
-                    Text::new("Main Menu"),
+                    Text::new("Leave"),
                     TextFont { font: font.clone(), font_size: 28.0, ..default() },
                     TextColor(Color::WHITE),
                 ));
@@ -685,6 +717,12 @@ fn handle_end_screen_buttons(
             }
             EndScreenButtons::MainMenu => {
                 // Full reset
+                station_level.0 = 0;
+                commands.remove_resource::<SavedPlayerBuffs>();
+                next_state.set(GameState::Menu);
+            }
+            EndScreenButtons::Leave => {
+                // Player chose to leave after clearing a station — full reset, back to menu.
                 station_level.0 = 0;
                 commands.remove_resource::<SavedPlayerBuffs>();
                 next_state.set(GameState::Menu);

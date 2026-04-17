@@ -28,6 +28,7 @@ pub struct RoomVec(pub Vec<Room>);
 pub struct Room{
     pub cleared: bool,
     pub visited: bool,
+    pub is_airlock: bool,
     pub doors:Vec<Entity>,
     pub numofenemies: usize,
     pub top_left_corner: Vec2,
@@ -44,6 +45,7 @@ impl Room{
         Self{
             cleared: false,
             visited: false,
+            is_airlock: false,
             doors:Vec::new(),
             numofenemies: 0,
             top_left_corner: tlc.clone(),
@@ -523,7 +525,7 @@ pub fn update_room_air_pressure(
 
 pub fn track_window_breaches(
     mut rooms: ResMut<RoomVec>,
-    windows: Query<(&Transform, &crate::window::GlassState), With<crate::window::Window>>,
+    windows: Query<(&Transform, &crate::window::GlassState), (With<crate::window::Window>, Changed<crate::window::GlassState>)>,
 ) {
     for (window_transform, glass_state) in windows.iter() {
         let window_pos = window_transform.translation.truncate();

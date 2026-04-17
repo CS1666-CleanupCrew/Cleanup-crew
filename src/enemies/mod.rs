@@ -271,15 +271,18 @@ fn table_hits_enemy(
         (With<Enemy>, Without<Reaper>),
     >,
     table_query: Query<
-        (&Transform, &Collider, Option<&Velocity>),
+        (&Transform, &Collider, Option<&Velocity>, &table::TableRoom),
         With<table::Table>,
     >,
+    active_room: Res<table::ActiveRoom>,
 ) {
+    let Some(active) = active_room.0 else { return; };
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
     for (enemy_tf, mut health) in &mut enemy_query {
         let enemy_pos = enemy_tf.translation.truncate();
-        for (table_tf, table_col, vel_opt) in &table_query {
+        for (table_tf, table_col, vel_opt, room) in &table_query {
+            if room.0 != active { continue; }
             let table_pos = table_tf.translation.truncate();
             let table_half = table_col.half_extents + Vec2::new(5.0, 5.0);
 
