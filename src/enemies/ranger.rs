@@ -72,6 +72,7 @@ pub fn spawn_at(
     at: Vec3,
     active: bool,
     health_multiplier: f32,
+    speed_bonus: f32,
 ) {
     let mut e = commands.spawn((
         Sprite::from_image(res.right_frames[0].clone()),
@@ -80,6 +81,7 @@ pub fn spawn_at(
         RangedEnemy,
         Velocity::new(),
         Health::new(40.0 * health_multiplier),
+        super::EnemyMoveSpeed(ENEMY_SPEED + speed_bonus),
         RangedAnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         RangedEnemyFrames {
             right: res.right_frames.clone(),
@@ -133,7 +135,7 @@ pub fn animate(
 pub fn ai(
     time: Res<Time>,
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI), With<RangedEnemy>>,
+    mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI, Option<&super::EnemyMoveSpeed>), With<RangedEnemy>>,
     mut shoot_writer: EventWriter<RangedEnemyShootEvent>,
     lvlstate: Res<LevelState>,
 ) {
@@ -145,7 +147,8 @@ pub fn ai(
         LevelState::NotRoom => 1.0,
     };
 
-    for (enemy_tf, mut vel, mut enemy_ai) in &mut enemies {
+    for (enemy_tf, mut vel, mut enemy_ai, spd_opt) in &mut enemies {
+        let max_speed = spd_opt.map_or(ENEMY_SPEED, |s| s.0);
         let scaled_dt = time.delta_secs() * difficulty_mult;
         enemy_ai.fire_cooldown.tick(Duration::from_secs_f32(scaled_dt));
 
@@ -160,7 +163,7 @@ pub fn ai(
         let move_dir = if delta > 20.0 { dir } else if delta < -20.0 { -dir } else { Vec2::ZERO };
 
         let accel = ENEMY_ACCEL * time.delta_secs();
-        vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(ENEMY_SPEED);
+        vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(max_speed);
 
         if enemy_ai.fire_cooldown.finished() && dist <= enemy_ai.range {
             shoot_writer.write(RangedEnemyShootEvent {

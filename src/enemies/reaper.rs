@@ -19,6 +19,9 @@ pub struct ReaperState {
     pub timer: Timer,
     pub current_room: Option<usize>,
     pub spawned_in_room: Option<usize>,
+    /// True when the reaper spawned in the last uncleared room.
+    /// Prevents auto-despawn on room-clear so the player must kill it.
+    pub spawned_in_final_room: bool,
 }
 
 impl Default for ReaperState {
@@ -27,6 +30,7 @@ impl Default for ReaperState {
             timer: Timer::from_seconds(7.0, TimerMode::Once),
             current_room: None,
             spawned_in_room: None,
+            spawned_in_final_room: false,
         }
     }
 }
@@ -130,6 +134,7 @@ fn reaper_room_timer(
     time: Res<Time>,
     mut state: ResMut<ReaperState>,
     lvlstate: Res<LevelState>,
+    rooms: Res<RoomVec>,
     mut commands: Commands,
     player_q: Query<&Transform, With<Player>>,
     reaper_res: Res<ReaperRes>,
@@ -156,6 +161,10 @@ fn reaper_room_timer(
                 if let Ok(player_tf) = player_q.single() {
                     let p = player_tf.translation;
                     let spawn_pos = p + Vec3::new(120.0, 0.0, Z_ENTITIES);
+                    // Mark whether this is the last uncleared room so cleanup
+                    // knows not to auto-despawn the reaper when the room clears.
+                    let uncleared = rooms.0.iter().filter(|r| !r.cleared).count();
+                    state.spawned_in_final_room = uncleared <= 1;
                     spawn_reaper(&mut commands, spawn_pos, &reaper_res);
                     spawn_reaper_warning(&mut commands, &assets);
                     state.spawned_in_room = Some(idx);
@@ -185,18 +194,13 @@ fn reaper_warning_lifecycle(
     }
 }
 
-fn is_final_room(lvlstate: &LevelState, rooms: &RoomVec) -> bool {
-    matches!(lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1
-}
-
 fn bullet_hits_reaper(
     mut commands: Commands,
     bullet_query: Query<(&Transform, Entity, &BulletOwner), With<Bullet>>,
     mut reaper_query: Query<(&Transform, &mut Health), With<Reaper>>,
-    lvlstate: Res<LevelState>,
-    rooms: Res<RoomVec>,
+    state: Res<ReaperState>,
 ) {
-    if !is_final_room(&lvlstate, &rooms) {
+    if !state.spawned_in_final_room {
         return;
     }
 
@@ -229,10 +233,9 @@ fn table_hits_reaper(
         (&Transform, &Collider, Option<&crate::enemies::Velocity>),
         With<table::Table>,
     >,
-    lvlstate: Res<LevelState>,
-    rooms: Res<RoomVec>,
+    state: Res<ReaperState>,
 ) {
-    if !is_final_room(&lvlstate, &rooms) {
+    if !state.spawned_in_final_room {
         return;
     }
 
@@ -269,25 +272,35 @@ fn reaper_cleanup_system(
         None
     };
 
-    if current_idx.is_none() {
-        for (entity, _) in &reaper_q {
-            commands.entity(entity).despawn();
-        }
-        state.current_room = None;
-        state.spawned_in_room = None;
-        state.timer.reset();
-        return;
-    }
+    let room_cleared = current_idx
+        .and_then(|idx| rooms.0.get(idx))
+        .map(|r| r.cleared)
+        .unwrap_or(false);
 
-    let idx = current_idx.unwrap();
-    let in_final_room = is_final_room(&lvlstate, &rooms);
-    let room_cleared = rooms.0.get(idx).map(|r| r.cleared).unwrap_or(false);
+    // Left the room (lvlstate became NotRoom after room cleared or player exited)
+    let left_room = current_idx.is_none();
 
     for (entity, health) in &reaper_q {
-        let should_despawn = (!in_final_room && room_cleared) || health.0 <= 0.0;
+        let is_dead = health.0 <= 0.0;
+
+        // Final-room reaper only dies when the player kills it — never auto-despawn.
+        // Non-final reapers auto-despawn when the room clears or the player leaves.
+        let should_despawn = is_dead
+            || (!state.spawned_in_final_room && (room_cleared || left_room));
+
         if should_despawn {
             commands.entity(entity).despawn();
             state.spawned_in_room = None;
+            if is_dead {
+                state.spawned_in_final_room = false;
+            }
         }
+    }
+
+    // Reset room tracking when leaving a non-final room
+    if left_room && !state.spawned_in_final_room {
+        state.current_room = None;
+        state.spawned_in_room = None;
+        state.timer.reset();
     }
 }

@@ -54,6 +54,7 @@ pub fn spawn_at(
     at: Vec3,
     active: bool,
     health_multiplier: f32,
+    speed_bonus: f32,
 ) {
     let mut e = commands.spawn((
         Sprite::from_image(res.frames[0].clone()),
@@ -61,6 +62,7 @@ pub fn spawn_at(
         Enemy,
         Velocity::new(),
         Health::new(50.0 * health_multiplier),
+        super::EnemyMoveSpeed(super::ENEMY_SPEED + speed_bonus),
         AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         EnemyFrames { handles: res.frames.clone(), index: 0 },
         PulledByFluid { mass: 10.0 },

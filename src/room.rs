@@ -325,6 +325,9 @@ pub fn generate_enemies_in_room(
     // Health multiplier: each station increases enemy health by 50%
     let health_multiplier = 1.0 + (station_level as f32) * 0.5;
 
+    // Speed bonus: +10 units per room cleared, giving a gradual ramp-up
+    let speed_bonus = rooms_cleared as f32 * 10.0;
+
     let height = room.layout.len() - 6;
     if height <= 0 { return None; }
     
@@ -411,9 +414,9 @@ pub fn generate_enemies_in_room(
         let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
         if spawn_idx % 4 == 2 {
-            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier);
+            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier, speed_bonus);
         } else {
-            spawn_enemy_at(&mut commands, enemy_res, pos, true, health_multiplier);
+            spawn_enemy_at(&mut commands, enemy_res, pos, true, health_multiplier, speed_bonus);
         }
         actually_spawned += 1;
         spawn_idx += 1;

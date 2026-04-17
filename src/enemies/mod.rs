@@ -30,6 +30,11 @@ pub(super) const ANIM_TIME: f32 = 0.2;
 
 // Shared components
 
+/// Per-entity top speed, set at spawn from base + rooms-cleared bonus.
+/// Systems fall back to ENEMY_SPEED when this component is absent.
+#[derive(Component)]
+pub struct EnemyMoveSpeed(pub f32);
+
 #[derive(Component)]
 pub struct Enemy;
 
@@ -117,6 +122,7 @@ fn move_enemy(
             &mut Velocity,
             Option<&crate::fluiddynamics::PulledByFluid>,
             Option<&ranger::RangedEnemy>,
+            Option<&EnemyMoveSpeed>,
         ),
         (With<Enemy>, With<ActiveEnemy>, Without<Reaper>),
     >,
@@ -134,7 +140,8 @@ fn move_enemy(
     let accel = ENEMY_ACCEL * deltat;
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
-    for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt) in &mut enemy_query {
+    for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt, spd_opt) in &mut enemy_query {
+        let max_speed = spd_opt.map_or(ENEMY_SPEED, |s| s.0);
         let mut effective_accel = accel;
         if grid_has_breach {
             effective_accel *= 0.15;
@@ -148,7 +155,7 @@ fn move_enemy(
 
             if dir_to_player.length() > 0.0 {
                 **enemy_velocity =
-                    (**enemy_velocity + dir_to_player * effective_accel).clamp_length_max(ENEMY_SPEED);
+                    (**enemy_velocity + dir_to_player * effective_accel).clamp_length_max(max_speed);
             } else if enemy_velocity.length() > effective_accel {
                 let vel = **enemy_velocity;
                 **enemy_velocity += vel.normalize_or_zero() * -effective_accel;
@@ -196,47 +203,11 @@ fn move_enemy(
 
 fn move_reaper_freely(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut Velocity), With<Reaper>>,
-    wall_grid: Res<crate::map::WallGrid>,
+    mut query: Query<(&mut Transform, &Velocity), With<Reaper>>,
 ) {
     let dt = time.delta_secs();
-    let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
-
-    for (mut tf, mut vel) in &mut query {
-        let change = vel.velocity * dt;
-        let mut pos = tf.translation;
-
-        if change.x != 0.0 {
-            let mut nx = pos.x + change.x;
-            for (wall_pos, wall_half) in wall_grid.nearby(Vec2::new(nx, pos.y), 3) {
-                if crate::player::aabb_overlap(nx, pos.y, enemy_half, wall_pos.x, wall_pos.y, wall_half) {
-                    nx = if change.x > 0.0 {
-                        wall_pos.x - (enemy_half.x + wall_half.x)
-                    } else {
-                        wall_pos.x + (enemy_half.x + wall_half.x)
-                    };
-                    vel.velocity.x = 0.0;
-                }
-            }
-            pos.x = nx;
-        }
-
-        if change.y != 0.0 {
-            let mut ny = pos.y + change.y;
-            for (wall_pos, wall_half) in wall_grid.nearby(Vec2::new(pos.x, ny), 3) {
-                if crate::player::aabb_overlap(pos.x, ny, enemy_half, wall_pos.x, wall_pos.y, wall_half) {
-                    ny = if change.y > 0.0 {
-                        wall_pos.y - (enemy_half.y + wall_half.y)
-                    } else {
-                        wall_pos.y + (enemy_half.y + wall_half.y)
-                    };
-                    vel.velocity.y = 0.0;
-                }
-            }
-            pos.y = ny;
-        }
-
-        tf.translation = pos;
+    for (mut tf, vel) in &mut query {
+        tf.translation += (vel.velocity * dt).extend(0.0);
     }
 }
 
