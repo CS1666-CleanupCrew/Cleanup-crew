@@ -213,7 +213,7 @@ fn move_reaper_freely(
 
 
 fn wall_correction_for_enemies(
-    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>)>,
+    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>, Without<Reaper>)>,
     wall_grid: Res<crate::map::WallGrid>,
 ) {
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
@@ -237,7 +237,7 @@ fn wall_correction_for_enemies(
 }
 
 fn collide_enemies_with_enemies(
-    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>)>,
+    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>, Without<Reaper>)>,
 ) {
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
     let max_dist2 = (ENEMY_SIZE * 4.0) * (ENEMY_SIZE * 4.0);

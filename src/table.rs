@@ -193,7 +193,7 @@ fn snap_out_of_walls(pos: &mut Vec3, half: Vec2, wall_grid: &crate::map::WallGri
     }
 }
 
-fn collide_tables_with_tables(
+pub fn collide_tables_with_tables(
     mut table_query: Query<(Entity, &mut Transform, &Collider, &Velocity, &TableRoom), With<Table>>,
     wall_grid: Res<crate::map::WallGrid>,
     active_room: Res<ActiveRoom>,
@@ -226,22 +226,27 @@ fn collide_tables_with_tables(
                 let overlap_x = (h1.x + h2.x) - (p1.x - p2.x).abs();
                 let overlap_y = (h1.y + h2.y) - (p1.y - p2.y).abs();
 
+                // Cap per-frame push to one tile so a fast table can't compress
+                // a player through a wall in a single step.
+                let max_push = crate::TILE_SIZE;
                 if overlap_x < overlap_y {
                     let sign = if p1.x > p2.x { 1.0 } else { -1.0 };
+                    let push = overlap_x.min(max_push);
                     if v1_sq >= v2_sq {
-                        t1_tf.translation.x += sign * overlap_x;
+                        t1_tf.translation.x += sign * push;
                         snap_out_of_walls(&mut t1_tf.translation, h1, &wall_grid);
                     } else {
-                        t2_tf.translation.x -= sign * overlap_x;
+                        t2_tf.translation.x -= sign * push;
                         snap_out_of_walls(&mut t2_tf.translation, h2, &wall_grid);
                     }
                 } else {
                     let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
+                    let push = overlap_y.min(max_push);
                     if v1_sq >= v2_sq {
-                        t1_tf.translation.y += sign * overlap_y;
+                        t1_tf.translation.y += sign * push;
                         snap_out_of_walls(&mut t1_tf.translation, h1, &wall_grid);
                     } else {
-                        t2_tf.translation.y -= sign * overlap_y;
+                        t2_tf.translation.y -= sign * push;
                         snap_out_of_walls(&mut t2_tf.translation, h2, &wall_grid);
                     }
                 }
