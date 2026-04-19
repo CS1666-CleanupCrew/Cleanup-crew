@@ -1,11 +1,17 @@
 use bevy::prelude::*;
-use crate::map::MapGridMeta;
+use std::collections::HashSet;
+use crate::map::{LevelRes, MapGridMeta};
 use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
 use crate::{GameEntity, GameState, TILE_SIZE};
 
 const MINIMAP_W: f32 = 420.0;
 const MINIMAP_H: f32 = 420.0;
+
+/// Coarse tile resolution for hallway fog-of-war (N tiles per tracked cell).
+const HALLWAY_CELL: usize = 3;
+/// Radius in coarse cells that the player "reveals" around themselves each frame.
+const REVEAL_RADIUS: i32 = 3;
 
 // Components
 
@@ -18,24 +24,39 @@ struct MinimapRoomNode {
 }
 
 #[derive(Component)]
+struct MinimapHallwayNode {
+    cell_col: i32,
+    cell_row: i32,
+}
+
+#[derive(Component)]
 struct MinimapPlayerDot;
 
-// Resource
+// Resources
 
 #[derive(Resource, Default)]
 pub struct MinimapVisible(pub bool);
 
-// Plugin 
+/// Coarse cells (col/HALLWAY_CELL, row/HALLWAY_CELL) that the player has explored.
+#[derive(Resource, Default)]
+pub struct VisitedCells(pub HashSet<(i32, i32)>);
+
+// Plugin
 
 pub struct MinimapPlugin;
 
 impl Plugin for MinimapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MinimapVisible>()
+            .init_resource::<VisitedCells>()
             .add_systems(OnEnter(GameState::Playing), setup_minimap)
             .add_systems(
                 Update,
                 toggle_minimap.run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                update_visited_cells.run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 Update,
@@ -46,11 +67,12 @@ impl Plugin for MinimapPlugin {
     }
 }
 
-// Setup 
+// Setup
 
 fn setup_minimap(
     mut commands: Commands,
     rooms: Res<RoomVec>,
+    level: Res<LevelRes>,
     grid: Res<MapGridMeta>,
     asset_server: Res<AssetServer>,
 ) {
@@ -59,9 +81,53 @@ fn setup_minimap(
     let world_min_x = -map_px_w * 0.5;
     let world_max_y = map_px_h * 0.5;
 
+    let cols = grid.cols;
+    let rows = grid.rows;
+
     let font: Handle<Font> = asset_server.load(
         "fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf",
     );
+
+    // Precompute which coarse cells are hallway cells (floor tile outside every room).
+    let mut hallway_cells: HashSet<(i32, i32)> = HashSet::new();
+    let level_rows = level.level.len();
+    let level_cols = level.level.first().map(|r| r.len()).unwrap_or(0);
+
+    for cell_row in 0..(rows / HALLWAY_CELL + 1) {
+        for cell_col in 0..(cols / HALLWAY_CELL + 1) {
+            let tile_col = cell_col * HALLWAY_CELL + HALLWAY_CELL / 2;
+            let tile_row = cell_row * HALLWAY_CELL + HALLWAY_CELL / 2;
+
+            if tile_row >= level_rows || tile_col >= level_cols {
+                continue;
+            }
+
+            let ch = level.level[tile_row].as_bytes().get(tile_col).copied().unwrap_or(b'.');
+            if ch != b'#' {
+                continue;
+            }
+
+            // Skip if the coarse cell's tile AABB overlaps any room (not just center tile).
+            let cell_x1 = cell_col * HALLWAY_CELL;
+            let cell_y1 = cell_row * HALLWAY_CELL;
+            let cell_x2 = cell_x1 + HALLWAY_CELL - 1;
+            let cell_y2 = cell_y1 + HALLWAY_CELL - 1;
+            let in_room = rooms.0.iter().any(|r| {
+                let rx1 = r.tile_top_left_corner.x as usize;
+                let ry1 = r.tile_top_left_corner.y as usize;
+                let rx2 = r.tile_bot_right_corner.x as usize;
+                let ry2 = r.tile_bot_right_corner.y as usize;
+                cell_x1 <= rx2 && cell_x2 >= rx1 && cell_y1 <= ry2 && cell_y2 >= ry1
+            });
+
+            if !in_room {
+                hallway_cells.insert((cell_col as i32, cell_row as i32));
+            }
+        }
+    }
+
+    let cell_w = (HALLWAY_CELL as f32 / cols as f32 * MINIMAP_W).max(2.0);
+    let cell_h = (HALLWAY_CELL as f32 / rows as f32 * MINIMAP_H).max(2.0);
 
     commands
         .spawn((
@@ -104,7 +170,7 @@ fn setup_minimap(
                 legend_item(leg, Color::srgb(0.15, 0.65, 0.15),      "Cleared");
             });
 
-            // Map panel — rooms are absolutely positioned inside this
+            // Map panel
             root.spawn((
                 Node {
                     width: Val::Px(MINIMAP_W),
@@ -114,20 +180,14 @@ fn setup_minimap(
                 BackgroundColor(Color::srgba(0.04, 0.04, 0.12, 1.0)),
             ))
             .with_children(|panel| {
+                // Room nodes
                 for (i, room) in rooms.0.iter().enumerate() {
                     let mini_x = (room.top_left_corner.x - world_min_x) / map_px_w * MINIMAP_W;
-                    let mini_y =
-                        (world_max_y - room.top_left_corner.y) / map_px_h * MINIMAP_H;
-                    let mini_w =
-                        ((room.bot_right_corner.x - room.top_left_corner.x).abs()
-                            / map_px_w
-                            * MINIMAP_W)
-                            .max(6.0);
-                    let mini_h =
-                        ((room.top_left_corner.y - room.bot_right_corner.y).abs()
-                            / map_px_h
-                            * MINIMAP_H)
-                            .max(6.0);
+                    let mini_y = (world_max_y - room.top_left_corner.y) / map_px_h * MINIMAP_H;
+                    let mini_w = ((room.bot_right_corner.x - room.top_left_corner.x).abs()
+                        / map_px_w * MINIMAP_W).max(6.0);
+                    let mini_h = ((room.top_left_corner.y - room.bot_right_corner.y).abs()
+                        / map_px_h * MINIMAP_H).max(6.0);
 
                     panel.spawn((
                         Node {
@@ -138,13 +198,35 @@ fn setup_minimap(
                             height: Val::Px(mini_h),
                             ..default()
                         },
-                        // Fog-of-war colour until visited
                         BackgroundColor(Color::srgba(0.2, 0.2, 0.2, 0.5)),
                         MinimapRoomNode { room_index: i },
                     ));
                 }
 
-                // Player dot — left/top updated every frame
+                // Hallway nodes (hidden until explored)
+                for (cell_col, cell_row) in &hallway_cells {
+                    let tile_col = *cell_col as usize * HALLWAY_CELL + HALLWAY_CELL / 2;
+                    let tile_row = *cell_row as usize * HALLWAY_CELL + HALLWAY_CELL / 2;
+
+                    let mini_x = (tile_col as f32 / cols as f32 * MINIMAP_W - cell_w * 0.5).max(0.0);
+                    let mini_y = (tile_row as f32 / rows as f32 * MINIMAP_H - cell_h * 0.5).max(0.0);
+
+                    panel.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(mini_x),
+                            top: Val::Px(mini_y),
+                            width: Val::Px(cell_w),
+                            height: Val::Px(cell_h),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)), // invisible until visited
+                        Visibility::Hidden,
+                        MinimapHallwayNode { cell_col: *cell_col, cell_row: *cell_row },
+                    ));
+                }
+
+                // Player dot
                 panel.spawn((
                     Node {
                         position_type: PositionType::Absolute,
@@ -162,7 +244,6 @@ fn setup_minimap(
         });
 }
 
-/// Small coloured square + label used in the legend row.
 fn legend_item(parent: &mut ChildSpawnerCommands, color: Color, label: &str) {
     parent
         .spawn((Node {
@@ -173,11 +254,7 @@ fn legend_item(parent: &mut ChildSpawnerCommands, color: Color, label: &str) {
         },))
         .with_children(|row| {
             row.spawn((
-                Node {
-                    width: Val::Px(12.0),
-                    height: Val::Px(12.0),
-                    ..default()
-                },
+                Node { width: Val::Px(12.0), height: Val::Px(12.0), ..default() },
                 BackgroundColor(color),
             ));
             row.spawn((
@@ -200,11 +277,37 @@ fn toggle_minimap(
     }
     visible.0 = !visible.0;
     if let Ok(mut vis) = root_q.single_mut() {
-        *vis = if visible.0 {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
+        *vis = if visible.0 { Visibility::Visible } else { Visibility::Hidden };
+    }
+}
+
+/// Marks coarse cells near the player as visited so hallways reveal on the minimap.
+fn update_visited_cells(
+    player_q: Query<&Transform, With<Player>>,
+    grid: Res<MapGridMeta>,
+    mut visited: ResMut<VisitedCells>,
+) {
+    let Ok(player_tf) = player_q.single() else { return };
+    let px = player_tf.translation.x;
+    let py = player_tf.translation.y;
+
+    let cols = grid.cols as f32;
+    let rows = grid.rows as f32;
+    let _map_px_w = cols * TILE_SIZE;
+    let _map_px_h = rows * TILE_SIZE;
+
+    // Convert player world pos to tile coordinates.
+    let tile_col = ((px - grid.x0) / TILE_SIZE).round() as i32;
+    // y0 is the world Y of the bottom tile; row 0 is the top tile.
+    let tile_row = (rows as i32 - 1) - ((py - grid.y0) / TILE_SIZE).round() as i32;
+
+    let coarse_col = tile_col / HALLWAY_CELL as i32;
+    let coarse_row = tile_row / HALLWAY_CELL as i32;
+
+    for dr in -REVEAL_RADIUS..=REVEAL_RADIUS {
+        for dc in -REVEAL_RADIUS..=REVEAL_RADIUS {
+            visited.0.insert((coarse_col + dc, coarse_row + dr));
+        }
     }
 }
 
@@ -213,7 +316,9 @@ fn update_minimap(
     player_q: Query<&Transform, With<Player>>,
     grid: Res<MapGridMeta>,
     lvlstate: Res<LevelState>,
-    mut room_nodes: Query<(&MinimapRoomNode, &mut BackgroundColor)>,
+    visited: Res<VisitedCells>,
+    mut room_nodes: Query<(&MinimapRoomNode, &mut BackgroundColor), Without<MinimapHallwayNode>>,
+    mut hallway_nodes: Query<(&MinimapHallwayNode, &mut BackgroundColor, &mut Visibility)>,
     mut player_dot: Query<&mut Node, With<MinimapPlayerDot>>,
 ) {
     let map_px_w = grid.cols as f32 * TILE_SIZE;
@@ -226,31 +331,35 @@ fn update_minimap(
         LevelState::NotRoom => None,
     };
 
+    // Update room nodes
     for (node, mut bg) in &mut room_nodes {
-        let Some(room) = rooms.0.get(node.room_index) else {
-            continue;
-        };
+        let Some(room) = rooms.0.get(node.room_index) else { continue };
         bg.0 = if current_room == Some(node.room_index) {
-            Color::srgba(1.0, 0.9, 0.0, 1.0)       // current room: bright yellow
+            Color::srgba(1.0, 0.9, 0.0, 1.0)
         } else if !room.visited {
-            Color::srgba(0.04, 0.04, 0.12, 1.0)        // fog of war
+            Color::srgba(0.04, 0.04, 0.12, 1.0)
         } else if room.cleared {
-            Color::srgba(0.15, 0.65, 0.15, 0.9)     // cleared: green
+            Color::srgba(0.15, 0.65, 0.15, 0.9)
         } else {
-            Color::srgba(0.04, 0.04, 0.12, 1.0)       // default color
+            Color::srgba(0.35, 0.35, 0.55, 0.9)
         };
     }
 
-    let Ok(player_tf) = player_q.single() else {
-        return;
-    };
+    // Update hallway nodes
+    for (node, mut bg, mut vis) in &mut hallway_nodes {
+        if visited.0.contains(&(node.cell_col, node.cell_row)) {
+            *vis = Visibility::Inherited; // inherits from parent MinimapRoot, hides when map closes
+            bg.0 = Color::srgba(0.30, 0.30, 0.45, 0.85);
+        }
+    }
+
+    // Update player dot
+    let Ok(player_tf) = player_q.single() else { return };
     let px = player_tf.translation.x;
     let py = player_tf.translation.y;
 
-    let dot_x =
-        ((px - world_min_x) / map_px_w * MINIMAP_W - 4.0).clamp(0.0, MINIMAP_W - 8.0);
-    let dot_y =
-        ((world_max_y - py) / map_px_h * MINIMAP_H - 4.0).clamp(0.0, MINIMAP_H - 8.0);
+    let dot_x = ((px - world_min_x) / map_px_w * MINIMAP_W - 4.0).clamp(0.0, MINIMAP_W - 8.0);
+    let dot_y = ((world_max_y - py) / map_px_h * MINIMAP_H - 4.0).clamp(0.0, MINIMAP_H - 8.0);
 
     if let Ok(mut node) = player_dot.single_mut() {
         node.left = Val::Px(dot_x);

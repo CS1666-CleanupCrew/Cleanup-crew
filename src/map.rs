@@ -22,6 +22,11 @@ impl Default for LevelToLoad {
     }
 }
 
+/// Level grid produced in-memory by procgen, avoiding a file write.
+/// `load_map` uses this instead of reading level.txt when running a generated level.
+#[derive(Resource, Default)]
+pub struct GeneratedLevel(pub Vec<String>);
+
 
 
 #[derive(Resource)]
@@ -155,11 +160,13 @@ fn z_from_y(y: f32) -> f32 {
     Z_FLOOR + 10.0 - y * 0.001
 }
 
-fn load_map(mut commands: Commands, asset_server: Res<AssetServer>,
-    level_to_load: ResMut<LevelToLoad>,) {
-    let mut level = LevelRes {
-        level: Vec::new(),
-    };
+fn load_map(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    level_to_load: ResMut<LevelToLoad>,
+    generated: Option<Res<GeneratedLevel>>,
+) {
+    let mut level = LevelRes { level: Vec::new() };
     let tiles = TileRes {
         floor: asset_server.load("map/floortile.png"),
         wall: asset_server.load("map/walls.png"),
@@ -170,14 +177,19 @@ fn load_map(mut commands: Commands, asset_server: Res<AssetServer>,
     };
     commands.insert_resource(tiles);
 
-    //Change this path for a different map
-    //info!("Loading map: {}", level_to_load.0);
-    let f = File::open(level_to_load.0.clone()).expect("file don't exist");
-    let reader = BufReader::new(f);
-
-    for line_result in reader.lines() {
-        let line = line_result.unwrap();
-        level.level.push(line);
+    let default_path = LevelToLoad::default().0;
+    if level_to_load.0 == default_path {
+        // Normal game: use the in-memory grid from procgen (no file I/O)
+        if let Some(lvl) = generated {
+            level.level = lvl.0.clone();
+        }
+    } else {
+        // Test room or other override: read from the specified file
+        let f = File::open(&level_to_load.0).expect("level file not found");
+        let reader = BufReader::new(f);
+        for line_result in reader.lines() {
+            level.level.push(line_result.unwrap());
+        }
     }
     commands.insert_resource(level);
 }

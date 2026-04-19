@@ -1,6 +1,6 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
-use bevy::{prelude::*, window::PresentMode, winit::WinitWindows};
+use bevy::{prelude::*, window::PresentMode};
 use bevy::audio::Volume;
 use crate::air::{init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break};
 use crate::room::RoomVec;
@@ -550,13 +550,10 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((Camera2d, MainCamera));
 }
 
-fn maximize_window(
-    windows: Query<Entity, With<bevy::window::PrimaryWindow>>,
-    winit_windows: NonSend<WinitWindows>,
-) {
-    let Ok(entity) = windows.single() else { return };
-    let Some(window) = winit_windows.get_window(entity) else { return };
-    window.set_maximized(true);
+fn maximize_window(mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>) {
+    if let Ok(mut window) = windows.single_mut() {
+        window.set_maximized(true);
+    }
 }
 
 fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>, station_level: Res<StationLevel>) {

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::app::AppExit;
 
 use crate::{GameState, GameMusicVolume, MusicTrack, ShowAirLabels};
 use crate::map::LevelToLoad;
@@ -27,6 +28,7 @@ enum MenuButton {
     Credits,
     Settings,
     ToggleAirLabels,
+    Quit,
 }
 
 #[derive(Component)]
@@ -199,11 +201,62 @@ fn setup_menu(
                         ));
                     });
 
-                    // Controls
+                    // Quit
                     col.spawn((
-                        Text::new("Controls: space or left click to shoot, M to toggle music, and B to use your broom!"),
-                        TextFont { font_size: 20.0, ..default() },
-                    ));
+                        Button,
+                        MenuButton::Quit,
+                        Node {
+                            width: Val::Px(420.0),
+                            height: Val::Px(60.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::all(Val::Px(8.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.3, 0.05, 0.05, 0.8)),
+                        BorderColor(Color::srgba(1.0, 0.3, 0.3, 0.5)),
+                        BorderRadius::all(Val::Px(6.0)),
+                    ))
+                    .with_children(|b| {
+                        b.spawn((
+                            Text::new("Quit"),
+                            TextFont { font_size: 28.0, ..default() },
+                        ));
+                    });
+
+                    // Controls reference
+                    col.spawn((
+                        Node {
+                            width: Val::Px(540.0),
+                            padding: UiRect::all(Val::Px(12.0)),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(4.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                        BorderRadius::all(Val::Px(6.0)),
+                    ))
+                    .with_children(|panel| {
+                        for line in [
+                            "Controls",
+                            "WASD — Move          Shift — Dash",
+                            "Left Click / Space — Shoot",
+                            "B — Broom (sweep, deflect bullets, fix windows)",
+                            "Tab — Toggle Minimap",
+                            "M — Toggle Music       Esc — Pause",
+                        ] {
+                            let size = if line == "Controls" { 18.0 } else { 15.0 };
+                            panel.spawn((
+                                Text::new(line),
+                                TextFont { font_size: size, ..default() },
+                                TextColor(if line == "Controls" {
+                                    Color::srgba(1.0, 1.0, 0.5, 1.0)
+                                } else {
+                                    Color::WHITE
+                                }),
+                            ));
+                        }
+                    });
                 });
         });
 }
@@ -244,6 +297,7 @@ fn handle_buttons(
     children_q: Query<&Children>,
     mut texts: Query<&mut Text, With<AirToggleText>>,
     mut level_to_load: ResMut<LevelToLoad>,
+    mut app_exit: EventWriter<AppExit>,
 ) {
     for (interaction, which, button_entity) in &mut interactions {
         if *interaction != Interaction::Pressed {
@@ -268,6 +322,9 @@ fn handle_buttons(
                     volume.0,
                     settings::SettingsOrigin::MainMenu,
                 );
+            }
+            MenuButton::Quit => {
+                app_exit.write(AppExit::Success);
             }
             MenuButton::ToggleAirLabels => {
                 // Flip the flag
