@@ -369,6 +369,7 @@ pub fn generate_enemies_in_room(
     // higher than the number of enemies that actually exist in the room.
     let mut actually_spawned: usize = 0;
     let mut spawn_idx: usize = 0; // separate counter so ranged ratio stays consistent
+    let mut valid_floors: Vec<(f32, f32)> = Vec::new();
     for (x, y) in floors.iter() {
         if actually_spawned >= scaled_num_enemies {
             break;
@@ -413,6 +414,7 @@ pub fn generate_enemies_in_room(
             continue;
         }
 
+        valid_floors.push((*x, *y));
         let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
         if spawn_idx % 4 == 2 {
@@ -435,13 +437,14 @@ pub fn generate_enemies_in_room(
 
     if let Some(s) = seed {
         let mut seeded = StdRng::seed_from_u64(s);
-        floors.shuffle(&mut seeded);
+        valid_floors.shuffle(&mut seeded);
     } else {
         let mut trng = rand::rng();
-        floors.shuffle(&mut trng);
+        valid_floors.shuffle(&mut trng);
     }
 
-    Some(Vec3::new(floors[0].0, floors[0].1, Z_ENTITIES))
+    let reward_tile = valid_floors.into_iter().next()?;
+    Some(Vec3::new(reward_tile.0, reward_tile.1, Z_ENTITIES))
 
     // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }

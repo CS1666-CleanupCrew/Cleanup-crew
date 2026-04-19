@@ -1,11 +1,12 @@
 use bevy::prelude::*;
 
-use crate::bullet::{Bullet, BulletOwner};
+use crate::bullet::{Bullet, BulletOwner, AnimationTimer, AnimationFrameCount};
 use crate::collidable::{Collidable, Collider};
 use crate::enemies::{ActiveEnemy, Enemy, Health, MaxHealth, RangedEnemy, RangedEnemyAI, Velocity, spawn_health_bar_children};
 use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
+use crate::weapon::{BulletDamage, EnemyBulletRes, WeaponSounds};
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::GameEntity;
 
@@ -40,6 +41,18 @@ pub struct ReaperRes {
     pub image: Handle<Image>,
 }
 
+// ── Bullet stats ───────────────────────────────────────────────────────────
+
+const REAPER_BULLET_DAMAGE: f32 = 20.0;
+const REAPER_BULLET_SCALE: f32 = 0.35;
+
+#[derive(Event)]
+pub struct ReaperShootEvent {
+    pub origin: Vec3,
+    pub direction: Vec2,
+    pub speed: f32,
+}
+
 /// Marker on the UI root node for the on-screen warning banner.
 #[derive(Component)]
 struct ReaperWarning {
@@ -53,12 +66,15 @@ pub struct ReaperPlugin;
 impl Plugin for ReaperPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ReaperState>()
+            .add_event::<ReaperShootEvent>()
             .add_systems(Startup, load_reaper_assets)
             .add_systems(
                 Update,
                 (
                     reaper_room_timer,
                     reaper_warning_lifecycle,
+                    reaper_ai,
+                    spawn_reaper_bullets.after(reaper_ai),
                     bullet_hits_reaper,
                     table_hits_reaper,
                     reaper_cleanup_system,
@@ -303,5 +319,79 @@ fn reaper_cleanup_system(
         state.current_room = None;
         state.spawned_in_room = None;
         state.timer.reset();
+    }
+}
+
+fn reaper_ai(
+    time: Res<Time>,
+    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut reapers: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI), With<Reaper>>,
+    mut shoot_writer: EventWriter<ReaperShootEvent>,
+) {
+    let Ok(player_tf) = player_query.single() else { return };
+    let player_pos = player_tf.translation.truncate();
+
+    for (tf, mut vel, mut ai) in &mut reapers {
+        ai.fire_cooldown.tick(time.delta());
+
+        let pos = tf.translation.truncate();
+        let diff = player_pos - pos;
+        let dist = diff.length();
+        if dist == 0.0 { continue; }
+
+        let dir = diff / dist;
+        let desired = ai.range * 0.75;
+        let delta = dist - desired;
+        let move_dir = if delta > 20.0 { dir } else if delta < -20.0 { -dir } else { Vec2::ZERO };
+
+        let accel = crate::enemies::ENEMY_ACCEL * time.delta_secs();
+        vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(crate::enemies::ENEMY_SPEED);
+
+        if ai.fire_cooldown.finished() && dist <= ai.range {
+            shoot_writer.write(ReaperShootEvent {
+                origin: tf.translation,
+                direction: dir,
+                speed: ai.projectile_speed,
+            });
+            ai.fire_cooldown.reset();
+        }
+    }
+}
+
+fn spawn_reaper_bullets(
+    mut commands: Commands,
+    mut events: EventReader<ReaperShootEvent>,
+    bullet_res: Res<EnemyBulletRes>,
+    weapon_sounds: Res<WeaponSounds>,
+) {
+    for ev in events.read() {
+        let dir = ev.direction.normalize_or_zero();
+        if dir == Vec2::ZERO { continue; }
+        let spawn_pos = ev.origin.truncate() + dir * 16.0;
+
+        commands.spawn((
+            Sprite::from_atlas_image(
+                bullet_res.0.clone(),
+                TextureAtlas { layout: bullet_res.1.clone(), index: 0 },
+            ),
+            Transform {
+                translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
+                scale: Vec3::splat(REAPER_BULLET_SCALE),
+                ..Default::default()
+            },
+            crate::bullet::Velocity(dir * ev.speed),
+            Bullet,
+            BulletOwner::Enemy,
+            Collider { half_extents: Vec2::splat(5.0) },
+            BulletDamage(REAPER_BULLET_DAMAGE),
+            AnimationTimer(Timer::from_seconds(0.15, TimerMode::Repeating)),
+            AnimationFrameCount(3),
+            GameEntity,
+        ));
+
+        commands.spawn((
+            AudioPlayer::new(weapon_sounds.laser.clone()),
+            PlaybackSettings::DESPAWN,
+        ));
     }
 }

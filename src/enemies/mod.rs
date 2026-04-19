@@ -10,7 +10,7 @@ pub use chaser::{
 };
 pub use ranger::{
     RangedAnimationTimer, RangedEnemy, RangedEnemyAI, RangedEnemyFrames,
-    RangedEnemyRes, RangedEnemyShootEvent, spawn_ranged_enemy_at,
+    RangedEnemyRes, RangerShootEvent, spawn_ranged_enemy_at,
 };
 pub use reaper::Reaper;
 
@@ -107,12 +107,13 @@ impl Plugin for EnemyPlugin {
         app.init_resource::<LastKillPos>()
             .add_systems(Startup, chaser::load)
             .add_systems(Startup, ranger::load)
-            .add_event::<RangedEnemyShootEvent>()
+            .add_event::<RangerShootEvent>()
             .add_systems(Update, chaser::animate.run_if(in_state(GameState::Playing)))
             .add_systems(
                 Update,
                 (
                     ranger::ai,
+                    ranger::spawn_ranger_bullets.after(ranger::ai),
                     move_enemy.after(ranger::ai),
                     move_reaper_freely.after(ranger::ai),
                     collide_enemies_with_enemies.after(move_enemy),
@@ -121,6 +122,7 @@ impl Plugin for EnemyPlugin {
                 )
                     .run_if(in_state(GameState::Playing)),
             )
+            .add_systems(Update, kill_enemies_outside_station.run_if(in_state(GameState::Playing)))
             .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
         .add_systems(Update, update_enemy_health_bars.run_if(in_state(GameState::Playing)))
             .add_systems(Update, chaser::animate_hit)
@@ -149,6 +151,24 @@ fn update_enemy_health_bars(
                 sprite.color = Color::srgb(r, g, 0.0);
                 tf.translation.x = fill_x;
             }
+        }
+    }
+}
+
+fn kill_enemies_outside_station(
+    grid_meta: Res<crate::map::MapGridMeta>,
+    mut enemy_query: Query<(&Transform, &mut Health), (With<Enemy>, Without<Reaper>)>,
+) {
+    let tile = crate::TILE_SIZE;
+    let x_min = grid_meta.x0 - tile * 0.5;
+    let x_max = grid_meta.x0 + grid_meta.cols as f32 * tile - tile * 0.5;
+    let y_min = grid_meta.y0 - tile * 0.5;
+    let y_max = grid_meta.y0 + grid_meta.rows as f32 * tile - tile * 0.5;
+
+    for (tf, mut hp) in &mut enemy_query {
+        let p = tf.translation;
+        if p.x < x_min || p.x > x_max || p.y < y_min || p.y > y_max {
+            hp.0 = 0.0;
         }
     }
 }

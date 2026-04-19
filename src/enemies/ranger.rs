@@ -4,7 +4,10 @@ use crate::GameEntity;
 use crate::fluiddynamics::PulledByFluid;
 use crate::player::Player;
 use crate::room::LevelState;
-use super::{Enemy, Velocity, ActiveEnemy, Health, MaxHealth, ENEMY_ACCEL, ENEMY_SPEED, ANIM_TIME, spawn_health_bar_children};
+use crate::collidable::Collider;
+use crate::bullet::{Bullet, BulletOwner, AnimationTimer, AnimationFrameCount};
+use crate::weapon::{BulletDamage, EnemyBulletRes, WeaponSounds};
+use super::{Enemy, Velocity, ActiveEnemy, Health, MaxHealth, ENEMY_ACCEL, ENEMY_SPEED, ANIM_TIME, spawn_health_bar_children, Reaper};
 
 // ── Components ─────────────────────────────────────────────────────────────
 
@@ -40,7 +43,7 @@ pub struct RangedEnemyRes {
 // ── Event ──────────────────────────────────────────────────────────────────
 
 #[derive(Event)]
-pub struct RangedEnemyShootEvent {
+pub struct RangerShootEvent {
     pub origin: Vec3,
     pub direction: Vec2,
     pub speed: f32,
@@ -138,8 +141,8 @@ pub fn animate(
 pub fn ai(
     time: Res<Time>,
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI, Option<&super::EnemyMoveSpeed>), With<RangedEnemy>>,
-    mut shoot_writer: EventWriter<RangedEnemyShootEvent>,
+    mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI, Option<&super::EnemyMoveSpeed>), (With<RangedEnemy>, Without<Reaper>)>,
+    mut shoot_writer: EventWriter<RangerShootEvent>,
     lvlstate: Res<LevelState>,
 ) {
     let Ok(player_tf) = player_query.single() else { return };
@@ -169,7 +172,7 @@ pub fn ai(
         vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(max_speed);
 
         if enemy_ai.fire_cooldown.finished() && dist <= enemy_ai.range {
-            shoot_writer.write(RangedEnemyShootEvent {
+            shoot_writer.write(RangerShootEvent {
                 origin: enemy_tf.translation,
                 direction: dir,
                 speed: enemy_ai.projectile_speed,
@@ -181,3 +184,46 @@ pub fn ai(
 
 // Alias for room.rs callers
 pub use spawn_at as spawn_ranged_enemy_at;
+
+// ── Bullet stats ───────────────────────────────────────────────────────────
+
+const RANGER_BULLET_DAMAGE: f32 = 10.0;
+const RANGER_BULLET_SCALE: f32 = 0.25;
+
+pub fn spawn_ranger_bullets(
+    mut commands: Commands,
+    mut events: EventReader<RangerShootEvent>,
+    bullet_res: Res<EnemyBulletRes>,
+    weapon_sounds: Res<WeaponSounds>,
+) {
+    for ev in events.read() {
+        let dir = ev.direction.normalize_or_zero();
+        if dir == Vec2::ZERO { continue; }
+        let spawn_pos = ev.origin.truncate() + dir * 16.0;
+
+        commands.spawn((
+            Sprite::from_atlas_image(
+                bullet_res.0.clone(),
+                TextureAtlas { layout: bullet_res.1.clone(), index: 0 },
+            ),
+            Transform {
+                translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
+                scale: Vec3::splat(RANGER_BULLET_SCALE),
+                ..Default::default()
+            },
+            crate::bullet::Velocity(dir * ev.speed),
+            Bullet,
+            BulletOwner::Enemy,
+            Collider { half_extents: Vec2::splat(5.0) },
+            BulletDamage(RANGER_BULLET_DAMAGE),
+            AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
+            AnimationFrameCount(3),
+            GameEntity,
+        ));
+
+        commands.spawn((
+            AudioPlayer::new(weapon_sounds.laser.clone()),
+            PlaybackSettings::DESPAWN,
+        ));
+    }
+}
