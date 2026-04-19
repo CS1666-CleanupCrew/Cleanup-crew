@@ -9,7 +9,6 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
-use std::io::{BufWriter, Write};
 use std::rc::Rc;
 
 #[derive(Event)]
@@ -290,6 +289,7 @@ pub fn load_rooms(mut commands: Commands) {
 }
 
 pub fn build_full_level(
+    mut commands: Commands,
     rooms: Res<RoomRes>,
     mut room_vec: ResMut<RoomVec>,
     window_cfg: Res<WindowConfig>,
@@ -339,14 +339,9 @@ pub fn build_full_level(
     debug!("Placed {} windows in this level.", window_count);
 
 
-    let f = File::create("assets/rooms/level.txt").expect("Couldn't create output file");
-    let mut writer = BufWriter::new(f);
-
-    for row in map {
-        let line: String = row.into_iter().collect();
-        writeln!(writer, "{line}").expect("Failed to write map row");
-    }
-    debug!("Finished writing to file.");
+    let rows: Vec<String> = map.into_iter().map(|row| row.into_iter().collect()).collect();
+    commands.insert_resource(crate::map::GeneratedLevel(rows));
+    debug!("Finished building level in memory.");
 }
 
 // map: mutable 2D vector representing the map tiles.
