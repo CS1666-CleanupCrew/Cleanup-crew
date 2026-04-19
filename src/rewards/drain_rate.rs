@@ -1,7 +1,7 @@
 use crate::player::AirTank;
 
 pub const NAME: &str = "Slower Air Drain";
-pub const ASSET: &str = "rewards/HeartBox.png"; // TODO: replace with real sprite
+pub const ASSET: &str = "rewards/DrainRate.png";
 
 pub fn apply(tank: &mut AirTank) {
     // 20% reduction per pickup, minimum 0.2 units/sec

@@ -28,6 +28,7 @@ pub struct RoomVec(pub Vec<Room>);
 pub struct Room{
     pub cleared: bool,
     pub visited: bool,
+    pub is_airlock: bool,
     pub doors:Vec<Entity>,
     pub numofenemies: usize,
     pub top_left_corner: Vec2,
@@ -44,6 +45,7 @@ impl Room{
         Self{
             cleared: false,
             visited: false,
+            is_airlock: false,
             doors:Vec::new(),
             numofenemies: 0,
             top_left_corner: tlc.clone(),
@@ -325,6 +327,9 @@ pub fn generate_enemies_in_room(
     // Health multiplier: each station increases enemy health by 50%
     let health_multiplier = 1.0 + (station_level as f32) * 0.5;
 
+    // Speed bonus: +10 units per room cleared, giving a gradual ramp-up
+    let speed_bonus = rooms_cleared as f32 * 10.0;
+
     let height = room.layout.len() - 6;
     if height <= 0 { return None; }
     
@@ -364,6 +369,7 @@ pub fn generate_enemies_in_room(
     // higher than the number of enemies that actually exist in the room.
     let mut actually_spawned: usize = 0;
     let mut spawn_idx: usize = 0; // separate counter so ranged ratio stays consistent
+    let mut valid_floors: Vec<(f32, f32)> = Vec::new();
     for (x, y) in floors.iter() {
         if actually_spawned >= scaled_num_enemies {
             break;
@@ -408,12 +414,13 @@ pub fn generate_enemies_in_room(
             continue;
         }
 
+        valid_floors.push((*x, *y));
         let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
         if spawn_idx % 4 == 2 {
-            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier);
+            spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier, speed_bonus);
         } else {
-            spawn_enemy_at(&mut commands, enemy_res, pos, true, health_multiplier);
+            spawn_enemy_at(&mut commands, enemy_res, pos, true, health_multiplier, speed_bonus);
         }
         actually_spawned += 1;
         spawn_idx += 1;
@@ -430,13 +437,14 @@ pub fn generate_enemies_in_room(
 
     if let Some(s) = seed {
         let mut seeded = StdRng::seed_from_u64(s);
-        floors.shuffle(&mut seeded);
+        valid_floors.shuffle(&mut seeded);
     } else {
         let mut trng = rand::rng();
-        floors.shuffle(&mut trng);
+        valid_floors.shuffle(&mut trng);
     }
 
-    Some(Vec3::new(floors[0].0, floors[0].1, Z_ENTITIES))
+    let reward_tile = valid_floors.into_iter().next()?;
+    Some(Vec3::new(reward_tile.0, reward_tile.1, Z_ENTITIES))
 
     // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }
@@ -520,7 +528,7 @@ pub fn update_room_air_pressure(
 
 pub fn track_window_breaches(
     mut rooms: ResMut<RoomVec>,
-    windows: Query<(&Transform, &crate::window::GlassState), With<crate::window::Window>>,
+    windows: Query<(&Transform, &crate::window::GlassState), (With<crate::window::Window>, Changed<crate::window::GlassState>)>,
 ) {
     for (window_transform, glass_state) in windows.iter() {
         let window_pos = window_transform.translation.truncate();

@@ -153,8 +153,8 @@ impl Plugin for PlayerPlugin {
             .add_systems(OnEnter(GameState::Playing), spawn_player.after(load_player))
             .add_systems(Update, regen_system.run_if(in_state(GameState::Playing)))
             .add_systems(Update, thruster_regen_system.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, thruster_dodge_system.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, move_player.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, thruster_dodge_system.run_if(in_state(GameState::Playing)).run_if(not(resource_exists::<crate::pause::IsPaused>)))
+            .add_systems(Update, move_player.run_if(in_state(GameState::Playing)).run_if(not(resource_exists::<crate::pause::IsPaused>)))
             .add_systems(Update, update_player_sprite.run_if(in_state(GameState::Playing)))
             .add_systems(Update, apply_breach_force_to_player.after(move_player).run_if(in_state(GameState::Playing)))
             // .add_systems(Update, move_bullet.run_if(in_state(GameState::Playing)))
@@ -162,7 +162,10 @@ impl Plugin for PlayerPlugin {
             // .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
             .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
             .add_systems(Update, table_hits_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, wall_collision_correction.after(apply_breach_force_to_player).run_if(in_state(GameState::Playing)))
+            .add_systems(Update, wall_collision_correction
+                .after(apply_breach_force_to_player)
+                .after(table::collide_tables_with_tables)
+                .run_if(in_state(GameState::Playing)))
 
             ;
     }
@@ -619,25 +622,18 @@ fn regen_system(
 
 fn table_hits_player(
     _time: Res<Time>,
-    mut player_query: Query<(&Transform, &mut Health, &mut DamageTimer, &Armor, &mut Shield), With<Player>>,
+    mut player_query: Query<(&Transform, &mut Velocity, &mut Health, &mut DamageTimer, &Armor, &mut Shield), With<Player>>,
     table_query: Query<(&Transform, &Collider, Option<&crate::enemies::Velocity>), With<table::Table>>,
 ) {
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
 
-    for (player_tf, mut health, mut dmg_timer, armor, mut shield) in &mut player_query {
-        // DamageTimer is already ticked by enemy_hits_player; do not tick again here.
+    for (player_tf, mut player_vel, mut health, mut dmg_timer, armor, mut shield) in &mut player_query {
         let player_pos = player_tf.translation.truncate();
-
-        // cannot damage again until timer finished
-        if !dmg_timer.0.finished() {
-            continue;
-        }
 
         for (table_tf, table_col, vel_opt) in &table_query {
             let table_pos = table_tf.translation.truncate();
 
-            // expand table hitbox for damage (tweak these values)
-            let extra = Vec2::new(5.0, 5.0); // much smaller than 200
+            let extra = Vec2::new(5.0, 5.0);
             let table_half = table_col.half_extents + extra;
 
             if aabb_overlap(
@@ -648,30 +644,25 @@ fn table_hits_player(
                 table_pos.y,
                 table_half,
             ) {
-                // Get speed from crate::enemies::Velocity (which stores Vec2 in `.velocity`)
-                let speed = vel_opt.map(|v| v.velocity.length()).unwrap_or(0.0);
+                let table_velocity = vel_opt.map(|v| v.velocity).unwrap_or(Vec2::ZERO);
+                let speed = table_velocity.length();
 
-                // Only damage the player if the table is actually moving fast enough
                 let threshold = 5.0;
                 if speed > threshold {
-                    if shield.current >= 1.0 {
-                        shield.current -= 1.0;
-                    } else {
-                        // Damage scales with speed, reduced by armor
-                        let dmg = speed * 0.02 * armor_factor(armor.0);
-                        health.0 -= dmg;
-                    }
-                    dmg_timer.0.reset();
+                    let push_dir = table_velocity.normalize_or_zero();
+                    //  change the last var below in order to tune the speed the table pushes the player.
+                    let impulse = push_dir * speed * 0.1;
+                    **player_vel = (**player_vel + impulse).clamp_length_max(PLAYER_SPEED * 3.0);
 
-                    debug!(
-                        "Player hit by TABLE at {:?}, speed={:.2}, player health now {:.2}",
-                        table_pos, speed, health.0
-                    );
-                } else {
-                    debug!(
-                        "Table overlap but speed {:.2} <= {:.2}, no damage (table_pos={:?})",
-                        speed, threshold, table_pos
-                    );
+                    if dmg_timer.0.finished() {
+                        if shield.current >= 1.0 {
+                            shield.current -= 1.0;
+                        } else {
+                            let dmg = speed * 0.02 * armor_factor(armor.0);
+                            health.0 -= dmg;
+                        }
+                        dmg_timer.0.reset();
+                    }
                 }
             }
         }
@@ -758,14 +749,14 @@ fn wall_correction(pos: &mut Vec2, player_half: Vec2, walls: &[(Vec2, Vec2)]) {
 fn wall_collision_correction(
     mut player_q: Query<&mut Transform, With<Player>>,
     wall_grid: Res<crate::map::WallGrid>,
-    dynamic_q: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<crate::map::WallTile>)>,
+    dynamic_q: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<crate::map::WallTile>, Without<table::Table>)>,
 ) {
     let Ok(mut player_tf) = player_q.single_mut() else { return };
 
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
     let mut player_pos = player_tf.translation.truncate();
 
-    // Collect only nearby walls from the spatial hash + any dynamic obstacles.
+    // Collect only nearby walls from the spatial hash + any dynamic obstacles (not tables).
     let mut walls: Vec<(Vec2, Vec2)> = wall_grid.nearby(player_pos, 4);
     for (tf, col) in &dynamic_q {
         walls.push((tf.translation.truncate(), col.half_extents));
@@ -809,6 +800,6 @@ fn thruster_dodge_system(
     let dir = (world_pos - player_pos).normalize_or_zero();
     if dir == Vec2::ZERO { return; }
 
-    velocity.0 = dir * 800.0;
+    velocity.0 = dir * 1000.0;
     fuel.current -= 1.0;
 }

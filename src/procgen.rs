@@ -294,11 +294,13 @@ pub fn build_full_level(
     mut room_vec: ResMut<RoomVec>,
     window_cfg: Res<WindowConfig>,
 ) {
-    // +40 and +20 are edge padding kept clear for wall generation
-    const MAP_W: usize = 200 + 40;
-    const MAP_H: usize = 200 + 20;
-    const MIN_LEAF_SIZE: usize = 35;
-    const MIN_ROOM_SIZE: usize = 24;
+    // +40 and +20 are edge padding kept clear for wall generation.
+    // BSP area is MAP_W-40 × MAP_H-20.  MIN_LEAF_SIZE scaled proportionally
+    // to the larger area keeps the expected room count the same as before.
+    const MAP_W: usize = 250 + 40;   // was 200+40
+    const MAP_H: usize = 250 + 20;   // was 200+20
+    const MIN_LEAF_SIZE: usize = 44;  // was 35  (35 * 250/200 ≈ 44)
+    const MIN_ROOM_SIZE: usize = 30;  // was 24  (slightly larger rooms)
     let seed: u64 = random_range(0..u64::MAX);
 
     // full map of '.'
@@ -314,6 +316,11 @@ pub fn build_full_level(
         &mut room_vec,
     );
     debug!("Finished BSP generation.");
+
+    // Add the player's boarding airlock room before wall generation so
+    // generate_walls handles airlock borders automatically.
+    add_airlock_room(&mut map, &mut room_vec);
+    debug!("Finished airlock placement.");
 
     generate_walls(&mut map);
     debug!("Finished wall generation.");
@@ -691,6 +698,95 @@ pub fn generate_tables_from_grid(
     floors.into_iter().take(max_tables).collect()
 }
 
+/// Generate table positions per room using geometric patterns (rows, clusters,
+/// paired rows) instead of fully random placement.  Each non-airlock room gets
+/// 1–2 independent table groups so the result looks intentionally furnished.
+pub fn generate_shaped_tables(rooms: &RoomVec, grid: &[String], seed: Option<u64>) -> TablePositions {
+    let mut out = TablePositions::new();
+    let seed_val = seed.unwrap_or_else(|| random_range(0..u64::MAX));
+    let mut rng = StdRng::seed_from_u64(seed_val);
+
+    let grows = grid.len();
+    let gcols = if grows > 0 { grid[0].len() } else { return out; };
+
+    // Returns true if (x,y) is a floor tile in the full level grid.
+    let is_floor = |x: usize, y: usize| -> bool {
+        y < grows && x < gcols && grid[y].as_bytes().get(x).copied() == Some(b'#')
+    };
+
+    for room in &rooms.0 {
+        if room.is_airlock { continue; }
+
+        let rx1 = room.tile_top_left_corner.x as usize;
+        let ry1 = room.tile_top_left_corner.y as usize;
+        let rx2 = room.tile_bot_right_corner.x as usize;
+        let ry2 = room.tile_bot_right_corner.y as usize;
+
+        // Inset 2 tiles from each edge so tables don't sit against walls.
+        let ix1 = rx1 + 2;
+        let iy1 = ry1 + 2;
+        let ix2 = rx2.saturating_sub(2);
+        let iy2 = ry2.saturating_sub(2);
+
+        // Room interior must be large enough to fit at least one pattern.
+        if ix2 <= ix1 + 2 || iy2 <= iy1 + 2 { continue; }
+
+        let num_groups = rng.random_range(1u32..=2);
+
+        for _ in 0..num_groups {
+            match rng.random_range(0u32..3) {
+                // ── Pattern 0: single horizontal row of 3–5 tables ──────────────
+                0 => {
+                    let y = rng.random_range(iy1..=iy2);
+                    let row_xs: Vec<usize> = (ix1..=ix2).filter(|&x| is_floor(x, y)).collect();
+                    if row_xs.len() < 3 { continue; }
+                    let count = rng.random_range(3usize..=row_xs.len().min(5));
+                    let start = rng.random_range(0..=row_xs.len() - count);
+                    for &x in &row_xs[start..start + count] {
+                        out.insert((x, y));
+                    }
+                }
+
+                // ── Pattern 1: 2×N or N×2 compact cluster (desk island) ─────────
+                1 => {
+                    let max_ax = if ix2 > ix1 + 1 { ix2 - 1 } else { continue };
+                    let max_ay = if iy2 > iy1 { iy2 - 1 } else { continue };
+                    let ax = rng.random_range(ix1..=max_ax);
+                    let ay = rng.random_range(iy1..=max_ay);
+                    let cols = rng.random_range(2usize..=3).min(ix2 - ax + 1);
+                    let rows = rng.random_range(2usize..=3).min(iy2 - ay + 1);
+                    let group: Vec<(usize, usize)> = (0..rows)
+                        .flat_map(|dy| (0..cols).map(move |dx| (ax + dx, ay + dy)))
+                        .filter(|&(x, y)| is_floor(x, y))
+                        .collect();
+                    if group.len() >= 3 {
+                        for pos in group { out.insert(pos); }
+                    }
+                }
+
+                // ── Pattern 2: two parallel rows (cafeteria / lab bench) ─────────
+                _ => {
+                    if iy2 < iy1 + 3 { continue; }
+                    let y_a = rng.random_range(iy1..=iy2 - 2);
+                    let y_b = y_a + 2; // one-tile aisle between the rows
+                    let count = rng.random_range(2usize..=4);
+                    for &y_row in &[y_a, y_b] {
+                        let row_xs: Vec<usize> = (ix1..=ix2).filter(|&x| is_floor(x, y_row)).collect();
+                        if row_xs.len() < 2 { continue; }
+                        let actual = count.min(row_xs.len());
+                        let start = rng.random_range(0..=row_xs.len() - actual);
+                        for &x in &row_xs[start..start + actual] {
+                            out.insert((x, y_row));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out
+}
+
 // turns empty space . into wall W if it touches floor #
 pub fn generate_walls(map: &mut Vec<Vec<char>>) {
     let rows = map.len();
@@ -776,6 +872,131 @@ fn extract_consecutive_runs(sorted: &[usize]) -> Vec<Vec<usize>> {
     }
     runs.push(current);
     runs
+}
+
+/// Attach a small airlock room to the top of the map, connected via a corridor
+/// to the nearest floor tile below it.  The player spawns here (via the 'S'
+/// marker) and returns here at the end of the level to choose Leave / Continue.
+/// The room is pre-marked `cleared = true` and `is_airlock = true` so the combat
+/// system never triggers inside it.
+pub fn add_airlock_room(map: &mut Vec<Vec<char>>, room_vec: &mut RoomVec) {
+    const AIRLOCK_W: usize = 14;
+    const AIRLOCK_H: usize = 7;
+
+    let map_rows = map.len();
+    let map_cols = map[0].len();
+    let center_col = map_cols / 2;
+
+    // Find the topmost floor tile near the horizontal center so the corridor
+    // has a guaranteed connection to the main dungeon.
+    let mut connect_col = center_col;
+    let mut connect_row = map_rows / 2; // safe fallback
+    'search: for row in 0..map_rows {
+        for radius in 0..60usize {
+            for &col in &[center_col.saturating_add(radius), center_col.saturating_sub(radius)] {
+                if col < map_cols && map[row][col] == '#' {
+                    connect_col = col;
+                    connect_row = row;
+                    break 'search;
+                }
+            }
+        }
+    }
+
+    // Place the airlock so its bottom border row is just above the corridor start.
+    // Leave at least 1 row gap so generate_walls can form a clean outer wall.
+    let airlock_y = if connect_row >= AIRLOCK_H + 2 {
+        connect_row - AIRLOCK_H - 2
+    } else {
+        1 // clamp to top of map (row 0 is always border)
+    };
+    let airlock_y = airlock_y.max(1);
+
+    // Center the airlock horizontally over the connection column.
+    let airlock_x = if connect_col >= AIRLOCK_W / 2 {
+        (connect_col - AIRLOCK_W / 2).min(map_cols - AIRLOCK_W - 1)
+    } else {
+        1
+    };
+
+    let airlock_end_y = airlock_y + AIRLOCK_H; // exclusive bottom row
+
+    // Spawn point: centre of the interior (will land the player inside on load).
+    let spawn_col = airlock_x + AIRLOCK_W / 2;
+    let spawn_row = airlock_y + AIRLOCK_H / 2;
+
+    // Write the airlock interior and '.' borders (borders become 'W' in generate_walls).
+    for row in airlock_y..airlock_end_y {
+        for col in airlock_x..airlock_x + AIRLOCK_W {
+            if row >= map_rows || col >= map_cols { continue; }
+            let is_border = row == airlock_y || row == airlock_end_y - 1
+                || col == airlock_x || col == airlock_x + AIRLOCK_W - 1;
+            if !is_border {
+                if row == spawn_row && col == spawn_col {
+                    map[row][col] = 'S';
+                } else {
+                    map[row][col] = '#';
+                }
+            }
+            // border tiles stay '.' so generate_walls turns them into 'W'
+        }
+    }
+
+    // Open a 3-tile-wide passage through the bottom border so the corridor
+    // can connect flush with the rest of the dungeon.
+    let corridor_center = airlock_x + AIRLOCK_W / 2;
+    for dc in 0..3usize {
+        let col = corridor_center - 1 + dc;
+        if col < map_cols {
+            map[airlock_end_y - 1][col] = '#'; // open bottom border
+        }
+    }
+
+    // Carve a 3-wide corridor from just below the airlock down to the first
+    // floor tile we found earlier.
+    for row in airlock_end_y..=connect_row {
+        for dc in 0..3usize {
+            let col = corridor_center - 1 + dc;
+            if col < map_cols && row < map_rows && map[row][col] == '.' {
+                map[row][col] = '#';
+            }
+        }
+    }
+
+    // Compute world and tile bounds (same formula used by write_room).
+    let map_center_x = map_cols as f32 / 2.0;
+    let map_center_y = map_rows as f32 / 2.0;
+
+    let world_tlx = (airlock_x as f32 - map_center_x) * TILE_SIZE;
+    let world_tly = -(airlock_y as f32 - map_center_y) * TILE_SIZE;
+    let world_brx = world_tlx + AIRLOCK_W as f32 * TILE_SIZE;
+    let world_bry = world_tly - AIRLOCK_H as f32 * TILE_SIZE;
+
+    // Build layout snapshot (used by air-pressure system).
+    let mut layout = Vec::with_capacity(AIRLOCK_H);
+    for row in airlock_y..airlock_end_y {
+        let mut line = String::with_capacity(AIRLOCK_W);
+        for col in airlock_x..airlock_x + AIRLOCK_W {
+            line.push(if row < map_rows && col < map_cols { map[row][col] } else { '.' });
+        }
+        layout.push(line);
+    }
+
+    use crate::room::create_room;
+    create_room(
+        Vec2::new(world_tlx, world_tly),
+        Vec2::new(world_brx, world_bry),
+        Vec2::new(airlock_x as f32, airlock_y as f32),
+        Vec2::new((airlock_x + AIRLOCK_W - 1) as f32, (airlock_y + AIRLOCK_H - 1) as f32),
+        room_vec,
+        layout,
+    );
+
+    // Mark the airlock as pre-cleared so combat never triggers there.
+    if let Some(room) = room_vec.0.last_mut() {
+        room.cleared = true;
+        room.is_airlock = true;
+    }
 }
 
 pub fn place_windows<R: Rng>(

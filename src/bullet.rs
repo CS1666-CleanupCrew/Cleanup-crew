@@ -1,6 +1,5 @@
 use crate::Player;
 use crate::collidable::Collider;
-use crate::enemies::RangedEnemyShootEvent;
 use crate::player::{Health, MaxHealth, MoveSpeed, Shield};
 use crate::room::{LevelState, RoomVec};
 use crate::weapon::{BulletDamage, BulletRes, Weapon, WeaponSounds};
@@ -39,7 +38,7 @@ pub struct Velocity(pub Vec2);
 
 impl Plugin for BulletPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, shoot_bullet_on_click) // Mouse shooting
+        app.add_systems(Update, shoot_bullet_on_click.run_if(in_state(GameState::Playing)).run_if(not(resource_exists::<crate::pause::IsPaused>))) // Mouse shooting
             .add_systems(Update, move_bullets.run_if(in_state(GameState::Playing)))
             .add_systems(
                 Update,
@@ -55,10 +54,7 @@ impl Plugin for BulletPlugin {
                     .after(move_bullets)
                     .run_if(in_state(GameState::Playing)),
             )
-            .add_systems(
-                Update,
-                spawn_bullets_from_ranged.run_if(in_state(GameState::Playing)),
-            );
+        ;
     }
 }
 
@@ -145,54 +141,6 @@ pub fn shoot_bullet_on_click(
         ));
 
         weapon.reset_timer();
-    }
-}
-
-// Enemy shooting
-pub fn spawn_bullets_from_ranged(
-    mut commands: Commands,
-    mut events: EventReader<RangedEnemyShootEvent>,
-    bullet_res: Res<BulletRes>,
-    weapon_sounds: Res<WeaponSounds>,
-) {
-    for ev in events.read() {
-        let origin = ev.origin;
-        let dir = ev.direction.normalize_or_zero();
-        if dir == Vec2::ZERO {
-            continue;
-        }
-
-        let spawn_pos = origin.truncate() + dir * 16.0;
-
-        commands.spawn((
-            Sprite::from_atlas_image(
-                bullet_res.0.clone(),
-                TextureAtlas {
-                    layout: bullet_res.1.clone(),
-                    index: 0,
-                },
-            ),
-            Transform {
-                translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
-                rotation: Quat::IDENTITY,
-                scale: Vec3::splat(0.25),
-            },
-            Velocity(dir * ev.speed),
-            Bullet,
-            BulletOwner::Enemy,
-            Collider {
-                half_extents: Vec2::splat(5.0),
-            },
-            BulletDamage(10.0), // Enemy bullet damage
-            AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
-            AnimationFrameCount(3),
-            GameEntity,
-        ));
-
-        commands.spawn((
-            AudioPlayer::new(weapon_sounds.laser.clone()),
-            PlaybackSettings::DESPAWN,
-        ));
     }
 }
 

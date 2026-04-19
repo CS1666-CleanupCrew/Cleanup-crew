@@ -1,7 +1,8 @@
 use bevy::prelude::*;
 
-use crate::{GameState, ShowAirLabels};
+use crate::{GameState, GameMusicVolume, MusicTrack, ShowAirLabels};
 use crate::map::LevelToLoad;
+use crate::settings;
 
 pub struct MenuPlugin;
 
@@ -24,6 +25,7 @@ enum MenuButton {
     Play,
     PlayTestRoom,
     Credits,
+    Settings,
     ToggleAirLabels,
 }
 
@@ -111,6 +113,29 @@ fn setup_menu(
                         ImageNode::new(assets.load("menu/Title_Credits.png")),
                     ));
 
+                    // Settings
+                    col.spawn((
+                        Button,
+                        MenuButton::Settings,
+                        Node {
+                            width: Val::Px(420.0),
+                            height: Val::Px(60.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::all(Val::Px(8.0)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.1, 0.1, 0.3, 0.8)),
+                        BorderColor(Color::srgba(0.4, 0.4, 1.0, 0.5)),
+                        BorderRadius::all(Val::Px(6.0)),
+                    ))
+                    .with_children(|b| {
+                        b.spawn((
+                            Text::new("Settings"),
+                            TextFont { font_size: 28.0, ..default() },
+                        ));
+                    });
+
                     // Test Room Button (Text-based) – now BELOW Credits
                     col.spawn((
                         Button,
@@ -193,6 +218,7 @@ fn start_menu_music(
         AudioPlayer::new(music_handle),
         PlaybackSettings::LOOP,
         MenuMusic,
+        MusicTrack,
     ));
     
     debug!("Menu music started");
@@ -209,6 +235,9 @@ fn stop_menu_music(
 }
 
 fn handle_buttons(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    volume: Res<GameMusicVolume>,
     mut interactions: Query<(&Interaction, &MenuButton, Entity), (Changed<Interaction>, With<Button>)>,
     mut next_state: ResMut<NextState<GameState>>,
     mut show_labels: ResMut<ShowAirLabels>,
@@ -231,6 +260,14 @@ fn handle_buttons(
             }
             MenuButton::Credits => {
                 next_state.set(GameState::EndCredits);
+            }
+            MenuButton::Settings => {
+                settings::open_settings(
+                    &mut commands,
+                    &asset_server,
+                    volume.0,
+                    settings::SettingsOrigin::MainMenu,
+                );
             }
             MenuButton::ToggleAirLabels => {
                 // Flip the flag

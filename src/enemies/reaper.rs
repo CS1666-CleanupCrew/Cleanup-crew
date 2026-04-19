@@ -1,11 +1,12 @@
 use bevy::prelude::*;
 
-use crate::bullet::{Bullet, BulletOwner};
+use crate::bullet::{Bullet, BulletOwner, AnimationTimer, AnimationFrameCount};
 use crate::collidable::{Collidable, Collider};
-use crate::enemies::{ActiveEnemy, Enemy, Health, RangedEnemy, RangedEnemyAI, Velocity};
+use crate::enemies::{ActiveEnemy, Enemy, Health, MaxHealth, RangedEnemy, RangedEnemyAI, Velocity, spawn_health_bar_children};
 use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
+use crate::weapon::{BulletDamage, EnemyBulletRes, WeaponSounds};
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::GameEntity;
 
@@ -19,6 +20,9 @@ pub struct ReaperState {
     pub timer: Timer,
     pub current_room: Option<usize>,
     pub spawned_in_room: Option<usize>,
+    /// True when the reaper spawned in the last uncleared room.
+    /// Prevents auto-despawn on room-clear so the player must kill it.
+    pub spawned_in_final_room: bool,
 }
 
 impl Default for ReaperState {
@@ -27,6 +31,7 @@ impl Default for ReaperState {
             timer: Timer::from_seconds(7.0, TimerMode::Once),
             current_room: None,
             spawned_in_room: None,
+            spawned_in_final_room: false,
         }
     }
 }
@@ -34,6 +39,18 @@ impl Default for ReaperState {
 #[derive(Resource)]
 pub struct ReaperRes {
     pub image: Handle<Image>,
+}
+
+// ── Bullet stats ───────────────────────────────────────────────────────────
+
+const REAPER_BULLET_DAMAGE: f32 = 20.0;
+const REAPER_BULLET_SCALE: f32 = 0.35;
+
+#[derive(Event)]
+pub struct ReaperShootEvent {
+    pub origin: Vec3,
+    pub direction: Vec2,
+    pub speed: f32,
 }
 
 /// Marker on the UI root node for the on-screen warning banner.
@@ -49,12 +66,15 @@ pub struct ReaperPlugin;
 impl Plugin for ReaperPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ReaperState>()
+            .add_event::<ReaperShootEvent>()
             .add_systems(Startup, load_reaper_assets)
             .add_systems(
                 Update,
                 (
                     reaper_room_timer,
                     reaper_warning_lifecycle,
+                    reaper_ai,
+                    spawn_reaper_bullets.after(reaper_ai),
                     bullet_hits_reaper,
                     table_hits_reaper,
                     reaper_cleanup_system,
@@ -82,6 +102,7 @@ fn spawn_reaper(commands: &mut Commands, at: Vec3, res: &ReaperRes) {
         RangedEnemy,
         Velocity::new(),
         Health::new(500.0),
+        MaxHealth(500.0),
         RangedEnemyAI {
             range: 450.0,
             fire_cooldown: Timer::from_seconds(0.5, TimerMode::Repeating),
@@ -91,7 +112,7 @@ fn spawn_reaper(commands: &mut Commands, at: Vec3, res: &ReaperRes) {
         Collidable,
         crate::fluiddynamics::PulledByFluid { mass: 20.0 },
         GameEntity,
-    ));
+    )).with_children(|parent| spawn_health_bar_children(parent));
 }
 
 /// Spawns a full-screen UI banner that appears in the center of the screen
@@ -130,6 +151,7 @@ fn reaper_room_timer(
     time: Res<Time>,
     mut state: ResMut<ReaperState>,
     lvlstate: Res<LevelState>,
+    rooms: Res<RoomVec>,
     mut commands: Commands,
     player_q: Query<&Transform, With<Player>>,
     reaper_res: Res<ReaperRes>,
@@ -156,6 +178,10 @@ fn reaper_room_timer(
                 if let Ok(player_tf) = player_q.single() {
                     let p = player_tf.translation;
                     let spawn_pos = p + Vec3::new(120.0, 0.0, Z_ENTITIES);
+                    // Mark whether this is the last uncleared room so cleanup
+                    // knows not to auto-despawn the reaper when the room clears.
+                    let uncleared = rooms.0.iter().filter(|r| !r.cleared).count();
+                    state.spawned_in_final_room = uncleared <= 1;
                     spawn_reaper(&mut commands, spawn_pos, &reaper_res);
                     spawn_reaper_warning(&mut commands, &assets);
                     state.spawned_in_room = Some(idx);
@@ -185,18 +211,13 @@ fn reaper_warning_lifecycle(
     }
 }
 
-fn is_final_room(lvlstate: &LevelState, rooms: &RoomVec) -> bool {
-    matches!(lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1
-}
-
 fn bullet_hits_reaper(
     mut commands: Commands,
     bullet_query: Query<(&Transform, Entity, &BulletOwner), With<Bullet>>,
     mut reaper_query: Query<(&Transform, &mut Health), With<Reaper>>,
-    lvlstate: Res<LevelState>,
-    rooms: Res<RoomVec>,
+    state: Res<ReaperState>,
 ) {
-    if !is_final_room(&lvlstate, &rooms) {
+    if !state.spawned_in_final_room {
         return;
     }
 
@@ -229,10 +250,9 @@ fn table_hits_reaper(
         (&Transform, &Collider, Option<&crate::enemies::Velocity>),
         With<table::Table>,
     >,
-    lvlstate: Res<LevelState>,
-    rooms: Res<RoomVec>,
+    state: Res<ReaperState>,
 ) {
-    if !is_final_room(&lvlstate, &rooms) {
+    if !state.spawned_in_final_room {
         return;
     }
 
@@ -269,25 +289,109 @@ fn reaper_cleanup_system(
         None
     };
 
-    if current_idx.is_none() {
-        for (entity, _) in &reaper_q {
-            commands.entity(entity).despawn();
-        }
-        state.current_room = None;
-        state.spawned_in_room = None;
-        state.timer.reset();
-        return;
-    }
+    let room_cleared = current_idx
+        .and_then(|idx| rooms.0.get(idx))
+        .map(|r| r.cleared)
+        .unwrap_or(false);
 
-    let idx = current_idx.unwrap();
-    let in_final_room = is_final_room(&lvlstate, &rooms);
-    let room_cleared = rooms.0.get(idx).map(|r| r.cleared).unwrap_or(false);
+    // Left the room (lvlstate became NotRoom after room cleared or player exited)
+    let left_room = current_idx.is_none();
 
     for (entity, health) in &reaper_q {
-        let should_despawn = (!in_final_room && room_cleared) || health.0 <= 0.0;
+        let is_dead = health.0 <= 0.0;
+
+        // Final-room reaper only dies when the player kills it — never auto-despawn.
+        // Non-final reapers auto-despawn when the room clears or the player leaves.
+        let should_despawn = is_dead
+            || (!state.spawned_in_final_room && (room_cleared || left_room));
+
         if should_despawn {
             commands.entity(entity).despawn();
             state.spawned_in_room = None;
+            if is_dead {
+                state.spawned_in_final_room = false;
+            }
         }
+    }
+
+    // Reset room tracking when leaving a non-final room
+    if left_room && !state.spawned_in_final_room {
+        state.current_room = None;
+        state.spawned_in_room = None;
+        state.timer.reset();
+    }
+}
+
+fn reaper_ai(
+    time: Res<Time>,
+    player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut reapers: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI), With<Reaper>>,
+    mut shoot_writer: EventWriter<ReaperShootEvent>,
+) {
+    let Ok(player_tf) = player_query.single() else { return };
+    let player_pos = player_tf.translation.truncate();
+
+    for (tf, mut vel, mut ai) in &mut reapers {
+        ai.fire_cooldown.tick(time.delta());
+
+        let pos = tf.translation.truncate();
+        let diff = player_pos - pos;
+        let dist = diff.length();
+        if dist == 0.0 { continue; }
+
+        let dir = diff / dist;
+        let desired = ai.range * 0.75;
+        let delta = dist - desired;
+        let move_dir = if delta > 20.0 { dir } else if delta < -20.0 { -dir } else { Vec2::ZERO };
+
+        let accel = crate::enemies::ENEMY_ACCEL * time.delta_secs();
+        vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(crate::enemies::ENEMY_SPEED);
+
+        if ai.fire_cooldown.finished() && dist <= ai.range {
+            shoot_writer.write(ReaperShootEvent {
+                origin: tf.translation,
+                direction: dir,
+                speed: ai.projectile_speed,
+            });
+            ai.fire_cooldown.reset();
+        }
+    }
+}
+
+fn spawn_reaper_bullets(
+    mut commands: Commands,
+    mut events: EventReader<ReaperShootEvent>,
+    bullet_res: Res<EnemyBulletRes>,
+    weapon_sounds: Res<WeaponSounds>,
+) {
+    for ev in events.read() {
+        let dir = ev.direction.normalize_or_zero();
+        if dir == Vec2::ZERO { continue; }
+        let spawn_pos = ev.origin.truncate() + dir * 16.0;
+
+        commands.spawn((
+            Sprite::from_atlas_image(
+                bullet_res.0.clone(),
+                TextureAtlas { layout: bullet_res.1.clone(), index: 0 },
+            ),
+            Transform {
+                translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
+                scale: Vec3::splat(REAPER_BULLET_SCALE),
+                ..Default::default()
+            },
+            crate::bullet::Velocity(dir * ev.speed),
+            Bullet,
+            BulletOwner::Enemy,
+            Collider { half_extents: Vec2::splat(5.0) },
+            BulletDamage(REAPER_BULLET_DAMAGE),
+            AnimationTimer(Timer::from_seconds(0.15, TimerMode::Repeating)),
+            AnimationFrameCount(3),
+            GameEntity,
+        ));
+
+        commands.spawn((
+            AudioPlayer::new(weapon_sounds.laser.clone()),
+            PlaybackSettings::DESPAWN,
+        ));
     }
 }

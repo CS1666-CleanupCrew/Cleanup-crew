@@ -64,6 +64,9 @@ impl Weapon {
 pub struct BulletRes(pub Handle<Image>, pub Handle<TextureAtlasLayout>);
 
 #[derive(Resource)]
+pub struct EnemyBulletRes(pub Handle<Image>, pub Handle<TextureAtlasLayout>);
+
+#[derive(Resource)]
 pub struct WeaponSounds {
     pub laser: Handle<AudioSource>,
 }
@@ -89,6 +92,11 @@ fn load_weapon_assets(
     let bullet_animate_layout = TextureAtlasLayout::from_grid(UVec2::splat(100), 3, 1, None, None);
     let bullet_animate_handle = texture_atlases.add(bullet_animate_layout);
     commands.insert_resource(BulletRes(bullet_animate_image, bullet_animate_handle));
+
+    let enemy_bullet_image: Handle<Image> = asset_server.load("enemy_bullet_animation.png");
+    let enemy_bullet_layout = TextureAtlasLayout::from_grid(UVec2::splat(100), 3, 1, None, None);
+    let enemy_bullet_handle = texture_atlases.add(enemy_bullet_layout);
+    commands.insert_resource(EnemyBulletRes(enemy_bullet_image, enemy_bullet_handle));
 
     // Load weapon sounds
     let laser_sound: Handle<AudioSource> = asset_server.load("audio/laser_zap.ogg");
