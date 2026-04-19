@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::bullet::{Bullet, BulletOwner};
 use crate::collidable::{Collidable, Collider};
-use crate::enemies::{ActiveEnemy, Enemy, Health, RangedEnemy, RangedEnemyAI, Velocity};
+use crate::enemies::{ActiveEnemy, Enemy, Health, MaxHealth, RangedEnemy, RangedEnemyAI, Velocity, spawn_health_bar_children};
 use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
@@ -86,6 +86,7 @@ fn spawn_reaper(commands: &mut Commands, at: Vec3, res: &ReaperRes) {
         RangedEnemy,
         Velocity::new(),
         Health::new(500.0),
+        MaxHealth(500.0),
         RangedEnemyAI {
             range: 450.0,
             fire_cooldown: Timer::from_seconds(0.5, TimerMode::Repeating),
@@ -95,7 +96,7 @@ fn spawn_reaper(commands: &mut Commands, at: Vec3, res: &ReaperRes) {
         Collidable,
         crate::fluiddynamics::PulledByFluid { mass: 20.0 },
         GameEntity,
-    ));
+    )).with_children(|parent| spawn_health_bar_children(parent));
 }
 
 /// Spawns a full-screen UI banner that appears in the center of the screen

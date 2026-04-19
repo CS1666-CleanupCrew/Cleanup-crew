@@ -16,7 +16,7 @@ pub use reaper::Reaper;
 
 use bevy::prelude::*;
 use crate::{GameState};
-use crate::collidable::{Collider};
+use crate::collidable::{Collider, Collidable};
 use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
@@ -61,6 +61,40 @@ impl Health {
     }
 }
 
+#[derive(Component)]
+pub struct MaxHealth(pub f32);
+
+/// Marker on the foreground fill sprite of an enemy's world-space health bar.
+#[derive(Component)]
+pub struct EnemyHealthBarFg;
+
+const BAR_WIDTH: f32 = 34.0;
+const BAR_HEIGHT: f32 = 4.0;
+const BAR_Y_OFFSET: f32 = 42.0;
+
+/// Spawns the two bar sprites (background + fill) as children of an enemy entity.
+pub fn spawn_health_bar_children(parent: &mut ChildSpawnerCommands) {
+    // Background
+    parent.spawn((
+        Sprite {
+            color: Color::srgba(0.1, 0.0, 0.0, 0.85),
+            custom_size: Some(Vec2::new(BAR_WIDTH, BAR_HEIGHT)),
+            ..default()
+        },
+        Transform::from_xyz(0.0, BAR_Y_OFFSET, 1.0),
+    ));
+    // Fill (starts full width, updated each frame)
+    parent.spawn((
+        Sprite {
+            color: Color::srgb(0.1, 0.9, 0.1),
+            custom_size: Some(Vec2::new(BAR_WIDTH, BAR_HEIGHT)),
+            ..default()
+        },
+        Transform::from_xyz(0.0, BAR_Y_OFFSET, 2.0),
+        EnemyHealthBarFg,
+    ));
+}
+
 #[derive(Resource, Default)]
 pub struct LastKillPos(pub Vec2);
 
@@ -83,10 +117,12 @@ impl Plugin for EnemyPlugin {
                     move_reaper_freely.after(ranger::ai),
                     collide_enemies_with_enemies.after(move_enemy),
                     wall_correction_for_enemies.after(collide_enemies_with_enemies),
+                    enemies_collide_with_tables.after(wall_correction_for_enemies),
                 )
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(Update, check_enemy_health.run_if(in_state(GameState::Playing)))
+        .add_systems(Update, update_enemy_health_bars.run_if(in_state(GameState::Playing)))
             .add_systems(Update, chaser::animate_hit)
             .add_systems(Update, table_hits_enemy)
             .add_systems(Update, ranger::animate.run_if(in_state(GameState::Playing)));
@@ -94,6 +130,28 @@ impl Plugin for EnemyPlugin {
 }
 
 // Shared systems
+
+fn update_enemy_health_bars(
+    enemy_q: Query<(&Health, &MaxHealth, &Children), With<Enemy>>,
+    mut fg_q: Query<(&mut Sprite, &mut Transform), With<EnemyHealthBarFg>>,
+) {
+    for (health, max_health, children) in &enemy_q {
+        let ratio = (health.0 / max_health.0).clamp(0.0, 1.0);
+        let fill_w = ratio * BAR_WIDTH;
+        // Anchor left edge: shift left by half the missing width
+        let fill_x = -(1.0 - ratio) * BAR_WIDTH * 0.5;
+        let r = (1.0 - ratio).min(1.0);
+        let g = ratio.min(1.0);
+
+        for child in children.iter() {
+            if let Ok((mut sprite, mut tf)) = fg_q.get_mut(child) {
+                sprite.custom_size = Some(Vec2::new(fill_w.max(0.0), BAR_HEIGHT));
+                sprite.color = Color::srgb(r, g, 0.0);
+                tf.translation.x = fill_x;
+            }
+        }
+    }
+}
 
 fn check_enemy_health(
     mut commands: Commands,
@@ -236,30 +294,83 @@ fn wall_correction_for_enemies(
     }
 }
 
-fn collide_enemies_with_enemies(
-    mut enemy_query: Query<&mut Transform, (With<Enemy>, With<ActiveEnemy>, Without<Reaper>)>,
+fn enemies_collide_with_tables(
+    mut enemy_query: Query<(&mut Transform, &mut Velocity), (With<Enemy>, With<ActiveEnemy>, Without<Reaper>)>,
+    table_query: Query<(&Transform, &Collider, &table::TableRoom), (With<table::Table>, With<Collidable>, Without<Enemy>)>,
+    active_room: Res<table::ActiveRoom>,
 ) {
+    let Some(active) = active_room.0 else { return; };
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
-    let max_dist2 = (ENEMY_SIZE * 4.0) * (ENEMY_SIZE * 4.0);
+
+    for (mut enemy_tf, mut enemy_vel) in &mut enemy_query {
+        let ep = enemy_tf.translation.truncate();
+        for (table_tf, table_col, room) in &table_query {
+            if room.0 != active { continue; }
+            let tp = table_tf.translation.truncate();
+            let th = table_col.half_extents;
+
+            if !crate::player::aabb_overlap(ep.x, ep.y, enemy_half, tp.x, tp.y, th) {
+                continue;
+            }
+
+            let overlap_x = (enemy_half.x + th.x) - (ep.x - tp.x).abs();
+            let overlap_y = (enemy_half.y + th.y) - (ep.y - tp.y).abs();
+
+            if overlap_x < overlap_y {
+                if ep.x > tp.x {
+                    enemy_tf.translation.x += overlap_x;
+                    enemy_vel.velocity.x = enemy_vel.velocity.x.max(0.0);
+                } else {
+                    enemy_tf.translation.x -= overlap_x;
+                    enemy_vel.velocity.x = enemy_vel.velocity.x.min(0.0);
+                }
+            } else {
+                if ep.y > tp.y {
+                    enemy_tf.translation.y += overlap_y;
+                    enemy_vel.velocity.y = enemy_vel.velocity.y.max(0.0);
+                } else {
+                    enemy_tf.translation.y -= overlap_y;
+                    enemy_vel.velocity.y = enemy_vel.velocity.y.min(0.0);
+                }
+            }
+        }
+    }
+}
+
+fn collide_enemies_with_enemies(
+    mut enemy_query: Query<(&mut Transform, &mut Velocity), (With<Enemy>, With<ActiveEnemy>, Without<Reaper>)>,
+) {
+    // Use a circle distance slightly larger than the sprite so enemies don't stack.
+    let sep = ENEMY_SIZE * 1.15;
+    let sep2 = sep * sep;
+    let max_check2 = (ENEMY_SIZE * 5.0) * (ENEMY_SIZE * 5.0);
 
     let mut combinations = enemy_query.iter_combinations_mut();
-    while let Some([mut e1, mut e2]) = combinations.fetch_next() {
-        let (p1, p2) = (e1.translation.truncate(), e2.translation.truncate());
-        if (p1 - p2).length_squared() > max_dist2 { continue; }
+    while let Some([(mut tf1, mut vel1), (mut tf2, mut vel2)]) = combinations.fetch_next() {
+        let p1 = tf1.translation.truncate();
+        let p2 = tf2.translation.truncate();
+        let diff = p1 - p2;
+        let dist2 = diff.length_squared();
+        if dist2 >= max_check2 || dist2 < 0.001 { continue; }
 
-        if crate::player::aabb_overlap(p1.x, p1.y, enemy_half, p2.x, p2.y, enemy_half) {
-            let overlap_x = (enemy_half.x * 2.0) - (p1.x - p2.x).abs();
-            let overlap_y = (enemy_half.y * 2.0) - (p1.y - p2.y).abs();
-            if overlap_x < overlap_y {
-                let sign = if p1.x > p2.x { 1.0 } else { -1.0 };
-                let push = sign * overlap_x * 0.5;
-                e1.translation.x += push;
-                e2.translation.x -= push;
-            } else {
-                let sign = if p1.y > p2.y { 1.0 } else { -1.0 };
-                let push = sign * overlap_y * 0.5;
-                e1.translation.y += push;
-                e2.translation.y -= push;
+        if dist2 < sep2 {
+            let dist = dist2.sqrt();
+            let push_dir = diff / dist;
+            let overlap = sep - dist;
+            let push = push_dir * overlap * 0.5;
+
+            tf1.translation.x += push.x;
+            tf1.translation.y += push.y;
+            tf2.translation.x -= push.x;
+            tf2.translation.y -= push.y;
+
+            // Cancel velocity components that are pushing the two enemies into each other
+            // so they don't immediately re-penetrate next frame.
+            let approach = (vel1.velocity - vel2.velocity).dot(push_dir);
+            if approach < 0.0 {
+                let correction = push_dir * approach * 0.5;
+                vel1.velocity -= correction;
+                vel2.velocity += correction;
             }
         }
     }

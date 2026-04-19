@@ -50,7 +50,14 @@ pub const Z_UI: f32 = 100.0;
 struct MainCamera;
 
 #[derive(Component)]
-struct HealthDisplay;
+struct HealthBarFill;
+
+#[derive(Component)]
+struct ShieldBarFill;
+
+/// The whole shield row — hidden when the player has no shield upgrades.
+#[derive(Component)]
+struct ShieldBarRow;
 
 
 /// Marker added to every music audio entity so the volume sync system can find them.
@@ -553,53 +560,142 @@ fn maximize_window(
 }
 
 fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>, station_level: Res<StationLevel>) {
-    let font: Handle<Font> = asset_server.load("fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf");
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(12.0),
-            top: Val::Px(12.0),
-            ..default()
-        },
-        Text::new("HP: 100"),
-        TextFont {
-            font: font.clone(),
-            font_size: 24.0,
-            ..default()
-        },
-        TextColor(Color::srgb(1.0, 0.0, 0.0)),
-        ZIndex(10),
-        HealthDisplay,
-        GameEntity,
-    ));
+    let font: Handle<Font> = asset_server.load(FONT_PATH);
 
-    // Station level display
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(12.0),
-            top: Val::Px(40.0),
-            ..default()
-        },
-        Text::new(format!("Station {}", station_level.0 + 1)),
-        TextFont {
-            font,
-            font_size: 20.0,
-            ..default()
-        },
-        TextColor(Color::srgb(0.8, 0.8, 1.0)),
-        ZIndex(10),
-        StationLevelDisplay,
-        GameEntity,
-    ));
+    // HUD column: HP bar, shield bar, station label
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(12.0),
+                top: Val::Px(12.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(5.0),
+                ..default()
+            },
+            ZIndex(10),
+            GameEntity,
+        ))
+        .with_children(|col| {
+            // ── HP row ──────────────────────────────────────────────────
+            col.spawn((Node {
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(6.0),
+                ..default()
+            },))
+            .with_children(|row| {
+                row.spawn((Node::default(),)).with_children(|c| {
+                    c.spawn((
+                        Text::new("HP"),
+                        TextFont { font: font.clone(), font_size: 20.0, ..default() },
+                        TextColor(Color::srgb(1.0, 0.3, 0.3)),
+                    ));
+                });
+                // Bar background
+                row.spawn((
+                    Node {
+                        width: Val::Px(180.0),
+                        height: Val::Px(14.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.25, 0.0, 0.0, 0.85)),
+                    BorderRadius::all(Val::Px(3.0)),
+                ))
+                .with_children(|bg| {
+                    bg.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.1, 0.9, 0.1)),
+                        BorderRadius::all(Val::Px(3.0)),
+                        HealthBarFill,
+                    ));
+                });
+            });
+
+            // ── Shield row (hidden until shield pickup collected) ────────
+            col.spawn((
+                Node {
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(6.0),
+                    ..default()
+                },
+                Visibility::Hidden,
+                ShieldBarRow,
+            ))
+            .with_children(|row| {
+                row.spawn((Node::default(),)).with_children(|c| {
+                    c.spawn((
+                        Text::new("SH"),
+                        TextFont { font: font.clone(), font_size: 20.0, ..default() },
+                        TextColor(Color::srgb(0.3, 0.7, 1.0)),
+                    ));
+                });
+                row.spawn((
+                    Node {
+                        width: Val::Px(180.0),
+                        height: Val::Px(14.0),
+                        overflow: Overflow::clip(),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.1, 0.3, 0.85)),
+                    BorderRadius::all(Val::Px(3.0)),
+                ))
+                .with_children(|bg| {
+                    bg.spawn((
+                        Node {
+                            width: Val::Percent(100.0),
+                            height: Val::Percent(100.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.3, 0.8, 1.0)),
+                        BorderRadius::all(Val::Px(3.0)),
+                        ShieldBarFill,
+                    ));
+                });
+            });
+
+            // ── Station label ────────────────────────────────────────────
+            col.spawn((Node::default(),)).with_children(|c| {
+                c.spawn((
+                    Text::new(format!("Station {}", station_level.0 + 1)),
+                    TextFont { font, font_size: 18.0, ..default() },
+                    TextColor(Color::srgb(0.8, 0.8, 1.0)),
+                    StationLevelDisplay,
+                ));
+            });
+        });
 }
 
 fn update_ui_health_text(
-    player_q: Query<&Health, With<Player>>,
-    mut text_q: Query<&mut Text, With<HealthDisplay>>,
+    player_q: Query<(&Health, &player::MaxHealth, &player::Shield), With<Player>>,
+    mut hp_fill_q: Query<(&mut Node, &mut BackgroundColor), (With<HealthBarFill>, Without<ShieldBarFill>)>,
+    mut sh_fill_q: Query<(&mut Node, &mut BackgroundColor), (With<ShieldBarFill>, Without<HealthBarFill>)>,
+    mut sh_row_q: Query<&mut Visibility, With<ShieldBarRow>>,
 ) {
-    if let (Ok(health), Ok(mut text)) = (player_q.single(), text_q.single_mut()) {
-        *text = Text::new(format!("HP: {}", health.0.round() as i32));
+    let Ok((health, max_hp, shield)) = player_q.single() else { return };
+
+    // HP bar width + color
+    if let Ok((mut node, mut color)) = hp_fill_q.single_mut() {
+        let ratio = (health.0 / max_hp.0).clamp(0.0, 1.0);
+        node.width = Val::Percent(ratio * 100.0);
+        let r = (1.0 - ratio).min(1.0);
+        let g = ratio.min(1.0);
+        *color = BackgroundColor(Color::srgb(r, g, 0.0));
+    }
+
+    // Shield bar + row visibility
+    if let Ok(mut vis) = sh_row_q.single_mut() {
+        *vis = if shield.max > 0.0 { Visibility::Visible } else { Visibility::Hidden };
+    }
+    if shield.max > 0.0 {
+        if let Ok((mut node, _)) = sh_fill_q.single_mut() {
+            let ratio = (shield.current / shield.max).clamp(0.0, 1.0);
+            node.width = Val::Percent(ratio * 100.0);
+        }
     }
 }
 

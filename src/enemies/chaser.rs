@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use crate::GameEntity;
 use crate::fluiddynamics::PulledByFluid;
-use super::{Enemy, Velocity, ActiveEnemy, Health, ANIM_TIME};
+use super::{Enemy, Velocity, ActiveEnemy, Health, MaxHealth, ANIM_TIME, spawn_health_bar_children};
 
 // ── Components ─────────────────────────────────────────────────────────────
 
@@ -56,12 +56,14 @@ pub fn spawn_at(
     health_multiplier: f32,
     speed_bonus: f32,
 ) {
+    let hp = 50.0 * health_multiplier;
     let mut e = commands.spawn((
         Sprite::from_image(res.frames[0].clone()),
         Transform { translation: at, ..Default::default() },
         Enemy,
         Velocity::new(),
-        Health::new(50.0 * health_multiplier),
+        Health::new(hp),
+        MaxHealth(hp),
         super::EnemyMoveSpeed(super::ENEMY_SPEED + speed_bonus),
         AnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         EnemyFrames { handles: res.frames.clone(), index: 0 },
@@ -69,6 +71,7 @@ pub fn spawn_at(
         MeleeEnemy,
         GameEntity,
     ));
+    e.with_children(|parent| spawn_health_bar_children(parent));
     if active {
         e.insert(ActiveEnemy);
     }

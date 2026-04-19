@@ -4,7 +4,7 @@ use crate::GameEntity;
 use crate::fluiddynamics::PulledByFluid;
 use crate::player::Player;
 use crate::room::LevelState;
-use super::{Enemy, Velocity, ActiveEnemy, Health, ENEMY_ACCEL, ENEMY_SPEED, ANIM_TIME};
+use super::{Enemy, Velocity, ActiveEnemy, Health, MaxHealth, ENEMY_ACCEL, ENEMY_SPEED, ANIM_TIME, spawn_health_bar_children};
 
 // ── Components ─────────────────────────────────────────────────────────────
 
@@ -74,13 +74,15 @@ pub fn spawn_at(
     health_multiplier: f32,
     speed_bonus: f32,
 ) {
+    let hp = 40.0 * health_multiplier;
     let mut e = commands.spawn((
         Sprite::from_image(res.right_frames[0].clone()),
         Transform { translation: at, ..Default::default() },
         Enemy,
         RangedEnemy,
         Velocity::new(),
-        Health::new(40.0 * health_multiplier),
+        Health::new(hp),
+        MaxHealth(hp),
         super::EnemyMoveSpeed(ENEMY_SPEED + speed_bonus),
         RangedAnimationTimer(Timer::from_seconds(ANIM_TIME, TimerMode::Repeating)),
         RangedEnemyFrames {
@@ -97,6 +99,7 @@ pub fn spawn_at(
         PulledByFluid { mass: 10.0 },
         GameEntity,
     ));
+    e.with_children(|parent| spawn_health_bar_children(parent));
     if active {
         e.insert(ActiveEnemy);
     }
