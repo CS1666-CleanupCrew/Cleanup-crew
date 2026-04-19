@@ -24,7 +24,7 @@ pub struct BroomPlugin;
 
 impl Plugin for BroomPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, broom_input.run_if(in_state(GameState::Playing)))
+        app.add_systems(Update, broom_input.run_if(in_state(GameState::Playing)).run_if(not(resource_exists::<crate::pause::IsPaused>)))
            .add_systems(Update, broom_swing_system.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_hit_enemies_system.run_if(in_state(GameState::Playing)))
            .add_systems(Update, broom_push_tables_system.run_if(in_state(GameState::Playing)))

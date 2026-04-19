@@ -25,6 +25,10 @@ pub mod rewards;
 pub mod heart;
 pub mod weapon;
 pub mod minimap;
+pub mod pause;
+pub mod settings;
+
+pub const FONT_PATH: &str = "fonts/BitcountSingleInk-VariableFont_CRSV,ELSH,ELXP,SZP1,SZP2,XPN1,XPN2,YPN1,YPN2,slnt,wght.ttf";
 
 
 
@@ -48,6 +52,10 @@ struct MainCamera;
 #[derive(Component)]
 struct HealthDisplay;
 
+
+/// Marker added to every music audio entity so the volume sync system can find them.
+#[derive(Component)]
+pub struct MusicTrack;
 
 #[derive(Component)]
 struct GameMusic;
@@ -175,6 +183,8 @@ fn main() {
             enemies::reaper::ReaperPlugin,
             weapon::WeaponPlugin,
             minimap::MinimapPlugin,
+            pause::PausePlugin,
+            settings::SettingsPlugin,
         ))
         .add_systems(Startup, (setup_camera, rewards::load_reward_font, maximize_window))
         .add_systems(OnEnter(GameState::Menu), log_state_change)
@@ -639,6 +649,7 @@ fn start_game_music(
             ..default()
         },
         GameMusic,
+        MusicTrack,
     ));
 
     debug!("Game music started");
@@ -676,6 +687,7 @@ fn toggle_game_music(
                 ..default()
             },
             GameMusic,
+            MusicTrack,
         ));
 
         debug!("Game music toggled ON");

@@ -39,7 +39,7 @@ pub struct Velocity(pub Vec2);
 
 impl Plugin for BulletPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, shoot_bullet_on_click) // Mouse shooting
+        app.add_systems(Update, shoot_bullet_on_click.run_if(in_state(GameState::Playing)).run_if(not(resource_exists::<crate::pause::IsPaused>))) // Mouse shooting
             .add_systems(Update, move_bullets.run_if(in_state(GameState::Playing)))
             .add_systems(
                 Update,
