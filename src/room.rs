@@ -266,6 +266,35 @@ pub fn entered_room(
     }
 }
 
+/// Returns the world position of the nearest non-wall, in-bounds tile to `pos`.
+/// Searches outward shell by shell (Chebyshev distance) up to 60 tiles away.
+fn nearest_floor_pos(
+    pos: Vec2,
+    wall_grid: &crate::map::WallGrid,
+    grid: &crate::map::MapGridMeta,
+) -> Vec2 {
+    let (sc, sr) = wall_grid.world_to_tile(pos);
+    let cols = grid.cols as i32;
+    let rows = grid.rows as i32;
+
+    for radius in 0i32..=60 {
+        for dc in -radius..=radius {
+            for dr in -radius..=radius {
+                // Only visit the outermost shell at this radius.
+                if dc.abs() != radius && dr.abs() != radius { continue; }
+                let col = sc + dc;
+                let row = sr + dr;
+                if col >= 0 && col < cols && row >= 0 && row < rows
+                    && !wall_grid.is_wall_tile(col, row)
+                {
+                    return wall_grid.tile_to_world(col, row);
+                }
+            }
+        }
+    }
+    pos // fallback: couldn't find any floor tile
+}
+
 pub fn playing_room(
     mut rooms:  ResMut<RoomVec>,
     mut lvlstate: ResMut<LevelState>,
@@ -275,6 +304,8 @@ pub fn playing_room(
     heart_res: Res<crate::heart::HeartRes>,
     reward_res: Res<crate::rewards::RewardRes>,
     last_kill_pos: Res<LastKillPos>,
+    wall_grid: Res<crate::map::WallGrid>,
+    grid: Res<crate::map::MapGridMeta>,
 ){
     match *lvlstate
     {
@@ -283,7 +314,8 @@ pub fn playing_room(
             if rooms.0[index].numofenemies == 0{
                 debug!("All enemies defeated");
 
-                crate::heart::spawn_heart(&mut commands, &heart_res, last_kill_pos.0);
+                let heart_pos = nearest_floor_pos(last_kill_pos.0, &wall_grid, &grid);
+                crate::heart::spawn_heart(&mut commands, &heart_res, heart_pos);
                 crate::rewards::spawn_reward(&mut commands, reward_pos, &reward_res);
 
                 for door in rooms.0[index].doors.iter(){

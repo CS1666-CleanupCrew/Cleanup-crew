@@ -7,6 +7,7 @@ use crate::window;
 use crate::{GameEntity, GameState, TILE_SIZE};
 use crate::table;
 use bevy::{prelude::*, window::PrimaryWindow};
+use std::collections::HashSet;
 
 #[derive(Component)]
 pub struct Bullet;
@@ -32,6 +33,10 @@ pub struct MarkedForDespawn;
 /// When it reaches 0 the bullet despawns on the next hit.
 #[derive(Component)]
 pub struct Piercing(pub u32);
+
+/// Tracks enemies already hit so a bullet can't hit the same one twice.
+#[derive(Component, Default)]
+pub struct HitEnemies(pub HashSet<Entity>);
 
 #[derive(Component, Deref, DerefMut)]
 pub struct Velocity(pub Vec2);
@@ -128,6 +133,7 @@ pub fn shoot_bullet_on_click(
             BulletDamage(weapon.damage),
             AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
             AnimationFrameCount(3),
+            HitEnemies::default(),
             GameEntity,
         ));
         let pierce = weapon.effective_pierce_count();
@@ -180,11 +186,11 @@ fn animate_bullet(
 pub fn bullet_collision(
     mut commands: Commands,
     mut bullet_query: Query<
-        (Entity, &Transform, &BulletOwner, &BulletDamage, Option<&mut Piercing>),
+        (Entity, &Transform, &BulletOwner, &BulletDamage, Option<&mut Piercing>, &mut HitEnemies),
         (With<Bullet>, Without<MarkedForDespawn>),
     >,
     mut enemy_query: Query<
-        (&Transform, &mut crate::enemies::Health),
+        (Entity, &Transform, &mut crate::enemies::Health),
         (With<crate::enemies::Enemy>, Without<crate::enemies::Reaper>),
     >,
     mut player_query: Query<
@@ -211,12 +217,15 @@ pub fn bullet_collision(
 
     let _final_room = matches!(*lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1;
 
-    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, mut piercing) in &mut bullet_query {
+    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, mut piercing, mut hit_enemies) in &mut bullet_query {
         let bullet_pos = bullet_tf.translation;
 
         // Bullet hits enemy
         if matches!(owner, BulletOwner::Player) {
-            for (enemy_tf, mut health) in &mut enemy_query {
+            for (enemy_entity, enemy_tf, mut health) in &mut enemy_query {
+                if hit_enemies.0.contains(&enemy_entity) {
+                    continue;
+                }
                 let enemy_pos = enemy_tf.translation;
                 let enemy_half = Vec2::splat(crate::enemies::ENEMY_SIZE * 0.5);
                 if aabb_overlap(
@@ -227,6 +236,7 @@ pub fn bullet_collision(
                     enemy_pos.y,
                     enemy_half,
                 ) {
+                    hit_enemies.0.insert(enemy_entity);
                     health.0 -= damage.0;
                     match &mut piercing {
                         None => {

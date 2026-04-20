@@ -112,6 +112,21 @@ impl WallGrid {
         out
     }
 
+    /// Convert a world position to a tile-grid (col, row) key.
+    pub fn world_to_tile(&self, pos: Vec2) -> (i32, i32) {
+        self.world_to_key(pos)
+    }
+
+    /// Convert a tile-grid (col, row) key back to a world position.
+    pub fn tile_to_world(&self, col: i32, row: i32) -> Vec2 {
+        self.key_to_world(col, row)
+    }
+
+    /// Returns true if the given tile contains a wall.
+    pub fn is_wall_tile(&self, col: i32, row: i32) -> bool {
+        self.cells.contains_key(&(col, row))
+    }
+
     /// Remove a cell when a breakable tile (e.g. glass) is destroyed.
     pub fn remove(&mut self, pos: Vec2) {
         let key = self.world_to_key(pos);

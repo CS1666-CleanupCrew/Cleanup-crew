@@ -15,7 +15,9 @@ pub use ranger::{
 pub use reaper::Reaper;
 
 use bevy::prelude::*;
-use crate::{GameState};
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::cmp::Reverse;
+use crate::{GameState, TILE_SIZE};
 use crate::collidable::{Collider, Collidable};
 use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
@@ -70,7 +72,7 @@ pub struct EnemyHealthBarFg;
 
 const BAR_WIDTH: f32 = 34.0;
 const BAR_HEIGHT: f32 = 4.0;
-const BAR_Y_OFFSET: f32 = 42.0;
+const BAR_Y_OFFSET: f32 = 62.0;
 
 /// Spawns the two bar sprites (background + fill) as children of an enemy entity.
 pub fn spawn_health_bar_children(parent: &mut ChildSpawnerCommands) {
@@ -98,6 +100,64 @@ pub fn spawn_health_bar_children(parent: &mut ChildSpawnerCommands) {
 #[derive(Resource, Default)]
 pub struct LastKillPos(pub Vec2);
 
+// Pathfinding
+
+const PATH_RECOMPUTE_SECS: f32 = 0.5;
+const PATH_MAX_NODES: usize = 150;
+const PATH_SEARCH_PAD: i32 = 16;
+/// Only run pathfinding for enemies within this world-space distance of the player.
+const PATH_MAX_DIST: f32 = 900.0;
+
+/// Cached set of table-occupied tiles, rebuilt every ~0.3 s so `compute_enemy_paths`
+/// doesn't allocate a new HashSet every frame.
+#[derive(Resource)]
+pub struct TableBlockedTiles {
+    pub tiles: HashSet<(i32, i32)>,
+    timer: Timer,
+}
+
+impl Default for TableBlockedTiles {
+    fn default() -> Self {
+        Self {
+            tiles: HashSet::new(),
+            timer: Timer::from_seconds(0.3, TimerMode::Repeating),
+        }
+    }
+}
+
+fn update_table_blocked_tiles(
+    time: Res<Time>,
+    mut cache: ResMut<TableBlockedTiles>,
+    table_q: Query<&Transform, (With<table::Table>, With<Collidable>)>,
+    wall_grid: Res<crate::map::WallGrid>,
+) {
+    cache.timer.tick(time.delta());
+    if !cache.timer.just_finished() { return; }
+    cache.tiles = table_q
+        .iter()
+        .map(|tf| wall_grid.world_to_tile(tf.translation.truncate()))
+        .collect();
+}
+
+/// A* pathfinder attached to every non-reaper enemy.
+/// Stores the current list of world-space waypoints to follow when the
+/// direct path to the player is blocked by a wall or table.
+#[derive(Component)]
+pub struct EnemyPathfinder {
+    pub waypoints: Vec<Vec2>,
+    timer: Timer,
+}
+
+impl EnemyPathfinder {
+    pub fn new() -> Self {
+        // Stagger recompute timers so enemies don't all run A* the same frame.
+        let offset = rand::random::<f32>() * PATH_RECOMPUTE_SECS;
+        let mut timer = Timer::from_seconds(PATH_RECOMPUTE_SECS, TimerMode::Repeating);
+        timer.set_elapsed(std::time::Duration::from_secs_f32(offset));
+        Self { waypoints: Vec::new(), timer }
+    }
+}
+
 // Plugin
 
 pub struct EnemyPlugin;
@@ -105,6 +165,7 @@ pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LastKillPos>()
+            .init_resource::<TableBlockedTiles>()
             .add_systems(Startup, chaser::load)
             .add_systems(Startup, ranger::load)
             .add_event::<RangerShootEvent>()
@@ -112,7 +173,9 @@ impl Plugin for EnemyPlugin {
             .add_systems(
                 Update,
                 (
-                    ranger::ai,
+                    update_table_blocked_tiles,
+                    compute_enemy_paths.after(update_table_blocked_tiles),
+                    ranger::ai.after(compute_enemy_paths),
                     ranger::spawn_ranger_bullets.after(ranger::ai),
                     move_enemy.after(ranger::ai),
                     move_reaper_freely.after(ranger::ai),
@@ -173,6 +236,168 @@ fn kill_enemies_outside_station(
     }
 }
 
+// ── Pathfinding ────────────────────────────────────────────────────────────
+
+/// Bresenham line-of-sight check on the tile grid.
+/// Returns true if the straight line from `from` to `to` passes through no wall or blocked tile.
+fn has_los(
+    from: (i32, i32),
+    to: (i32, i32),
+    wall_grid: &crate::map::WallGrid,
+    blocked: &HashSet<(i32, i32)>,
+) -> bool {
+    let (mut x, mut y) = from;
+    let (tx, ty) = to;
+    let dx = (tx - x).abs();
+    let dy = (ty - y).abs();
+    let sx = if x < tx { 1i32 } else { -1 };
+    let sy = if y < ty { 1i32 } else { -1 };
+    let mut err = dx - dy;
+    loop {
+        if (x, y) != from && (x, y) != to {
+            if wall_grid.is_wall_tile(x, y) || blocked.contains(&(x, y)) {
+                return false;
+            }
+        }
+        if x == tx && y == ty { break; }
+        let e2 = 2 * err;
+        if e2 > -dy { err -= dy; x += sx; }
+        if e2 < dx { err += dx; y += sy; }
+    }
+    true
+}
+
+/// A* pathfinder on the tile grid with 8-directional movement.
+/// Returns a list of tile (col, row) pairs from the step after `start` to `goal`.
+/// Returns empty vec if no path is found within `max_nodes` expansions.
+fn a_star(
+    start: (i32, i32),
+    goal: (i32, i32),
+    wall_grid: &crate::map::WallGrid,
+    blocked: &HashSet<(i32, i32)>,
+    max_nodes: usize,
+    padding: i32,
+) -> Vec<(i32, i32)> {
+    if start == goal { return Vec::new(); }
+
+    let min_c = start.0.min(goal.0) - padding;
+    let max_c = start.0.max(goal.0) + padding;
+    let min_r = start.1.min(goal.1) - padding;
+    let max_r = start.1.max(goal.1) + padding;
+
+    let h = |(c, r): (i32, i32)| -> i32 {
+        10 * ((c - goal.0).abs() + (r - goal.1).abs())
+    };
+
+    let mut open: BinaryHeap<Reverse<(i32, (i32, i32))>> = BinaryHeap::new();
+    let mut came_from: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
+    let mut g: HashMap<(i32, i32), i32> = HashMap::new();
+    let mut expanded = 0usize;
+
+    g.insert(start, 0);
+    open.push(Reverse((h(start), start)));
+
+    const DIRS: [(i32, i32, i32); 8] = [
+        (1, 0, 10), (-1, 0, 10), (0, 1, 10), (0, -1, 10),
+        (1, 1, 14), (1, -1, 14), (-1, 1, 14), (-1, -1, 14),
+    ];
+
+    while let Some(Reverse((_, cur))) = open.pop() {
+        if cur == goal {
+            let mut path = Vec::new();
+            let mut node = goal;
+            while node != start {
+                path.push(node);
+                node = *came_from.get(&node).unwrap();
+            }
+            path.reverse();
+            return path;
+        }
+
+        expanded += 1;
+        if expanded >= max_nodes { break; }
+
+        let cur_g = *g.get(&cur).unwrap_or(&i32::MAX);
+
+        for &(dc, dr, cost) in &DIRS {
+            let nb = (cur.0 + dc, cur.1 + dr);
+
+            if nb.0 < min_c || nb.0 > max_c || nb.1 < min_r || nb.1 > max_r { continue; }
+            if nb != goal && wall_grid.is_wall_tile(nb.0, nb.1) { continue; }
+            if nb != goal && blocked.contains(&nb) { continue; }
+
+            // Prevent cutting through wall corners diagonally.
+            if dc != 0 && dr != 0 {
+                if wall_grid.is_wall_tile(cur.0 + dc, cur.1) ||
+                   wall_grid.is_wall_tile(cur.0, cur.1 + dr) { continue; }
+            }
+
+            let tg = cur_g.saturating_add(cost);
+            if tg < *g.get(&nb).unwrap_or(&i32::MAX) {
+                came_from.insert(nb, cur);
+                g.insert(nb, tg);
+                open.push(Reverse((tg + h(nb), nb)));
+            }
+        }
+    }
+
+    Vec::new()
+}
+
+/// Recomputes paths for enemies that have no line-of-sight to the player.
+/// Also advances waypoints as the enemy moves through them.
+fn compute_enemy_paths(
+    time: Res<Time>,
+    player_q: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut enemy_q: Query<
+        (&Transform, &mut EnemyPathfinder),
+        (With<Enemy>, With<ActiveEnemy>, Without<Reaper>),
+    >,
+    wall_grid: Res<crate::map::WallGrid>,
+    blocked_cache: Res<TableBlockedTiles>,
+) {
+    let Ok(player_tf) = player_q.single() else { return };
+    let player_pos = player_tf.translation.truncate();
+    let goal = wall_grid.world_to_tile(player_pos);
+    let blocked = &blocked_cache.tiles;
+
+    for (enemy_tf, mut pathfinder) in &mut enemy_q {
+        let pos = enemy_tf.translation.truncate();
+
+        // Advance past waypoints the enemy has already reached.
+        while let Some(&wp) = pathfinder.waypoints.first() {
+            if pos.distance(wp) < TILE_SIZE * 0.8 {
+                pathfinder.waypoints.remove(0);
+            } else {
+                break;
+            }
+        }
+
+        pathfinder.timer.tick(time.delta());
+        if !pathfinder.timer.just_finished() {
+            continue;
+        }
+
+        // Skip A* for enemies too far away — they'll head straight until closer.
+        if pos.distance_squared(player_pos) > PATH_MAX_DIST * PATH_MAX_DIST {
+            pathfinder.waypoints.clear();
+            continue;
+        }
+
+        let start = wall_grid.world_to_tile(pos);
+
+        if has_los(start, goal, &wall_grid, blocked) {
+            pathfinder.waypoints.clear();
+        } else {
+            let tiles = a_star(start, goal, &wall_grid, blocked, PATH_MAX_NODES, PATH_SEARCH_PAD);
+            pathfinder.waypoints = tiles
+                .into_iter()
+                .map(|(c, r)| wall_grid.tile_to_world(c, r))
+                .collect();
+        }
+    }
+}
+
 fn check_enemy_health(
     mut commands: Commands,
     enemy_query: Query<(Entity, &Health, &Transform), With<Enemy>>,
@@ -201,6 +426,7 @@ fn move_enemy(
             Option<&crate::fluiddynamics::PulledByFluid>,
             Option<&ranger::RangedEnemy>,
             Option<&EnemyMoveSpeed>,
+            Option<&EnemyPathfinder>,
         ),
         (With<Enemy>, With<ActiveEnemy>, Without<Reaper>),
     >,
@@ -218,22 +444,27 @@ fn move_enemy(
     let accel = ENEMY_ACCEL * deltat;
     let enemy_half = Vec2::splat(ENEMY_SIZE * 0.5);
 
-    for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt, spd_opt) in &mut enemy_query {
+    let player_pos = player_transform.translation.truncate();
+
+    for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt, spd_opt, pathfinder_opt) in &mut enemy_query {
         let max_speed = spd_opt.map_or(ENEMY_SPEED, |s| s.0);
         let mut effective_accel = accel;
         if grid_has_breach {
             effective_accel *= 0.15;
         }
 
-        // Chasers steer toward the player; rangers get their velocity from ranger::ai.
+        // Chasers steer toward the player (or a path waypoint if blocked).
+        // Rangers get their velocity from ranger::ai.
         if ranged_opt.is_none() {
-            let dir_to_player = (player_transform.translation - enemy_transform.translation)
-                .truncate()
-                .normalize_or_zero();
+            let target = pathfinder_opt
+                .and_then(|pf| pf.waypoints.first().copied())
+                .unwrap_or(player_pos);
 
-            if dir_to_player.length() > 0.0 {
+            let dir = (target - enemy_transform.translation.truncate()).normalize_or_zero();
+
+            if dir.length() > 0.0 {
                 **enemy_velocity =
-                    (**enemy_velocity + dir_to_player * effective_accel).clamp_length_max(max_speed);
+                    (**enemy_velocity + dir * effective_accel).clamp_length_max(max_speed);
             } else if enemy_velocity.length() > effective_accel {
                 let vel = **enemy_velocity;
                 **enemy_velocity += vel.normalize_or_zero() * -effective_accel;

@@ -99,6 +99,7 @@ pub fn spawn_at(
             fire_cooldown: Timer::from_seconds(1.0, TimerMode::Repeating),
             projectile_speed: 600.0,
         },
+        super::EnemyPathfinder::new(),
         PulledByFluid { mass: 10.0 },
         GameEntity,
     ));
@@ -141,7 +142,10 @@ pub fn animate(
 pub fn ai(
     time: Res<Time>,
     player_query: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut enemies: Query<(&Transform, &mut Velocity, &mut RangedEnemyAI, Option<&super::EnemyMoveSpeed>), (With<RangedEnemy>, Without<Reaper>)>,
+    mut enemies: Query<
+        (&Transform, &mut Velocity, &mut RangedEnemyAI, Option<&super::EnemyMoveSpeed>, Option<&super::EnemyPathfinder>),
+        (With<RangedEnemy>, Without<Reaper>),
+    >,
     mut shoot_writer: EventWriter<RangerShootEvent>,
     lvlstate: Res<LevelState>,
 ) {
@@ -153,7 +157,7 @@ pub fn ai(
         LevelState::NotRoom => 1.0,
     };
 
-    for (enemy_tf, mut vel, mut enemy_ai, spd_opt) in &mut enemies {
+    for (enemy_tf, mut vel, mut enemy_ai, spd_opt, pathfinder_opt) in &mut enemies {
         let max_speed = spd_opt.map_or(ENEMY_SPEED, |s| s.0);
         let scaled_dt = time.delta_secs() * difficulty_mult;
         enemy_ai.fire_cooldown.tick(Duration::from_secs_f32(scaled_dt));
@@ -163,21 +167,31 @@ pub fn ai(
         let dist = diff.length();
         if dist == 0.0 { continue; }
 
-        let dir = diff / dist;
-        let desired = enemy_ai.range * 0.75;
-        let delta = dist - desired;
-        let move_dir = if delta > 20.0 { dir } else if delta < -20.0 { -dir } else { Vec2::ZERO };
-
+        let to_player = diff / dist;
         let accel = ENEMY_ACCEL * time.delta_secs();
-        vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(max_speed);
 
-        if enemy_ai.fire_cooldown.finished() && dist <= enemy_ai.range {
-            shoot_writer.write(RangerShootEvent {
-                origin: enemy_tf.translation,
-                direction: dir,
-                speed: enemy_ai.projectile_speed,
-            });
-            enemy_ai.fire_cooldown.reset();
+        let has_waypoints = pathfinder_opt.map_or(false, |pf| !pf.waypoints.is_empty());
+
+        if has_waypoints {
+            // Blocked — follow the path toward the player.
+            let wp = pathfinder_opt.unwrap().waypoints[0];
+            let dir = (wp - enemy_pos).normalize_or_zero();
+            vel.velocity = (vel.velocity + dir * accel).clamp_length_max(max_speed);
+        } else {
+            // Clear line-of-sight — normal kiting behaviour.
+            let desired = enemy_ai.range * 0.75;
+            let delta = dist - desired;
+            let move_dir = if delta > 20.0 { to_player } else if delta < -20.0 { -to_player } else { Vec2::ZERO };
+            vel.velocity = (vel.velocity + move_dir * accel).clamp_length_max(max_speed);
+
+            if enemy_ai.fire_cooldown.finished() && dist <= enemy_ai.range {
+                shoot_writer.write(RangerShootEvent {
+                    origin: enemy_tf.translation,
+                    direction: to_player,
+                    speed: enemy_ai.projectile_speed,
+                });
+                enemy_ai.fire_cooldown.reset();
+            }
         }
     }
 }
