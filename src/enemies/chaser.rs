@@ -69,6 +69,7 @@ pub fn spawn_at(
         EnemyFrames { handles: res.frames.clone(), index: 0 },
         PulledByFluid { mass: 10.0 },
         MeleeEnemy,
+        super::EnemyPathfinder::new(),
         GameEntity,
     ));
     e.with_children(|parent| spawn_health_bar_children(parent));
