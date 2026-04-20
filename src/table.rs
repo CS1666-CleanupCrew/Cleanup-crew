@@ -120,6 +120,13 @@ fn apply_table_velocity(
     // Cap delta so a lag spike can't cause a huge jump
     let delta = time.delta_secs().min(0.05);
 
+    // Nothing moving — skip all wall-collision work.
+    if !table_query.iter().any(|(_, v, _, room)| {
+        room.0 == active && v.velocity.length_squared() >= 0.01
+    }) {
+        return;
+    }
+
     for (mut transform, mut velocity, table_collider, room) in &mut table_query {
         if room.0 != active { continue; }
         if velocity.velocity.length_squared() < 0.01 { continue; }
@@ -204,6 +211,12 @@ pub fn collide_tables_with_tables(
     let active_entities: Vec<Entity> = table_query.iter()
         .filter_map(|(e, _, _, _, room)| if room.0 == active { Some(e) } else { None })
         .collect();
+
+    // Skip the O(n²) get_many_mut loop entirely when no table is moving.
+    let any_moving = table_query.iter().any(|(_, _, _, v, room)| {
+        room.0 == active && v.velocity.length_squared() >= 0.01
+    });
+    if !any_moving { return; }
 
     for i in 0..active_entities.len() {
         for j in (i + 1)..active_entities.len() {

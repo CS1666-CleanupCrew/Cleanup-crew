@@ -72,7 +72,7 @@ pub struct EnemyHealthBarFg;
 
 const BAR_WIDTH: f32 = 34.0;
 const BAR_HEIGHT: f32 = 4.0;
-const BAR_Y_OFFSET: f32 = 42.0;
+const BAR_Y_OFFSET: f32 = 62.0;
 
 /// Spawns the two bar sprites (background + fill) as children of an enemy entity.
 pub fn spawn_health_bar_children(parent: &mut ChildSpawnerCommands) {
@@ -102,9 +102,42 @@ pub struct LastKillPos(pub Vec2);
 
 // Pathfinding
 
-const PATH_RECOMPUTE_SECS: f32 = 0.35;
-const PATH_MAX_NODES: usize = 250;
-const PATH_SEARCH_PAD: i32 = 18;
+const PATH_RECOMPUTE_SECS: f32 = 0.5;
+const PATH_MAX_NODES: usize = 150;
+const PATH_SEARCH_PAD: i32 = 16;
+/// Only run pathfinding for enemies within this world-space distance of the player.
+const PATH_MAX_DIST: f32 = 900.0;
+
+/// Cached set of table-occupied tiles, rebuilt every ~0.3 s so `compute_enemy_paths`
+/// doesn't allocate a new HashSet every frame.
+#[derive(Resource)]
+pub struct TableBlockedTiles {
+    pub tiles: HashSet<(i32, i32)>,
+    timer: Timer,
+}
+
+impl Default for TableBlockedTiles {
+    fn default() -> Self {
+        Self {
+            tiles: HashSet::new(),
+            timer: Timer::from_seconds(0.3, TimerMode::Repeating),
+        }
+    }
+}
+
+fn update_table_blocked_tiles(
+    time: Res<Time>,
+    mut cache: ResMut<TableBlockedTiles>,
+    table_q: Query<&Transform, (With<table::Table>, With<Collidable>)>,
+    wall_grid: Res<crate::map::WallGrid>,
+) {
+    cache.timer.tick(time.delta());
+    if !cache.timer.just_finished() { return; }
+    cache.tiles = table_q
+        .iter()
+        .map(|tf| wall_grid.world_to_tile(tf.translation.truncate()))
+        .collect();
+}
 
 /// A* pathfinder attached to every non-reaper enemy.
 /// Stores the current list of world-space waypoints to follow when the
@@ -132,6 +165,7 @@ pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LastKillPos>()
+            .init_resource::<TableBlockedTiles>()
             .add_systems(Startup, chaser::load)
             .add_systems(Startup, ranger::load)
             .add_event::<RangerShootEvent>()
@@ -139,7 +173,8 @@ impl Plugin for EnemyPlugin {
             .add_systems(
                 Update,
                 (
-                    compute_enemy_paths,
+                    update_table_blocked_tiles,
+                    compute_enemy_paths.after(update_table_blocked_tiles),
                     ranger::ai.after(compute_enemy_paths),
                     ranger::spawn_ranger_bullets.after(ranger::ai),
                     move_enemy.after(ranger::ai),
@@ -319,18 +354,12 @@ fn compute_enemy_paths(
         (With<Enemy>, With<ActiveEnemy>, Without<Reaper>),
     >,
     wall_grid: Res<crate::map::WallGrid>,
-    table_q: Query<(&Transform, &Collider), (With<table::Table>, With<Collidable>)>,
+    blocked_cache: Res<TableBlockedTiles>,
 ) {
     let Ok(player_tf) = player_q.single() else { return };
     let player_pos = player_tf.translation.truncate();
     let goal = wall_grid.world_to_tile(player_pos);
-
-    // Blocked tiles: wall-grid is handled inside a_star/has_los.
-    // Tables are dynamic obstacles; mark each table's tile as blocked.
-    let blocked: HashSet<(i32, i32)> = table_q
-        .iter()
-        .map(|(tf, _)| wall_grid.world_to_tile(tf.translation.truncate()))
-        .collect();
+    let blocked = &blocked_cache.tiles;
 
     for (enemy_tf, mut pathfinder) in &mut enemy_q {
         let pos = enemy_tf.translation.truncate();
@@ -349,12 +378,18 @@ fn compute_enemy_paths(
             continue;
         }
 
+        // Skip A* for enemies too far away — they'll head straight until closer.
+        if pos.distance_squared(player_pos) > PATH_MAX_DIST * PATH_MAX_DIST {
+            pathfinder.waypoints.clear();
+            continue;
+        }
+
         let start = wall_grid.world_to_tile(pos);
 
-        if has_los(start, goal, &wall_grid, &blocked) {
+        if has_los(start, goal, &wall_grid, blocked) {
             pathfinder.waypoints.clear();
         } else {
-            let tiles = a_star(start, goal, &wall_grid, &blocked, PATH_MAX_NODES, PATH_SEARCH_PAD);
+            let tiles = a_star(start, goal, &wall_grid, blocked, PATH_MAX_NODES, PATH_SEARCH_PAD);
             pathfinder.waypoints = tiles
                 .into_iter()
                 .map(|(c, r)| wall_grid.tile_to_world(c, r))
