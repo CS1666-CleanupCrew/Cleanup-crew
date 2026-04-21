@@ -161,7 +161,12 @@ impl Plugin for PlayerPlugin {
             // .add_systems(Update, bullet_collision.run_if(in_state(GameState::Playing)))
             // .add_systems(Update, animate_bullet.after(move_bullet).run_if(in_state(GameState::Playing)),)
             .add_systems(Update, enemy_hits_player.run_if(in_state(GameState::Playing)))
-            .add_systems(Update, table_hits_player.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, player_deflects_tables
+                .after(table::collide_tables_with_tables)
+                .run_if(in_state(GameState::Playing)))
+            .add_systems(Update, table_hits_player
+                .after(player_deflects_tables)
+                .run_if(in_state(GameState::Playing)))
             .add_systems(Update, wall_collision_correction
                 .after(apply_breach_force_to_player)
                 .after(table::collide_tables_with_tables)
@@ -302,10 +307,9 @@ fn move_player(
     input: Res<ButtonInput<KeyCode>>,
     mut player: Query<(&mut Transform, &mut Velocity, &mut Facing, &MoveSpeed, &mut Weapon), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
-    // Excludes permanent wall tiles — those are handled by WallGrid below.
-    colliders: Query<(&Transform, &Collider, Option<&table::Table>), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>, Without<crate::map::WallTile>)>,
+    // Excludes permanent wall tiles and tables — tables are handled by player_deflects_tables.
+    colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>, Without<crate::map::WallTile>, Without<table::Table>)>,
     wall_grid: Res<crate::map::WallGrid>,
-    broom_q: Query<(), With<Broom>>,
     mut commands: Commands,
     bullet_res: Res<BulletRes>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
@@ -418,7 +422,6 @@ fn move_player(
     let mut pos = transform.translation;
     let delta = change; // Vec2
     let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
-    let broom_active = !broom_q.is_empty();
 
     // ---- X axis ----
     if delta.x != 0.0 {
@@ -438,9 +441,8 @@ fn move_player(
                 hit_x = true;
             }
         }
-        // Check dynamic collidables (glass, doors, tables).
-        for (ct, c, table_opt) in &colliders {
-            if table_opt.is_some() && broom_active { continue; }
+        // Check dynamic collidables (doors, glass — tables excluded, handled by player_deflects_tables).
+        for (ct, c) in &colliders {
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(nx, py, player_half, cx, cy, c.half_extents) {
                 let candidate = if delta.x > 0.0 {
@@ -477,9 +479,8 @@ fn move_player(
                 hit_y = true;
             }
         }
-        // Check dynamic collidables (glass, doors, tables).
-        for (ct, c, table_opt) in &colliders {
-            if table_opt.is_some() && broom_active { continue; }
+        // Check dynamic collidables (doors, glass — tables excluded).
+        for (ct, c) in &colliders {
             let (cx, cy) = (ct.translation.x, ct.translation.y);
             if aabb_overlap(px, ny, player_half, cx, cy, c.half_extents) {
                 let candidate = if delta.y > 0.0 {
@@ -620,8 +621,10 @@ fn regen_system(
 }
 
 
+/// Soft impulse: tables that are moving fast enough give the player a small nudge
+/// away from the table's center. Direction is always outward from the table, so
+/// many tables surrounding the player cancel each other out rather than stacking.
 fn table_hits_player(
-    _time: Res<Time>,
     mut player_query: Query<(&Transform, &mut Velocity, &mut Health, &mut DamageTimer, &Armor, &mut Shield), With<Player>>,
     table_query: Query<(&Transform, &Collider, Option<&crate::enemies::Velocity>), With<table::Table>>,
 ) {
@@ -630,43 +633,105 @@ fn table_hits_player(
     for (player_tf, mut player_vel, mut health, mut dmg_timer, armor, mut shield) in &mut player_query {
         let player_pos = player_tf.translation.truncate();
 
+        let mut total_impulse = Vec2::ZERO;
+        let mut fastest_speed = 0.0_f32;
+
         for (table_tf, table_col, vel_opt) in &table_query {
             let table_pos = table_tf.translation.truncate();
+            let table_half = table_col.half_extents + Vec2::splat(5.0);
 
-            let extra = Vec2::new(5.0, 5.0);
-            let table_half = table_col.half_extents + extra;
+            if !aabb_overlap(player_pos.x, player_pos.y, player_half, table_pos.x, table_pos.y, table_half) {
+                continue;
+            }
 
-            if aabb_overlap(
-                player_pos.x,
-                player_pos.y,
-                player_half,
-                table_pos.x,
-                table_pos.y,
-                table_half,
-            ) {
-                let table_velocity = vel_opt.map(|v| v.velocity).unwrap_or(Vec2::ZERO);
-                let speed = table_velocity.length();
+            let speed = vel_opt.map(|v| v.velocity.length()).unwrap_or(0.0);
+            if speed > 5.0 {
+                // Push direction is always away from the table center, not in the table's travel
+                // direction. Opposite pushes from tables on both sides cancel out naturally.
+                let push_dir = (player_pos - table_pos).normalize_or_zero();
+                total_impulse += push_dir * speed * 0.06;
+                if speed > fastest_speed { fastest_speed = speed; }
+            }
+        }
 
-                let threshold = 5.0;
-                if speed > threshold {
-                    let push_dir = table_velocity.normalize_or_zero();
-                    //  change the last var below in order to tune the speed the table pushes the player.
-                    let impulse = push_dir * speed * 0.1;
-                    **player_vel = (**player_vel + impulse).clamp_length_max(PLAYER_SPEED * 3.0);
+        if total_impulse != Vec2::ZERO {
+            let capped = total_impulse.clamp_length_max(PLAYER_SPEED * 0.8);
+            **player_vel = (**player_vel + capped).clamp_length_max(PLAYER_SPEED * 2.0);
 
-                    if dmg_timer.0.finished() {
-                        if shield.current >= 1.0 {
-                            shield.current -= 1.0;
-                        } else {
-                            let dmg = speed * 0.02 * armor_factor(armor.0);
-                            health.0 -= dmg;
-                        }
-                        dmg_timer.0.reset();
-                    }
+            if dmg_timer.0.finished() {
+                if shield.current >= 1.0 {
+                    shield.current -= 1.0;
+                } else {
+                    health.0 -= fastest_speed * 0.02 * armor_factor(armor.0);
                 }
+                dmg_timer.0.reset();
             }
         }
     }
+}
+
+/// Fraction of the overlap pushed onto the table when the player walks into it.
+/// The remainder is pushed back onto the player (keeping them from sinking in).
+/// 0.0 = player cannot move tables at all by walking; 1.0 = tables move at full player speed.
+const PLAYER_WALK_TABLE_PUSH: f32 = 0.45;
+
+/// Tables treat the player as a solid obstacle: when a table overlaps the player,
+/// push the table out and redirect its velocity to flow around (remove the component
+/// heading into the player, keep the perpendicular component).
+fn player_deflects_tables(
+    mut player_query: Query<&mut Transform, With<Player>>,
+    mut table_query: Query<(&mut Transform, &Collider, &mut crate::enemies::Velocity, &table::TableRoom), (With<table::Table>, Without<Player>)>,
+    wall_grid: Res<crate::map::WallGrid>,
+    active_room: Res<table::ActiveRoom>,
+) {
+    let Some(active) = active_room.0 else { return; };
+    let Ok(mut player_tf) = player_query.single_mut() else { return; };
+    let player_pos = player_tf.translation.truncate();
+    let player_half = Vec2::new(TILE_SIZE * 0.5, TILE_SIZE * 1.0);
+
+    // Accumulate all player pushback from tables so opposite tables cancel out.
+    let mut player_correction = Vec2::ZERO;
+
+    for (mut table_tf, table_col, mut table_vel, room) in &mut table_query {
+        if room.0 != active { continue; }
+
+        let table_pos = table_tf.translation.truncate();
+        let table_half = table_col.half_extents;
+
+        if !aabb_overlap(player_pos.x, player_pos.y, player_half, table_pos.x, table_pos.y, table_half) {
+            continue;
+        }
+
+        let dx = table_pos.x - player_pos.x;
+        let dy = table_pos.y - player_pos.y;
+        let overlap_x = (player_half.x + table_half.x) - dx.abs();
+        let overlap_y = (player_half.y + table_half.y) - dy.abs();
+
+        // Split the overlap: table gets PLAYER_WALK_TABLE_PUSH of it, player gets pushed back the rest.
+        // Also zero the table's velocity component heading into the player so it deflects sideways.
+        if overlap_x < overlap_y {
+            let sign = if dx >= 0.0 { 1.0_f32 } else { -1.0_f32 };
+            table_tf.translation.x += sign * overlap_x * PLAYER_WALK_TABLE_PUSH;
+            player_correction.x  -= sign * overlap_x * (1.0 - PLAYER_WALK_TABLE_PUSH);
+            if table_vel.velocity.x * sign < 0.0 {
+                table_vel.velocity.x = 0.0;
+            }
+        } else {
+            let sign = if dy >= 0.0 { 1.0_f32 } else { -1.0_f32 };
+            table_tf.translation.y += sign * overlap_y * PLAYER_WALK_TABLE_PUSH;
+            player_correction.y  -= sign * overlap_y * (1.0 - PLAYER_WALK_TABLE_PUSH);
+            if table_vel.velocity.y * sign < 0.0 {
+                table_vel.velocity.y = 0.0;
+            }
+        }
+
+        let mut pos = table_tf.translation;
+        table::snap_out_of_walls(&mut pos, table_half, &wall_grid);
+        table_tf.translation = pos;
+    }
+
+    player_tf.translation.x += player_correction.x;
+    player_tf.translation.y += player_correction.y;
 }
 
 fn apply_breach_force_to_player(
