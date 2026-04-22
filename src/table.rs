@@ -3,6 +3,9 @@ use crate::collidable::{Collidable, Collider};
 use crate::GameState;
 
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.7;
+// How quickly sliding tables lose speed on the ground (velocity × e^(-drag×t) per second).
+// At 2.5, a broom-pushed table (~450 u/s) stops in roughly 1.8 seconds.
+const GROUND_DRAG: f32 = 2.5;
 
 #[derive(Component)]
 pub struct Table;
@@ -137,6 +140,9 @@ fn apply_table_velocity(
             velocity.velocity = velocity.velocity * (max_speed / speed);
         }
 
+        // Ground friction: bleed off speed every frame so tables don't slide forever.
+        velocity.velocity *= (1.0 - GROUND_DRAG * delta).max(0.0);
+
         let change = velocity.velocity * delta;
         let mut pos = transform.translation;
         let table_half = table_collider.half_extents;
@@ -184,7 +190,7 @@ fn apply_table_velocity(
 }
 
 /// Push `pos` out of nearby walls using the spatial hash.
-fn snap_out_of_walls(pos: &mut Vec3, half: Vec2, wall_grid: &crate::map::WallGrid) {
+pub fn snap_out_of_walls(pos: &mut Vec3, half: Vec2, wall_grid: &crate::map::WallGrid) {
     for (wp, wh) in wall_grid.nearby(pos.truncate(), 3) {
         let dx = pos.x - wp.x;
         let dy = pos.y - wp.y;

@@ -49,7 +49,8 @@ impl Plugin for MinimapPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MinimapVisible>()
             .init_resource::<VisitedCells>()
-            .add_systems(OnEnter(GameState::Playing), setup_minimap)
+            .add_systems(OnEnter(GameState::Playing), (clear_visited_cells, setup_minimap).chain())
+            .add_systems(OnExit(GameState::Playing), clear_visited_cells)
             .add_systems(
                 Update,
                 toggle_minimap.run_if(in_state(GameState::Playing)),
@@ -68,6 +69,10 @@ impl Plugin for MinimapPlugin {
 }
 
 // Setup
+
+fn clear_visited_cells(mut visited: ResMut<VisitedCells>) {
+    visited.0.clear();
+}
 
 fn setup_minimap(
     mut commands: Commands,
