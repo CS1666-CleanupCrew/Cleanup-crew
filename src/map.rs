@@ -335,8 +335,9 @@ pub fn setup_tilemap(
 
     // Build wall spatial hash — O(1) neighbourhood lookup replaces
     // the O(n_walls) linear scan done every frame in collision systems.
+    // Glass tiles are included so enemies cannot walk through intact windows.
     let mut wall_cells = HashMap::new();
-    for &pos in &wall_positions {
+    for &pos in wall_positions.iter().chain(glass_positions.iter()) {
         let key = (
             ((pos.x - x0) / TILE_SIZE).round() as i32,
             ((pos.y - y0) / TILE_SIZE).round() as i32,

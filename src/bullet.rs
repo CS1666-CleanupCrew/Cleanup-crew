@@ -186,7 +186,7 @@ fn animate_bullet(
 pub fn bullet_collision(
     mut commands: Commands,
     mut bullet_query: Query<
-        (Entity, &Transform, &BulletOwner, &BulletDamage, Option<&mut Piercing>, &mut HitEnemies),
+        (Entity, &Transform, &BulletOwner, &BulletDamage, Option<&mut Piercing>, Option<&mut HitEnemies>),
         (With<Bullet>, Without<MarkedForDespawn>),
     >,
     mut enemy_query: Query<
@@ -217,11 +217,12 @@ pub fn bullet_collision(
 
     let _final_room = matches!(*lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1;
 
-    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, mut piercing, mut hit_enemies) in &mut bullet_query {
+    'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, mut piercing, mut hit_enemies_opt) in &mut bullet_query {
         let bullet_pos = bullet_tf.translation;
 
         // Bullet hits enemy
         if matches!(owner, BulletOwner::Player) {
+            if let Some(ref mut hit_enemies) = hit_enemies_opt {
             for (enemy_entity, enemy_tf, mut health) in &mut enemy_query {
                 if hit_enemies.0.contains(&enemy_entity) {
                     continue;
@@ -256,6 +257,7 @@ pub fn bullet_collision(
                     }
                 }
             }
+            } // if let Some(hit_enemies)
         }
 
         // Bullet hits player

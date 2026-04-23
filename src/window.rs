@@ -60,11 +60,15 @@ fn check_for_broken_windows(
     mut fluid_query: Query<&mut crate::fluiddynamics::FluidGrid>,
     window_graphics: Res<WindowGraphics>,
     mut table_q: Query<&mut crate::enemies::Velocity, With<crate::table::Table>>,
+    mut wall_grid: Option<ResMut<crate::map::WallGrid>>,
 ) {
     for (entity, health, mut sprite, mut state, transform) in query.iter_mut() {
         if health.0 <= 0.0 && *state == GlassState::Intact {
             // info!("Window breaking at {:?}", transform.translation.truncate());
             *state = GlassState::Broken;
+            if let Some(ref mut wg) = wall_grid {
+                wg.remove(transform.translation.truncate());
+            }
 
             commands.entity(entity).insert(NeedsBreachTracking);
 

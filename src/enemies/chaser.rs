@@ -106,7 +106,7 @@ pub fn animate_hit(
     mut commands: Commands,
     mut enemies: Query<
         (Entity, &mut Sprite, &mut HitAnimation),
-        (Without<super::ranger::RangedEnemy>, Without<crate::enemies::Reaper>),
+        (Without<super::ranger::RangedEnemy>, Without<crate::enemies::Reaper>, Without<super::turret::TurretEnemy>),
     >,
     enemy_res: Res<EnemyRes>,
 ) {
