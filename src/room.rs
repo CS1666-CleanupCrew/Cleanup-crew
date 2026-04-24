@@ -9,7 +9,7 @@ use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
 use crate::map::{Door, TablePositions};
 use crate::map::TileRes;
 use crate::player::{NumOfCleared, Player};
-use crate::enemies::{EnemyRes, LastKillPos, RangedEnemyRes, spawn_enemy_at, spawn_ranged_enemy_at};
+use crate::enemies::{EnemyRes, LastKillPos, RangedEnemyRes, TurretRes, spawn_enemy_at, spawn_ranged_enemy_at, spawn_turret_enemy_at};
 use crate::table;
 
 #[derive(Resource)]
@@ -102,17 +102,31 @@ fn setup(
     commands.insert_resource(EnemyPosition(HashSet::new()));
 }
 
-/// Keeps ActiveRoom in sync with LevelState so table physics can filter by room.
+/// Keeps ActiveRoom in sync with the room the player is currently standing in.
 fn sync_active_room(
     lvlstate: Res<LevelState>,
     mut active: ResMut<table::ActiveRoom>,
+    player_q: Query<&Transform, With<Player>>,
+    rooms: Res<RoomVec>,
 ) {
-    if !lvlstate.is_changed() { return; }
     match *lvlstate {
         LevelState::EnteredRoom(i) | LevelState::InRoom(i, _) => {
             active.0 = Some(i);
         }
-        LevelState::NotRoom => {} // keep last known room so tables settle naturally
+        LevelState::NotRoom => {
+            // Player may be in a cleared room — track by position so table
+            // collision still works when backtracking.
+            if let Ok(player_tf) = player_q.single() {
+                let player_pos = player_tf.translation.truncate();
+                for (i, room) in rooms.0.iter().enumerate() {
+                    if room.bounds_check(player_pos) {
+                        active.0 = Some(i);
+                        return;
+                    }
+                }
+            }
+            // Player is in a hallway between rooms — keep last active room.
+        }
     }
 }
 
@@ -229,6 +243,7 @@ pub fn entered_room(
     tiles: Res<TileRes>,
     enemy_res: Res<EnemyRes>,
     ranged_res: Res<RangedEnemyRes>,
+    turret_res: Res<TurretRes>,
     play_query: Single<&NumOfCleared, With<Player>>,
     station_level: Res<crate::StationLevel>,
     mut shield_query: Query<&mut crate::player::Shield, With<Player>>,
@@ -248,7 +263,7 @@ pub fn entered_room(
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
             }
 
-            if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &play_query, station_level.0){
+            if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &turret_res, &play_query, station_level.0){
                 *lvlstate = LevelState::InRoom(index, pos);
             } else {
                 // Room is too small/tight to place any enemies — clear it immediately
@@ -342,6 +357,7 @@ pub fn generate_enemies_in_room(
     mut commands: &mut Commands,
     enemy_res: &EnemyRes,
     ranged_res: &RangedEnemyRes,
+    turret_res: &TurretRes,
     play_query: &NumOfCleared,
     station_level: u32,
 
@@ -449,7 +465,9 @@ pub fn generate_enemies_in_room(
         valid_floors.push((*x, *y));
         let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
-        if spawn_idx % 4 == 2 {
+        if spawn_idx == 0 || spawn_idx % 8 == 6 {
+            spawn_turret_enemy_at(&mut commands, turret_res, pos, true, health_multiplier, speed_bonus);
+        } else if spawn_idx % 8 == 2 {
             spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier, speed_bonus);
         } else {
             spawn_enemy_at(&mut commands, enemy_res, pos, true, health_multiplier, speed_bonus);

@@ -1,6 +1,7 @@
 pub mod chaser;
 pub mod ranger;
 pub mod reaper;
+pub mod turret;
 
 // Re-export sub-module items so callers can keep using `enemies::X`
 // without needing to know which sub-module it lives in.
@@ -13,6 +14,7 @@ pub use ranger::{
     RangedEnemyRes, RangerShootEvent, spawn_ranged_enemy_at,
 };
 pub use reaper::Reaper;
+pub use turret::{TurretEnemy, TurretRes, TurretShootEvent, spawn_turret_enemy_at};
 
 use bevy::prelude::*;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -168,7 +170,9 @@ impl Plugin for EnemyPlugin {
             .init_resource::<TableBlockedTiles>()
             .add_systems(Startup, chaser::load)
             .add_systems(Startup, ranger::load)
+            .add_systems(Startup, turret::load)
             .add_event::<RangerShootEvent>()
+            .add_event::<TurretShootEvent>()
             .add_systems(Update, chaser::animate.run_if(in_state(GameState::Playing)))
             .add_systems(
                 Update,
@@ -176,8 +180,10 @@ impl Plugin for EnemyPlugin {
                     update_table_blocked_tiles,
                     compute_enemy_paths.after(update_table_blocked_tiles),
                     ranger::ai.after(compute_enemy_paths),
+                    turret::ai.after(compute_enemy_paths),
                     ranger::spawn_ranger_bullets.after(ranger::ai),
-                    move_enemy.after(ranger::ai),
+                    turret::spawn_turret_bullets.after(turret::ai),
+                    move_enemy.after(ranger::ai).after(turret::ai),
                     move_reaper_freely.after(ranger::ai),
                     collide_enemies_with_enemies.after(move_enemy),
                     wall_correction_for_enemies.after(collide_enemies_with_enemies),
@@ -190,7 +196,8 @@ impl Plugin for EnemyPlugin {
         .add_systems(Update, update_enemy_health_bars.run_if(in_state(GameState::Playing)))
             .add_systems(Update, chaser::animate_hit)
             .add_systems(Update, table_hits_enemy)
-            .add_systems(Update, ranger::animate.run_if(in_state(GameState::Playing)));
+            .add_systems(Update, ranger::animate.run_if(in_state(GameState::Playing)))
+            .add_systems(Update, turret::animate.run_if(in_state(GameState::Playing)));
     }
 }
 
@@ -401,9 +408,11 @@ fn compute_enemy_paths(
 fn check_enemy_health(
     mut commands: Commands,
     enemy_query: Query<(Entity, &Health, &Transform), With<Enemy>>,
+    key_holder_q: Query<(), With<crate::key_chest::KeyHolder>>,
     mut rooms: ResMut<RoomVec>,
     lvlstate: Res<LevelState>,
     mut last_kill_pos: ResMut<LastKillPos>,
+    key_res: Option<Res<crate::key_chest::KeyChestRes>>,
 ) {
     for (entity, health, transform) in enemy_query.iter() {
         if health.0 <= 0.0 {
@@ -411,6 +420,13 @@ fn check_enemy_health(
                 rooms.0[index].numofenemies -= 1;
             }
             last_kill_pos.0 = transform.translation.truncate();
+
+            if key_holder_q.get(entity).is_ok() {
+                if let Some(ref kr) = key_res {
+                    crate::key_chest::drop_key(&mut commands, kr, transform.translation);
+                }
+            }
+
             commands.entity(entity).despawn();
         }
     }
@@ -425,6 +441,7 @@ fn move_enemy(
             &mut Velocity,
             Option<&crate::fluiddynamics::PulledByFluid>,
             Option<&ranger::RangedEnemy>,
+            Option<&turret::TurretEnemy>,
             Option<&EnemyMoveSpeed>,
             Option<&EnemyPathfinder>,
         ),
@@ -446,7 +463,7 @@ fn move_enemy(
 
     let player_pos = player_transform.translation.truncate();
 
-    for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt, spd_opt, pathfinder_opt) in &mut enemy_query {
+    for (mut enemy_transform, mut enemy_velocity, _pulled_opt, ranged_opt, turret_opt, spd_opt, pathfinder_opt) in &mut enemy_query {
         let max_speed = spd_opt.map_or(ENEMY_SPEED, |s| s.0);
         let mut effective_accel = accel;
         if grid_has_breach {
@@ -455,7 +472,7 @@ fn move_enemy(
 
         // Chasers steer toward the player (or a path waypoint if blocked).
         // Rangers get their velocity from ranger::ai.
-        if ranged_opt.is_none() {
+        if ranged_opt.is_none() && turret_opt.is_none() {
             let target = pathfinder_opt
                 .and_then(|pf| pf.waypoints.first().copied())
                 .unwrap_or(player_pos);
