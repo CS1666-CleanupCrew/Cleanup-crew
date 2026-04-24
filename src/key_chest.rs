@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use rand::random_range;
+use crate::collidable::{Collidable, Collider};
 use crate::{GameEntity, GameState, TILE_SIZE, Z_ENTITIES};
 use crate::player::{Player, aabb_overlap};
 use crate::enemies::Enemy;
@@ -156,6 +157,8 @@ fn spawn_chest_on_room_entry(
         Sprite::from_image(res.chest_img.clone()),
         Transform::from_xyz(reward_pos.x, reward_pos.y, Z_ENTITIES),
         Chest,
+        Collidable,
+        Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },
         GameEntity,
     ));
     key_state.chest_spawned = true;
