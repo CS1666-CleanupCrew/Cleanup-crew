@@ -408,9 +408,11 @@ fn compute_enemy_paths(
 fn check_enemy_health(
     mut commands: Commands,
     enemy_query: Query<(Entity, &Health, &Transform), With<Enemy>>,
+    key_holder_q: Query<(), With<crate::key_chest::KeyHolder>>,
     mut rooms: ResMut<RoomVec>,
     lvlstate: Res<LevelState>,
     mut last_kill_pos: ResMut<LastKillPos>,
+    key_res: Option<Res<crate::key_chest::KeyChestRes>>,
 ) {
     for (entity, health, transform) in enemy_query.iter() {
         if health.0 <= 0.0 {
@@ -418,6 +420,13 @@ fn check_enemy_health(
                 rooms.0[index].numofenemies -= 1;
             }
             last_kill_pos.0 = transform.translation.truncate();
+
+            if key_holder_q.get(entity).is_ok() {
+                if let Some(ref kr) = key_res {
+                    crate::key_chest::drop_key(&mut commands, kr, transform.translation);
+                }
+            }
+
             commands.entity(entity).despawn();
         }
     }

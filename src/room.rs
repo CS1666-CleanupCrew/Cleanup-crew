@@ -102,17 +102,31 @@ fn setup(
     commands.insert_resource(EnemyPosition(HashSet::new()));
 }
 
-/// Keeps ActiveRoom in sync with LevelState so table physics can filter by room.
+/// Keeps ActiveRoom in sync with the room the player is currently standing in.
 fn sync_active_room(
     lvlstate: Res<LevelState>,
     mut active: ResMut<table::ActiveRoom>,
+    player_q: Query<&Transform, With<Player>>,
+    rooms: Res<RoomVec>,
 ) {
-    if !lvlstate.is_changed() { return; }
     match *lvlstate {
         LevelState::EnteredRoom(i) | LevelState::InRoom(i, _) => {
             active.0 = Some(i);
         }
-        LevelState::NotRoom => {} // keep last known room so tables settle naturally
+        LevelState::NotRoom => {
+            // Player may be in a cleared room — track by position so table
+            // collision still works when backtracking.
+            if let Ok(player_tf) = player_q.single() {
+                let player_pos = player_tf.translation.truncate();
+                for (i, room) in rooms.0.iter().enumerate() {
+                    if room.bounds_check(player_pos) {
+                        active.0 = Some(i);
+                        return;
+                    }
+                }
+            }
+            // Player is in a hallway between rooms — keep last active room.
+        }
     }
 }
 
