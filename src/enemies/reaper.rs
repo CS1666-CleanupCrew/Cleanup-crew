@@ -158,7 +158,7 @@ fn reaper_room_timer(
     assets: Res<AssetServer>,
 ) {
     let current_idx_opt = match *lvlstate {
-        LevelState::InRoom(idx, _) => Some(idx),
+        LevelState::InRoom(idx, _, _) => Some(idx),
         _ => None,
     };
 
@@ -283,7 +283,7 @@ fn reaper_cleanup_system(
     mut state: ResMut<ReaperState>,
     reaper_q: Query<(Entity, &Health), With<Reaper>>,
 ) {
-    let current_idx = if let LevelState::InRoom(idx, _) = *lvlstate {
+    let current_idx = if let LevelState::InRoom(idx, _, _) = *lvlstate {
         Some(idx)
     } else {
         None

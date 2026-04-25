@@ -215,7 +215,7 @@ pub fn bullet_collision(
         return;
     };
 
-    let _final_room = matches!(*lvlstate, LevelState::InRoom(_, _)) && rooms.0.len() == 1;
+    let _final_room = matches!(*lvlstate, LevelState::InRoom(_, _, _)) && rooms.0.len() == 1;
 
     'bullet_loop: for (bullet_entity, bullet_tf, owner, damage, mut piercing, mut hit_enemies_opt) in &mut bullet_query {
         let bullet_pos = bullet_tf.translation;

@@ -153,7 +153,7 @@ pub fn ai(
     let player_pos = player_tf.translation.truncate();
 
     let difficulty_mult: f32 = match *lvlstate {
-        LevelState::InRoom(idx, _) | LevelState::EnteredRoom(idx) => 1.0 + (idx as f32 * 0.10),
+        LevelState::InRoom(idx, _, _) | LevelState::EnteredRoom(idx) => 1.0 + (idx as f32 * 0.10),
         LevelState::NotRoom => 1.0,
     };
 

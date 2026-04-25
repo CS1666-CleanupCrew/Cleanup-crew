@@ -129,7 +129,7 @@ fn assign_key_holder(
     enemy_q: Query<Entity, With<Enemy>>,
 ) {
     if key_state.key_assigned { return; }
-    let LevelState::InRoom(idx, _) = *lvl_state else { return };
+    let LevelState::InRoom(idx, _, _) = *lvl_state else { return };
     if idx != key_state.key_holder_room { return; }
 
     let enemies: Vec<Entity> = enemy_q.iter().collect();
@@ -150,12 +150,12 @@ fn spawn_chest_on_room_entry(
     res: Res<KeyChestRes>,
 ) {
     if key_state.chest_spawned { return; }
-    let LevelState::InRoom(idx, reward_pos) = *lvl_state else { return };
+    let LevelState::InRoom(idx, _, chest_pos) = *lvl_state else { return };
     if idx != key_state.chest_room { return; }
 
     commands.spawn((
         Sprite::from_image(res.chest_img.clone()),
-        Transform::from_xyz(reward_pos.x, reward_pos.y, Z_ENTITIES),
+        Transform::from_xyz(chest_pos.x, chest_pos.y, Z_ENTITIES),
         Chest,
         Collidable,
         Collider { half_extents: Vec2::splat(TILE_SIZE * 0.5) },

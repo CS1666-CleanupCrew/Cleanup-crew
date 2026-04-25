@@ -61,14 +61,14 @@ pub fn broom_hit_bullets_system(
 }
 
 fn broom_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut player_query: Query<(&Transform, &Facing, &mut crate::bullet::Velocity), (With<Player>, Without<Broom>)>,
+    player_query: Query<(&Transform, &Facing), (With<Player>, Without<Broom>)>,
     broom_q: Query<Entity, (With<Broom>, Without<Player>)>,
 ) {
-    if (keyboard.pressed(KeyCode::KeyC) || keyboard.pressed(KeyCode::KeyB)) && broom_q.is_empty() {
-        if let Some((player_tf, facing, mut velocity)) = player_query.iter_mut().next() {
+    if mouse_buttons.just_pressed(MouseButton::Right) && broom_q.is_empty() {
+        if let Some((player_tf, facing)) = player_query.iter().next() {
 
             let broom_length = TILE_SIZE * 2.5;
             let broom_width  = TILE_SIZE * 1.0;
@@ -83,19 +83,6 @@ fn broom_input(
                 FacingDirection::DownRight => Vec3::new( broom_length/2.0, -broom_length/2.0, 1.0),
                 FacingDirection::DownLeft  => Vec3::new(-broom_length/2.0, -broom_length/2.0, 1.0),
             };
-
-            // Push the player backward (opposite facing) on swing
-            let push_dir = match facing.0 {
-                FacingDirection::Up        => Vec2::new( 0.0, -1.0),
-                FacingDirection::Down      => Vec2::new( 0.0,  1.0),
-                FacingDirection::Left      => Vec2::new( 1.0,  0.0),
-                FacingDirection::Right     => Vec2::new(-1.0,  0.0),
-                FacingDirection::UpRight   => Vec2::new(-1.0, -1.0).normalize(),
-                FacingDirection::UpLeft    => Vec2::new( 1.0, -1.0).normalize(),
-                FacingDirection::DownRight => Vec2::new(-1.0,  1.0).normalize(),
-                FacingDirection::DownLeft  => Vec2::new( 1.0,  1.0).normalize(),
-            };
-            **velocity = push_dir * 700.0;
 
             let broom_image: Handle<Image> = asset_server.load("Broom.png");
 
