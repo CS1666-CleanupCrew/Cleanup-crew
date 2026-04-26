@@ -6,7 +6,7 @@ use crate::player::Player;
 use crate::room::LevelState;
 use crate::collidable::Collider;
 use crate::bullet::{Bullet, BulletOwner, AnimationTimer, AnimationFrameCount};
-use crate::weapon::{BulletDamage, EnemyBulletRes, WeaponSounds};
+use crate::weapons::{BulletDamage, EnemyBulletRes, WeaponSounds};
 use super::{Enemy, Velocity, ActiveEnemy, Health, MaxHealth, ENEMY_ACCEL, ENEMY_SPEED, ANIM_TIME, spawn_health_bar_children, Reaper};
 
 // ── Components ─────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ pub fn ai(
     let player_pos = player_tf.translation.truncate();
 
     let difficulty_mult: f32 = match *lvlstate {
-        LevelState::InRoom(idx, _) | LevelState::EnteredRoom(idx) => 1.0 + (idx as f32 * 0.10),
+        LevelState::InRoom(idx, _, _) | LevelState::EnteredRoom(idx) => 1.0 + (idx as f32 * 0.10),
         LevelState::NotRoom => 1.0,
     };
 

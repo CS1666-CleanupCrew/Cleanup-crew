@@ -1,4 +1,4 @@
-use crate::weapon::Weapon;
+use crate::weapons::Weapon;
 
 pub const NAME: &str = "Damage Up";
 pub const ASSET: &str = "rewards/DamageUp.png";

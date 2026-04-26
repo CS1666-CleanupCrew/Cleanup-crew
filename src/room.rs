@@ -18,7 +18,7 @@ pub struct EnemyPosition(pub HashSet<(usize, usize)>);
 #[derive(Resource)]
 pub enum LevelState{
     EnteredRoom(usize),
-    InRoom(usize, Vec3),
+    InRoom(usize, Vec3, Vec3),
     NotRoom
 }
 
@@ -110,7 +110,7 @@ fn sync_active_room(
     rooms: Res<RoomVec>,
 ) {
     match *lvlstate {
-        LevelState::EnteredRoom(i) | LevelState::InRoom(i, _) => {
+        LevelState::EnteredRoom(i) | LevelState::InRoom(i, _, _) => {
             active.0 = Some(i);
         }
         LevelState::NotRoom => {
@@ -224,7 +224,7 @@ pub fn track_rooms(
 
     // Only look for a new room trigger when we are not already processing one.
     match *lvlstate {
-        LevelState::EnteredRoom(_) | LevelState::InRoom(_, _) => {}
+        LevelState::EnteredRoom(_) | LevelState::InRoom(_, _, _) => {}
         LevelState::NotRoom => {
             for (index, room) in rooms.0.iter_mut().enumerate() {
                 if !room.cleared && room.within_bounds_check(player_pos) {
@@ -263,8 +263,8 @@ pub fn entered_room(
                 commands.entity(*door).insert(Sprite::from_image(tiles.closed_door.clone()));
             }
 
-            if let Some(pos) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &turret_res, &play_query, station_level.0){
-                *lvlstate = LevelState::InRoom(index, pos);
+            if let Some((pos, chest_pos)) = generate_enemies_in_room(1, None, &mut rooms, index, &mut commands, &enemy_res, &ranged_res, &turret_res, &play_query, station_level.0){
+                *lvlstate = LevelState::InRoom(index, pos, chest_pos);
             } else {
                 // Room is too small/tight to place any enemies — clear it immediately
                 // and reopen the doors so the player is never locked in.
@@ -324,7 +324,7 @@ pub fn playing_room(
 ){
     match *lvlstate
     {
-        LevelState::InRoom(index, reward_pos) =>
+        LevelState::InRoom(index, reward_pos, _) =>
         {
             if rooms.0[index].numofenemies == 0{
                 debug!("All enemies defeated");
@@ -361,7 +361,7 @@ pub fn generate_enemies_in_room(
     play_query: &NumOfCleared,
     station_level: u32,
 
-) -> Option<Vec3> {
+) -> Option<(Vec3, Vec3)> {
     let rooms_cleared = play_query.0;
     let mut floors: Vec<(f32, f32)> = Vec::new();
 
@@ -465,7 +465,7 @@ pub fn generate_enemies_in_room(
         valid_floors.push((*x, *y));
         let pos = Vec3::new(*x, *y, Z_ENTITIES);
 
-        if spawn_idx == 0 || spawn_idx % 8 == 6 {
+        if spawn_idx % 8 == 6 {
             spawn_turret_enemy_at(&mut commands, turret_res, pos, true, health_multiplier, speed_bonus);
         } else if spawn_idx % 8 == 2 {
             spawn_ranged_enemy_at(&mut commands, ranged_res, pos, true, health_multiplier, speed_bonus);
@@ -493,8 +493,13 @@ pub fn generate_enemies_in_room(
         valid_floors.shuffle(&mut trng);
     }
 
-    let reward_tile = valid_floors.into_iter().next()?;
-    Some(Vec3::new(reward_tile.0, reward_tile.1, Z_ENTITIES))
+    let mut it = valid_floors.into_iter();
+    let reward_tile = it.next()?;
+    let chest_tile = it.next().unwrap_or((reward_tile.0 + TILE_SIZE, reward_tile.1));
+    Some((
+        Vec3::new(reward_tile.0, reward_tile.1, Z_ENTITIES),
+        Vec3::new(chest_tile.0, chest_tile.1, Z_ENTITIES),
+    ))
 
     // debug!("Room {}: spawned {} enemies", index, scaled_num_enemies);
 }

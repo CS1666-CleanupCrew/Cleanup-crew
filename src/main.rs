@@ -23,7 +23,7 @@ pub mod bullet;
 pub mod broom;
 pub mod rewards;
 pub mod heart;
-pub mod weapon;
+pub mod weapons;
 pub mod minimap;
 pub mod pause;
 pub mod settings;
@@ -128,6 +128,8 @@ pub struct SavedPlayerBuffs {
     pub regen_rate: f32,
     pub shield_max: f32,
     pub vacuum_mass: f32,
+    /// Extra weapons beyond the base Zapper (e.g. BeamRifle picked up from chest).
+    pub extra_weapons: Vec<weapons::WeaponType>,
 }
 
 #[derive(Component)]
@@ -189,7 +191,7 @@ fn main() {
             rewards::RewardPlugin,
             heart::HeartPlugin,
             enemies::reaper::ReaperPlugin,
-            weapon::WeaponPlugin,
+            weapons::WeaponPlugin,
             minimap::MinimapPlugin,
             pause::PausePlugin,
             settings::SettingsPlugin,
@@ -313,7 +315,7 @@ fn check_return_to_airlock(
     mut next_state: ResMut<NextState<GameState>>,
     rooms: Res<RoomVec>,
     player_q: Query<(
-        &Health, &player::MaxHealth, &player::MoveSpeed, &weapon::Weapon,
+        &Health, &player::MaxHealth, &player::MoveSpeed, &weapons::WeaponInventory,
         &player::NumOfCleared, &player::Armor, &player::AirTank,
         &player::Regen, &player::Shield, &fluiddynamics::PulledByFluid,
         &Transform,
@@ -322,8 +324,9 @@ fn check_return_to_airlock(
 ) {
     if level_complete.is_none() { return; }
 
-    let Ok((health, max_hp, move_spd, weapon, _num_cleared, armor, tank, regen, shield, pull, transform))
+    let Ok((health, max_hp, move_spd, inventory, _num_cleared, armor, tank, regen, shield, pull, transform))
         = player_q.single() else { return; };
+    let weapon = inventory.current();
 
     let player_pos = transform.translation.truncate();
     let in_airlock = rooms.0.iter().any(|r| r.is_airlock && r.bounds_check(player_pos));
@@ -345,6 +348,10 @@ fn check_return_to_airlock(
         regen_rate: regen.0,
         shield_max: shield.max,
         vacuum_mass: pull.mass,
+        extra_weapons: inventory.weapons.iter()
+            .filter(|w| w.weapon_type != weapons::WeaponType::Zapper)
+            .map(|w| w.weapon_type)
+            .collect(),
     });
     next_state.set(GameState::Win);
 }

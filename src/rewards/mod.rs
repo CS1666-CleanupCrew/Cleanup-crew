@@ -16,7 +16,7 @@ use crate::{TILE_SIZE, GameEntity};
 use crate::Player;
 use crate::player::{Health, MaxHealth, MoveSpeed, Armor, AirTank, Regen, Shield, ThrusterFuel, aabb_overlap};
 use crate::fluiddynamics::PulledByFluid;
-use crate::weapon::Weapon;
+use crate::weapons::WeaponInventory;
 
 // Popup 
 
@@ -143,7 +143,7 @@ pub fn player_pickup_reward(
         &mut Regen, &mut Shield, &mut PulledByFluid, &mut ThrusterFuel,
     ), With<Player>>,
     reward_query: Query<(Entity, &Transform, &Reward)>,
-    mut player_weapon_q: Query<&mut Weapon, With<Player>>,
+    mut player_weapon_q: Query<&mut WeaponInventory, With<Player>>,
     font: Res<RewardFont>,
 ) {
     let Ok((
@@ -163,18 +163,19 @@ pub fn player_pickup_reward(
             continue;
         }
 
-        if let Ok(mut weapon) = player_weapon_q.single_mut() {
+        if let Ok(mut inv) = player_weapon_q.single_mut() {
+            let weapon = inv.current_mut();
             match reward_type.0 {
                 1  => max_hp::apply(&mut hp, &mut maxhp),
-                2  => atk_speed::apply(&mut weapon),
+                2  => atk_speed::apply(weapon),
                 3  => move_speed::apply(&mut movspd, &mut fuel),
                 4  => armor::apply(&mut arm),
                 5  => air_tank::apply(&mut tank),
                 6  => drain_rate::apply(&mut tank),
                 7  => vacuum_res::apply(&mut pull),
                 8  => regen::apply(&mut reg),
-                9  => piercing::apply(&mut weapon),
-                10 => damage_up::apply(&mut weapon),
+                9  => piercing::apply(weapon),
+                10 => damage_up::apply(weapon),
                 11 => shield::apply(&mut shld),
                 _  => panic!("Reward Type Not Found"),
             }

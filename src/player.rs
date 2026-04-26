@@ -9,7 +9,7 @@ use crate::enemies::HitAnimation;
 use crate::map::{LevelRes, MapGridMeta};
 use crate::fluiddynamics::PulledByFluid;
 use crate::bullet::{Bullet, Velocity};
-use crate::weapon::{Weapon, WeaponType, spawn_bullet, BulletRes, WeaponSounds};
+use crate::weapons::{Weapon, WeaponType, WeaponInventory, fire_weapon, BulletRes, WeaponSounds, BeamRifleRes};
 const WALL_SLIDE_FRICTION_MULTIPLIER: f32 = 0.92; // lower is more friction
 
 // #[derive(Resource)]
@@ -265,11 +265,17 @@ fn spawn_player(
             (100.0, 100.0, 1.0, 0.5, 0, 0.0, 5.0, 1.0, 25.0, 0u32, 0.0, 0.0, 50.0)
         };
 
-    let mut weapon = Weapon::new(WeaponType::BasicLaser);
+    let mut weapon = Weapon::new(WeaponType::Zapper);
     weapon.fire_rate = fire_rate;
     weapon.shoot_timer = Timer::from_seconds(fire_rate, TimerMode::Once);
     weapon.damage = weapon_damage;
     weapon.piercing_pickups = piercing;
+    let mut inventory = WeaponInventory::new(weapon);
+    if let Some(buffs) = &saved_buffs {
+        for &wtype in &buffs.extra_weapons {
+            inventory.weapons.push(Weapon::new(wtype));
+        }
+    }
 
     commands.spawn((
         Sprite::from_atlas_image(
@@ -292,7 +298,7 @@ fn spawn_player(
         Facing(FacingDirection::Down),
         NumOfCleared(num_cleared),
         (PulledByFluid{mass: vacuum_mass}, AirTank::new(tank_max, tank_drain), ThrusterFuel { current: 0.0, max: 0.0 }),
-        weapon,
+        inventory,
         GameEntity,
     ));
 }
@@ -305,13 +311,14 @@ fn spawn_player(
 fn move_player(
     time: Res<Time>,
     input: Res<ButtonInput<KeyCode>>,
-    mut player: Query<(&mut Transform, &mut Velocity, &mut Facing, &MoveSpeed, &mut Weapon), With<Player>>,
+    mut player: Query<(&mut Transform, &mut Velocity, &mut Facing, &MoveSpeed, &mut WeaponInventory), With<Player>>,
     mut next_state: ResMut<NextState<GameState>>,
     // Excludes permanent wall tiles and tables — tables are handled by player_deflects_tables.
     colliders: Query<(&Transform, &Collider), (With<Collidable>, Without<Player>, Without<Bullet>, Without<Broom>, Without<crate::map::WallTile>, Without<table::Table>)>,
     wall_grid: Res<crate::map::WallGrid>,
     mut commands: Commands,
     bullet_res: Res<BulletRes>,
+    beam_res: Res<BeamRifleRes>,
     grid_query: Query<&crate::fluiddynamics::FluidGrid>,
     buttons: Res<ButtonInput<MouseButton>>,
     weapon_sounds: Res<WeaponSounds>,
@@ -319,7 +326,7 @@ fn move_player(
     let Ok(grid) = grid_query.single() else {
         return;
     };
-    let Ok((mut transform, mut velocity, mut facing, spd, mut weapon)) = player.single_mut() else {
+    let Ok((mut transform, mut velocity, mut facing, spd, mut inventory)) = player.single_mut() else {
         return;
     };
 
@@ -360,7 +367,7 @@ fn move_player(
     }
 
 
-    if input.pressed(KeyCode::Space) && weapon.can_shoot() && !buttons.pressed(MouseButton::Left) {
+    if input.pressed(KeyCode::Space) && inventory.current().can_shoot() && !buttons.pressed(MouseButton::Left) {
         let bullet_dir = match facing.0 {
             FacingDirection::Up => Vec2::new(0.0, 1.0),
             FacingDirection::UpRight => Vec2::new(1.0, 1.0),
@@ -371,21 +378,16 @@ fn move_player(
             FacingDirection::Left => Vec2::new(-1.0, 0.0),
             FacingDirection::Right => Vec2::new(1.0, 0.0),
         };
-        
-        spawn_bullet(
+
+        fire_weapon(
             &mut commands,
+            &mut inventory,
             &bullet_res,
-            &weapon,
-            Vec2 { x: transform.translation.x, y: transform.translation.y },
+            &beam_res,
+            &weapon_sounds,
+            transform.translation.truncate(),
             bullet_dir,
         );
-
-        commands.spawn((
-            AudioPlayer::new(weapon_sounds.laser.clone()),
-            bevy::audio::PlaybackSettings::DESPAWN,
-        ));
-
-        weapon.reset_timer();
     }
 
     //Time based on frame to ensure that movement is the same no matter the fps

@@ -416,7 +416,7 @@ fn check_enemy_health(
 ) {
     for (entity, health, transform) in enemy_query.iter() {
         if health.0 <= 0.0 {
-            if let LevelState::InRoom(index, _) = *lvlstate {
+            if let LevelState::InRoom(index, _, _) = *lvlstate {
                 rooms.0[index].numofenemies -= 1;
             }
             last_kill_pos.0 = transform.translation.truncate();

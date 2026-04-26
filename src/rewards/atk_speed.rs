@@ -1,5 +1,5 @@
 use std::time::Duration;
-use crate::weapon::Weapon;
+use crate::weapons::Weapon;
 
 pub const NAME: &str = "Attack Speed Up";
 pub const ASSET: &str = "rewards/AtkSpdBox.png";

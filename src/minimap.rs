@@ -332,7 +332,7 @@ fn update_minimap(
     let world_max_y = map_px_h * 0.5;
 
     let current_room = match *lvlstate {
-        LevelState::InRoom(i, _) | LevelState::EnteredRoom(i) => Some(i),
+        LevelState::InRoom(i, _, _) | LevelState::EnteredRoom(i) => Some(i),
         LevelState::NotRoom => None,
     };
 
