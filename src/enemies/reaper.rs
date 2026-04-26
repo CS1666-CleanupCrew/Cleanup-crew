@@ -6,7 +6,7 @@ use crate::enemies::{ActiveEnemy, Enemy, Health, MaxHealth, RangedEnemy, RangedE
 use crate::player::Player;
 use crate::room::{LevelState, RoomVec};
 use crate::table;
-use crate::weapon::{BulletDamage, EnemyBulletRes, WeaponSounds};
+use crate::weapons::{BulletDamage, EnemyBulletRes, WeaponSounds};
 use crate::{GameState, TILE_SIZE, Z_ENTITIES};
 use crate::GameEntity;
 

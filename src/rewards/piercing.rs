@@ -1,4 +1,4 @@
-use crate::weapon::Weapon;
+use crate::weapons::Weapon;
 
 pub const NAME: &str = "Piercing Rounds";
 pub const ASSET: &str = "rewards/Piercing.png";

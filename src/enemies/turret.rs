@@ -6,7 +6,7 @@ use crate::player::Player;
 use crate::room::LevelState;
 use crate::collidable::Collider;
 use crate::bullet::{Bullet, BulletOwner, AnimationTimer, AnimationFrameCount};
-use crate::weapon::{BulletDamage, EnemyBulletRes, WeaponSounds};
+use crate::weapons::{BulletDamage, EnemyBulletRes, WeaponSounds};
 use super::{Enemy, Velocity, ActiveEnemy, Health, MaxHealth, ENEMY_ACCEL, ENEMY_SPEED, ANIM_TIME, spawn_health_bar_children};
 
 // ── Components ─────────────────────────────────────────────────────────────

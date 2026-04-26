@@ -191,6 +191,7 @@ fn interact_with_chest(
     mut key_state: ResMut<LevelKeyState>,
     player_q: Query<&Transform, With<Player>>,
     chest_q: Query<(Entity, &Transform), With<Chest>>,
+    mut inventory_q: Query<&mut crate::weapons::WeaponInventory, With<Player>>,
 ) {
     if !input.just_pressed(KeyCode::KeyE) { return; }
     if !key_state.has_key { return; }
@@ -205,7 +206,9 @@ fn interact_with_chest(
         if aabb_overlap(pp.x, pp.y, interact_half, cp.x, cp.y, chest_half) {
             commands.entity(entity).despawn();
             key_state.has_key = false;
-            // Future: spawn weapon drop here.
+            if let Ok(mut inv) = inventory_q.single_mut() {
+                inv.weapons.push(crate::weapons::Weapon::new(crate::weapons::WeaponType::BeamRifle));
+            }
             break;
         }
     }

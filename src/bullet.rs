@@ -1,10 +1,10 @@
 use crate::Player;
-use crate::collidable::Collider;
+
 use crate::player::{Health, MaxHealth, MoveSpeed, Shield};
 use crate::room::{LevelState, RoomVec};
-use crate::weapon::{BulletDamage, BulletRes, Weapon, WeaponSounds};
+use crate::weapons::{BulletDamage, BulletRes, BeamRifleRes, WeaponInventory, WeaponSounds, fire_weapon};
 use crate::window;
-use crate::{GameEntity, GameState, TILE_SIZE};
+use crate::{GameState, TILE_SIZE};
 use crate::table;
 use bevy::{prelude::*, window::PrimaryWindow};
 use std::collections::HashSet;
@@ -71,17 +71,18 @@ fn cursor_to_world(cursor_pos: Vec2, camera: (&Camera, &GlobalTransform)) -> Opt
 pub fn shoot_bullet_on_click(
     mut commands: Commands,
     buttons: Res<ButtonInput<MouseButton>>,
-    mut q_player: Query<(&Transform, &mut Weapon), With<crate::player::Player>>,
+    mut q_player: Query<(&Transform, &mut WeaponInventory), With<crate::player::Player>>,
     q_window: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
     bullet_res: Res<BulletRes>,
+    beam_res: Res<BeamRifleRes>,
     weapon_sounds: Res<WeaponSounds>,
 ) {
-    let Ok((player_transform, mut weapon)) = q_player.single_mut() else {
+    let Ok((player_transform, mut inventory)) = q_player.single_mut() else {
         return;
     };
 
-    if buttons.pressed(MouseButton::Left) && weapon.can_shoot() {
+    if buttons.pressed(MouseButton::Left) && inventory.current().can_shoot() {
         let window = match q_window.single() {
             Ok(win) => win,
             Err(_) => return,
@@ -107,46 +108,17 @@ pub fn shoot_bullet_on_click(
             return;
         }
 
-        let shoot_offset = 16.0;
-        let spawn_pos = player_pos + dir_vec * shoot_offset;
+        let spawn_pos = player_pos + dir_vec * 16.0;
 
-        // Spawn bullet using weapon stats
-        let mut bullet_entity = commands.spawn((
-            Sprite::from_atlas_image(
-                bullet_res.0.clone(),
-                TextureAtlas {
-                    layout: bullet_res.1.clone(),
-                    index: 0,
-                },
-            ),
-            Transform {
-                translation: Vec3::new(spawn_pos.x, spawn_pos.y, 5.0),
-                rotation: Quat::IDENTITY,
-                scale: Vec3::splat(weapon.bullet_size),
-            },
-            Velocity(dir_vec * weapon.bullet_speed),
-            Bullet,
-            BulletOwner::Player,
-            Collider {
-                half_extents: Vec2::splat(5.0),
-            },
-            BulletDamage(weapon.damage),
-            AnimationTimer(Timer::from_seconds(0.2, TimerMode::Repeating)),
-            AnimationFrameCount(3),
-            HitEnemies::default(),
-            GameEntity,
-        ));
-        let pierce = weapon.effective_pierce_count();
-        if pierce > 0 {
-            bullet_entity.insert(Piercing(pierce));
-        }
-
-        commands.spawn((
-            AudioPlayer::new(weapon_sounds.laser.clone()),
-            PlaybackSettings::DESPAWN,
-        ));
-
-        weapon.reset_timer();
+        fire_weapon(
+            &mut commands,
+            &mut inventory,
+            &bullet_res,
+            &beam_res,
+            &weapon_sounds,
+            spawn_pos,
+            dir_vec,
+        );
     }
 }
 
