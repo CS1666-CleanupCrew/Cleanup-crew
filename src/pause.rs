@@ -150,6 +150,7 @@ fn handle_pause_buttons(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     volume: Res<GameMusicVolume>,
+    window_mode: Res<settings::GameWindowMode>,
     mut interactions: Query<(&Interaction, &PauseButton), (Changed<Interaction>, With<Button>)>,
     mut next_state: ResMut<NextState<GameState>>,
     mut virtual_time: ResMut<Time<Virtual>>,
@@ -168,6 +169,7 @@ fn handle_pause_buttons(
                     &mut commands,
                     &asset_server,
                     volume.0,
+                    *window_mode,
                     settings::SettingsOrigin::Paused,
                 );
             }

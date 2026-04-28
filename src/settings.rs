@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::audio::Volume;
+use bevy::window::{WindowMode, PrimaryWindow, MonitorSelection, VideoModeSelection};
 use crate::{GameMusicVolume, MusicTrack, FONT_PATH};
 
 pub struct SettingsPlugin;
@@ -11,6 +12,49 @@ pub enum SettingsOrigin {
     Paused,
 }
 
+/// The player's chosen window mode, kept as a resource so it persists across settings opens.
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GameWindowMode {
+    Windowed,
+    #[default]
+    BorderlessFullscreen,
+    Fullscreen,
+}
+
+impl GameWindowMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Windowed => "Windowed",
+            Self::BorderlessFullscreen => "Borderless FS",
+            Self::Fullscreen => "Fullscreen",
+        }
+    }
+
+    fn next(self) -> Self {
+        match self {
+            Self::Windowed => Self::BorderlessFullscreen,
+            Self::BorderlessFullscreen => Self::Fullscreen,
+            Self::Fullscreen => Self::Windowed,
+        }
+    }
+
+    fn prev(self) -> Self {
+        match self {
+            Self::Windowed => Self::Fullscreen,
+            Self::BorderlessFullscreen => Self::Windowed,
+            Self::Fullscreen => Self::BorderlessFullscreen,
+        }
+    }
+
+    pub fn to_bevy(self) -> WindowMode {
+        match self {
+            Self::Windowed => WindowMode::Windowed,
+            Self::BorderlessFullscreen => WindowMode::BorderlessFullscreen(MonitorSelection::Current),
+            Self::Fullscreen => WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current),
+        }
+    }
+}
+
 /// Root node of the settings overlay.
 #[derive(Component)]
 pub struct SettingsUI;
@@ -19,9 +63,14 @@ pub struct SettingsUI;
 struct VolumeDisplay;
 
 #[derive(Component)]
+struct WindowModeDisplay;
+
+#[derive(Component)]
 enum SettingsButton {
     VolumeDown,
     VolumeUp,
+    WindowModeLeft,
+    WindowModeRight,
     Back,
 }
 
@@ -32,12 +81,14 @@ impl Plugin for SettingsPlugin {
                 handle_settings_buttons.run_if(resource_exists::<SettingsOrigin>),
             )
             .add_systems(Update, update_volume_display)
-            .add_systems(Update, sync_volume_to_sinks);
+            .add_systems(Update, update_window_mode_display)
+            .add_systems(Update, sync_volume_to_sinks)
+            .add_systems(Update, sync_window_mode);
     }
 }
 
 /// Spawn the settings overlay. Caller decides the origin context.
-pub fn open_settings(commands: &mut Commands, assets: &AssetServer, current_volume: f32, origin: SettingsOrigin) {
+pub fn open_settings(commands: &mut Commands, assets: &AssetServer, current_volume: f32, current_window_mode: GameWindowMode, origin: SettingsOrigin) {
     commands.insert_resource(origin);
 
     let font: Handle<Font> = assets.load(FONT_PATH);
@@ -128,6 +179,50 @@ pub fn open_settings(commands: &mut Commands, assets: &AssetServer, current_volu
                         });
                     });
 
+                // Window Mode row
+                panel
+                    .spawn((Node {
+                        width: Val::Percent(100.0),
+                        justify_content: JustifyContent::SpaceBetween,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },))
+                    .with_children(|row| {
+                        row.spawn((Node::default(),)).with_children(|c| {
+                            c.spawn((
+                                Text::new("Window Mode"),
+                                TextFont { font: font.clone(), font_size: 22.0, ..default() },
+                                TextColor(Color::srgb(0.85, 0.85, 0.85)),
+                            ));
+                        });
+
+                        row.spawn((Node {
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(10.0),
+                            ..default()
+                        },))
+                        .with_children(|ctrl| {
+                            spawn_small_button(ctrl, font.clone(), "<", SettingsButton::WindowModeLeft);
+
+                            ctrl.spawn((Node {
+                                width: Val::Px(110.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },))
+                            .with_children(|c| {
+                                c.spawn((
+                                    Text::new(current_window_mode.label()),
+                                    TextFont { font: font.clone(), font_size: 18.0, ..default() },
+                                    TextColor(Color::WHITE),
+                                    WindowModeDisplay,
+                                ));
+                            });
+
+                            spawn_small_button(ctrl, font.clone(), ">", SettingsButton::WindowModeRight);
+                        });
+                    });
+
                 // Back button
                 panel
                     .spawn((
@@ -185,6 +280,7 @@ fn handle_settings_buttons(
     mut commands: Commands,
     mut interactions: Query<(&Interaction, &SettingsButton), (Changed<Interaction>, With<Button>)>,
     mut volume: ResMut<GameMusicVolume>,
+    mut window_mode: ResMut<GameWindowMode>,
     ui_q: Query<Entity, With<SettingsUI>>,
 ) {
     for (interaction, button) in &mut interactions {
@@ -197,6 +293,12 @@ fn handle_settings_buttons(
             }
             SettingsButton::VolumeUp => {
                 volume.0 = (volume.0 + 0.1).min(1.0);
+            }
+            SettingsButton::WindowModeLeft => {
+                *window_mode = window_mode.prev();
+            }
+            SettingsButton::WindowModeRight => {
+                *window_mode = window_mode.next();
             }
             SettingsButton::Back => {
                 commands.remove_resource::<SettingsOrigin>();
@@ -230,5 +332,29 @@ fn sync_volume_to_sinks(
     }
     for mut sink in &mut sinks {
         sink.set_volume(Volume::Linear(volume.0));
+    }
+}
+
+fn update_window_mode_display(
+    mode: Res<GameWindowMode>,
+    mut text_q: Query<&mut Text, With<WindowModeDisplay>>,
+) {
+    if !mode.is_changed() {
+        return;
+    }
+    for mut t in &mut text_q {
+        *t = Text::new(mode.label());
+    }
+}
+
+fn sync_window_mode(
+    mode: Res<GameWindowMode>,
+    mut windows: Query<&mut Window, With<PrimaryWindow>>,
+) {
+    if !mode.is_changed() {
+        return;
+    }
+    if let Ok(mut window) = windows.single_mut() {
+        window.mode = mode.to_bevy();
     }
 }
