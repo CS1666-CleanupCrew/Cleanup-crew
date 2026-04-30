@@ -1,6 +1,6 @@
 use crate::collidable::{Collidable, Collider};
 use crate::player::{Health, Player};
-use bevy::{prelude::*, window::PresentMode};
+use bevy::{prelude::*, window::{PresentMode, WindowMode}};
 use bevy::audio::Volume;
 use crate::air::{init_air_grid, spawn_pressure_labels, update_pressure_labels, update_air_on_window_break};
 use crate::room::RoomVec;
@@ -162,6 +162,7 @@ fn main() {
                     primary_window: Some(Window {
                         title: TITLE.into(),
                         present_mode: PresentMode::AutoVsync,
+                        mode: WindowMode::BorderlessFullscreen(bevy::window::MonitorSelection::Current),
                         ..default()
                     }),
                     ..default()
@@ -173,6 +174,7 @@ fn main() {
         //Calls the plugin
         .init_resource::<ShowAirLabels>()
         .init_resource::<StationLevel>()
+        .init_resource::<settings::GameWindowMode>()
         .add_plugins((
             procgen::ProcGen,
             map::MapPlugin,
@@ -197,7 +199,7 @@ fn main() {
             settings::SettingsPlugin,
             key_chest::KeyChestPlugin,
         ))
-        .add_systems(Startup, (setup_camera, rewards::load_reward_font, maximize_window))
+        .add_systems(Startup, (setup_camera, rewards::load_reward_font))
         .add_systems(OnEnter(GameState::Menu), log_state_change)
         .add_systems(OnEnter(GameState::Loading), log_state_change)
         .add_systems(OnEnter(GameState::EndCredits), log_state_change)
@@ -559,11 +561,6 @@ fn setup_camera(mut commands: Commands) {
     commands.spawn((Camera2d, MainCamera));
 }
 
-fn maximize_window(mut windows: Query<&mut Window, With<bevy::window::PrimaryWindow>>) {
-    if let Ok(mut window) = windows.single_mut() {
-        window.set_maximized(true);
-    }
-}
 
 fn setup_ui_health(mut commands: Commands, asset_server: Res<AssetServer>, station_level: Res<StationLevel>) {
     let font: Handle<Font> = asset_server.load(FONT_PATH);
